@@ -79,9 +79,7 @@ def threshold_from_race(distance: str | float, time: str | float) -> ThresholdEs
     try:
         seconds = parse_duration(time)
     except UnitError as exc:
-        raise EstimateError(
-            f"{exc}. Try a time like '21:30', '1:45:00', or '45m'."
-        ) from exc
+        raise EstimateError(f"{exc}. Try a time like '21:30', '1:45:00', or '45m'.") from exc
 
     if metres <= 0:
         raise EstimateError("race distance must be positive")
@@ -96,8 +94,7 @@ def threshold_from_race(distance: str | float, time: str | float) -> ThresholdEs
         )
     if pace > 900:
         raise EstimateError(
-            f"that is {format_pace(pace)}, which looks like a typo. "
-            "Check the units on the time."
+            f"that is {format_pace(pace)}, which looks like a typo. Check the units on the time."
         )
 
     # Invert Riegel: what distance would take exactly one hour?

@@ -1,6 +1,6 @@
 import pytest
 
-from gpp.compile import CompileError, compile_plan
+from gpp.compile import compile_plan
 from gpp.plan import Plan, PlanError
 from gpp.profile import Profile, ProfileError
 
@@ -21,9 +21,7 @@ def test_valid_plan_round_trips():
 
 def test_rejects_two_end_conditions():
     with pytest.raises(PlanError, match="exactly one of duration"):
-        Plan.from_dict(
-            plan_with([{"kind": "run", "duration": "30m", "distance": "5km"}])
-        )
+        Plan.from_dict(plan_with([{"kind": "run", "duration": "30m", "distance": "5km"}]))
 
 
 def test_rejects_no_end_condition():

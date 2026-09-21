@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .compile import CompiledWorkout
 from .constants import TAG_PREFIX
@@ -79,9 +80,7 @@ class GarminClient:
         try:
             from garminconnect import Garmin
         except ImportError as exc:  # pragma: no cover - env dependent
-            raise PushError(
-                "python-garminconnect is not installed. Run: uv sync"
-            ) from exc
+            raise PushError("python-garminconnect is not installed. Run: uv sync") from exc
 
         kwargs: dict[str, Any] = {}
         if self._token_dir:
@@ -108,9 +107,7 @@ class GarminClient:
         garth = getattr(api, "garth", None)
         if garth is not None and hasattr(garth, "connectapi"):
             self.transport = "garth.connectapi"
-            return lambda method, path, **kw: garth.connectapi(
-                path, method=method, **kw
-            )
+            return lambda method, path, **kw: garth.connectapi(path, method=method, **kw)
 
         if garth is not None and hasattr(garth, "request"):
             self.transport = "garth.request"
@@ -218,9 +215,7 @@ class GarminClient:
                     self._push_one(item, by_date, replace=replace, verify=verify, log=log)
                 )
             except PushError as exc:
-                results.append(
-                    PushResult(item.name, item.date, "failed", detail=str(exc))
-                )
+                results.append(PushResult(item.name, item.date, "failed", detail=str(exc)))
         return results
 
     def _push_one(
@@ -287,13 +282,11 @@ class GarminClient:
 
         problems: list[str] = []
         sent_steps = _flatten(item.payload["workoutSegments"][0]["workoutSteps"])
-        got_steps = _flatten(
-            (stored.get("workoutSegments") or [{}])[0].get("workoutSteps", [])
-        )
+        got_steps = _flatten((stored.get("workoutSegments") or [{}])[0].get("workoutSteps", []))
         if len(sent_steps) != len(got_steps):
             problems.append(f"sent {len(sent_steps)} steps, Garmin kept {len(got_steps)}")
 
-        for index, (sent, got) in enumerate(zip(sent_steps, got_steps), start=1):
+        for index, (sent, got) in enumerate(zip(sent_steps, got_steps, strict=False), start=1):
             sent_key = (sent.get("stepType") or {}).get("stepTypeKey")
             got_key = (got.get("stepType") or {}).get("stepTypeKey")
             if sent_key != got_key:

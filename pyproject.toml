@@ -13,7 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=1.0"]
 openai = ["openai>=1.0"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.14"]
 
 [project.scripts]
 gpp = "gpp.cli:main"
@@ -27,3 +27,23 @@ packages = ["gpp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Correctness and modernisation, not style bikeshedding: pyflakes, pycodestyle
+# errors, import order, pyupgrade, bugbear, comprehensions, and the security
+# checks that matter for a tool handling a password.
+select = ["F", "E", "W", "I", "UP", "B", "C4", "S", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "S101",   # asserts are fine; this is not a hardened server
+    "S603", "S607",  # subprocess use in tests/tooling is intentional
+    "SIM108", # ternaries are not always clearer
+    "RUF012", # mutable class attrs on dataclass-free helpers are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "B011"]  # fake keys and deliberate asserts in tests

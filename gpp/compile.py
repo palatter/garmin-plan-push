@@ -263,17 +263,13 @@ def content_tag(plan_name: str, payload: dict[str, Any]) -> str:
     editing a step changes the hash, so the push layer knows to replace it.
     The plan slug lets you keep several plans on one calendar.
     """
-    skeleton = json.dumps(
-        payload.get("workoutSegments", []), sort_keys=True, separators=(",", ":")
-    )
+    skeleton = json.dumps(payload.get("workoutSegments", []), sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(skeleton.encode("utf-8")).hexdigest()[:8]
     slug = "".join(c for c in plan_name.lower() if c.isalnum())[:16] or "plan"
     return f"[{TAG_PREFIX}:{slug}:{digest}]"
 
 
-def compile_workout(
-    workout: Workout, profile: Profile, plan_name: str = "plan"
-) -> CompiledWorkout:
+def compile_workout(workout: Workout, profile: Profile, plan_name: str = "plan") -> CompiledWorkout:
     sport = SPORT_TYPES.get(workout.sport)
     if sport is None:
         raise CompileError(f"unsupported sport {workout.sport!r}")
@@ -289,7 +285,7 @@ def compile_workout(
     payload: dict[str, Any] = {
         "sportType": sport,
         "workoutName": workout.name,
-        "estimatedDurationInSecs": int(round(estimated)),
+        "estimatedDurationInSecs": round(estimated),
         "workoutSegments": [
             {
                 "segmentOrder": 1,

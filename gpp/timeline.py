@@ -117,7 +117,9 @@ def _emit(step: Step, profile: Profile, out: list[Block], rep: tuple[int, int] |
     )
 
 
-def _walk(steps: list[Step], profile: Profile, out: list[Block], rep: tuple[int, int] | None) -> None:
+def _walk(
+    steps: list[Step], profile: Profile, out: list[Block], rep: tuple[int, int] | None
+) -> None:
     for step in steps:
         if len(out) >= MAX_BLOCKS:
             return
@@ -198,7 +200,5 @@ def _pace_for(target: Target, profile: Profile) -> float:
             return (slow + fast) / 2
         if target.fast is not None:
             unit = "mi" if profile.imperial else "km"
-            return (
-                parse_pace(target.slow, unit) + parse_pace(target.fast, unit)
-            ) / 2
+            return (parse_pace(target.slow, unit) + parse_pace(target.fast, unit)) / 2
     return profile.estimate_pace()

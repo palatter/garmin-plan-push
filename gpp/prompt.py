@@ -90,11 +90,8 @@ EXAMPLE = {
 
 def build_prompt(profile: Profile) -> str:
     zones_line = ", ".join(
-        f"{name} ({format_pace(slow, profile.imperial)}"
-        f"-{format_pace(fast, profile.imperial)})"
-        for name, (slow, fast) in (
-            (n, profile.pace_zone(n)) for n in profile.pace_zones
-        )
+        f"{name} ({format_pace(slow, profile.imperial)}-{format_pace(fast, profile.imperial)})"
+        for name, (slow, fast) in ((n, profile.pace_zone(n)) for n in profile.pace_zones)
     )
     return TEMPLATE.format(
         profile=profile.describe(),

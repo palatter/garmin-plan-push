@@ -180,6 +180,7 @@ git clone https://github.com/palatter/garmin-plan-push
 cd garmin-plan-push
 uv sync --extra dev
 uv run pytest
+uv run ruff check gpp tests && uv run ruff format --check gpp tests
 uv run gpp web
 ```
 

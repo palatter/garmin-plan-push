@@ -15,8 +15,9 @@ from __future__ import annotations
 import threading
 import traceback
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 # Jobs are kept so the UI can read the final result, but a long-lived browser
 # tab should not grow the registry without bound.
@@ -43,9 +44,7 @@ class Job:
     relay: str | None = None  # text the user must copy elsewhere, if any
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _input_ready: threading.Event = field(
-        default_factory=threading.Event, repr=False
-    )
+    _input_ready: threading.Event = field(default_factory=threading.Event, repr=False)
     _input_value: str | None = field(default=None, repr=False)
 
     # --- worker side ---
@@ -54,9 +53,7 @@ class Job:
         with self._lock:
             self.log.append(message)
 
-    def ask(
-        self, prompt: str, multiline: bool = False, relay: str | None = None
-    ) -> str:
+    def ask(self, prompt: str, multiline: bool = False, relay: str | None = None) -> str:
         """Block the worker until the UI supplies a value.
 
         `relay` is text the user has to carry somewhere else — the generation
@@ -78,9 +75,7 @@ class Job:
             with self._lock:
                 self.status = "running"
                 self.prompt = self.relay = None
-            raise TimeoutError(
-                f"timed out waiting for {prompt.lower()} — start again when ready"
-            )
+            raise TimeoutError(f"timed out waiting for {prompt.lower()} — start again when ready")
         with self._lock:
             value = self._input_value or ""
             self._input_value = None
@@ -132,7 +127,7 @@ class JobRegistry:
         def run() -> None:
             try:
                 result = work(job)
-            except Exception as exc:  # noqa: BLE001 - surfaced to the UI
+            except Exception as exc:
                 with job._lock:
                     job.error = str(exc) or exc.__class__.__name__
                     job.status = "error"

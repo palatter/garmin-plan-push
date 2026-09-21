@@ -54,9 +54,7 @@ class Profile:
     pace_zones: dict[str, tuple[float, float]] = field(
         default_factory=lambda: dict(DEFAULT_PACE_ZONES)
     )
-    hr_zones: dict[int, tuple[float, float]] = field(
-        default_factory=lambda: dict(DEFAULT_HR_ZONES)
-    )
+    hr_zones: dict[int, tuple[float, float]] = field(default_factory=lambda: dict(DEFAULT_HR_ZONES))
     # The parsed config file, kept so the [ai] block can be read from the same
     # place without loading the file twice.
     raw: dict = field(default_factory=dict, repr=False)
@@ -68,8 +66,7 @@ class Profile:
         key = zone.strip().lower()
         if key not in self.pace_zones:
             raise ProfileError(
-                f"unknown pace zone {zone!r}; known: "
-                + ", ".join(sorted(self.pace_zones))
+                f"unknown pace zone {zone!r}; known: " + ", ".join(sorted(self.pace_zones))
             )
         slow_mult, fast_mult = self.pace_zones[key]
         return self.threshold_pace * slow_mult, self.threshold_pace * fast_mult
@@ -77,9 +74,7 @@ class Profile:
     def hr_zone(self, zone: int) -> tuple[int, int]:
         """Return (low, high) bpm."""
         if self.lthr is None:
-            raise ProfileError(
-                "this plan uses heart-rate zones but the profile has no `lthr`"
-            )
+            raise ProfileError("this plan uses heart-rate zones but the profile has no `lthr`")
         if zone not in self.hr_zones:
             raise ProfileError(
                 f"unknown HR zone {zone!r}; known: "
@@ -95,9 +90,7 @@ class Profile:
 
     def describe(self) -> str:
         lines = [f"Profile: {self.name}"]
-        lines.append(
-            f"  threshold pace  {format_pace(self.threshold_pace, self.imperial)}"
-        )
+        lines.append(f"  threshold pace  {format_pace(self.threshold_pace, self.imperial)}")
         if self.lthr:
             lines.append(f"  LTHR            {self.lthr} bpm")
         if self.hr_max:
@@ -119,16 +112,14 @@ class Profile:
     # --- loading ---
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Profile":
+    def from_dict(cls, data: dict) -> Profile:
         imperial = str(data.get("units", "metric")).lower() in ("imperial", "us")
 
         pace_cfg = data.get("pace", {})
         if "threshold" not in pace_cfg:
-            raise ProfileError("profile needs [pace] threshold, e.g. \"4:05/km\"")
+            raise ProfileError('profile needs [pace] threshold, e.g. "4:05/km"')
         try:
-            threshold = parse_pace(
-                pace_cfg["threshold"], default_unit="mi" if imperial else "km"
-            )
+            threshold = parse_pace(pace_cfg["threshold"], default_unit="mi" if imperial else "km")
         except UnitError as exc:
             raise ProfileError(str(exc)) from exc
 
@@ -161,7 +152,7 @@ class Profile:
         )
 
     @classmethod
-    def load(cls, path: str | Path) -> "Profile":
+    def load(cls, path: str | Path) -> Profile:
         path = Path(path)
         if not path.exists():
             raise ProfileError(f"no profile at {path}")

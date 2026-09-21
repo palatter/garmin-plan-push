@@ -1,12 +1,10 @@
 import pytest
 
-from gpp.compile import compile_plan, compile_workout, content_tag
-from gpp.plan import Plan, PlanError
+from gpp.compile import compile_plan, compile_workout
+from gpp.plan import Plan
 from gpp.profile import Profile
 
-PROFILE = Profile.from_dict(
-    {"name": "test", "pace": {"threshold": "4:00/km"}, "hr": {"lthr": 170}}
-)
+PROFILE = Profile.from_dict({"name": "test", "pace": {"threshold": "4:00/km"}, "hr": {"lthr": 170}})
 
 
 def make_plan(steps, name="W", date="2026-09-24"):
@@ -40,9 +38,7 @@ def flat(payload):
 
 
 def test_simple_time_step():
-    result = compile_steps(
-        [{"kind": "run", "duration": "30m", "target": {"type": "none"}}]
-    )
+    result = compile_steps([{"kind": "run", "duration": "30m", "target": {"type": "none"}}])
     step = flat(result.payload)[0]
     assert step["type"] == "ExecutableStepDTO"
     assert step["stepType"]["stepTypeKey"] == "interval"

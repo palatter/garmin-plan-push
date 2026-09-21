@@ -136,8 +136,7 @@ class App:
             raise AppError("no threshold pace given")
         try:
             profile = Profile.from_dict(
-                {"units": "imperial" if imperial else "metric",
-                 "pace": {"threshold": threshold}}
+                {"units": "imperial" if imperial else "metric", "pace": {"threshold": threshold}}
             )
         except ProfileError as exc:
             raise AppError(str(exc)) from exc
@@ -145,9 +144,7 @@ class App:
 
     def estimate(self, body: dict) -> dict:
         try:
-            result = threshold_from_race(
-                body.get("distance", ""), body.get("time", "")
-            )
+            result = threshold_from_race(body.get("distance", ""), body.get("time", ""))
         except EstimateError as exc:
             raise AppError(str(exc)) from exc
         imperial = bool(body.get("imperial"))
@@ -215,7 +212,7 @@ class App:
     def _describe(self, plan: Plan, profile: Profile) -> dict:
         compiled = compile_plan(plan, profile)
         workouts = []
-        for workout, item in zip(plan.workouts, compiled):
+        for workout, item in zip(plan.workouts, compiled, strict=True):
             summary = workout_summary(workout, profile)
             workouts.append(
                 {
@@ -236,9 +233,7 @@ class App:
             "text": render_plan(plan, compiled, profile),
             "json": {
                 "plan": plan.plan,
-                "workouts": [
-                    _workout_to_dict(w) for w in plan.workouts
-                ],
+                "workouts": [_workout_to_dict(w) for w in plan.workouts],
             },
         }
 
@@ -259,6 +254,7 @@ class App:
             # to whatever chat window they like and pastes the answer back.
             ask = None
             if is_manual(config):
+
                 def ask(prompt_text: str) -> str:
                     job.say("waiting for you to paste a plan back")
                     return job.ask(
@@ -268,9 +264,7 @@ class App:
                     )
 
             provider = build_provider(config, ask=ask)
-            result = generate_plan(
-                provider, profile, request, attempts=attempts, log=job.say
-            )
+            result = generate_plan(provider, profile, request, attempts=attempts, log=job.say)
             return self._describe(result.plan, profile)
 
         return {"job": self.jobs.start("generate", work).id}
@@ -299,9 +293,7 @@ class App:
             client = GarminClient(email, password or None)
             client.connect(prompt_mfa=lambda: job.ask("Garmin MFA code"))
             job.say(f"connected via {client.transport}")
-            results = client.push(
-                compiled, replace=replace, verify=True, log=job.say
-            )
+            results = client.push(compiled, replace=replace, verify=True, log=job.say)
             return {
                 "results": [
                     {
@@ -350,6 +342,7 @@ def _zones_of(profile: Profile) -> list[dict]:
 
 def _workout_to_dict(workout) -> dict:
     """Re-serialise a parsed workout so the UI can hand it back on push."""
+
     def step_to_dict(step) -> dict:
         if step.is_repeat:
             out = {
@@ -365,9 +358,7 @@ def _workout_to_dict(workout) -> dict:
             value = getattr(step, field_name)
             if value is not None:
                 out[field_name] = value
-        target = {
-            k: v for k, v in vars(step.target).items() if v is not None
-        }
+        target = {k: v for k, v in vars(step.target).items() if v is not None}
         if target.get("type") and target["type"] != "none":
             out["target"] = target
         elif target.get("type") == "none":
@@ -433,7 +424,7 @@ def make_handler(app: App):
 
         # --- routing ---
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if not self._host_ok():
                 self._send(403, b"forbidden", "text/plain")
                 return
@@ -442,11 +433,11 @@ def make_handler(app: App):
                 self._serve_index()
                 return
             if path.startswith("/static/"):
-                self._serve_static(path[len("/static/"):])
+                self._serve_static(path[len("/static/") :])
                 return
             self._send(404, b"not found", "text/plain")
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             if not self._host_ok():
                 self._json(403, {"error": "forbidden"})
                 return
@@ -458,9 +449,7 @@ def make_handler(app: App):
             # Compare as bytes: header values arrive latin-1 decoded, and
             # compare_digest raises TypeError on non-ASCII str, which would
             # turn a rejected request into a 500 and a console traceback.
-            supplied = self.headers.get("X-GPP-Token", "").encode(
-                "utf-8", "surrogateescape"
-            )
+            supplied = self.headers.get("X-GPP-Token", "").encode("utf-8", "surrogateescape")
             if not secrets.compare_digest(supplied, app.token.encode("utf-8")):
                 self._json(403, {"error": "bad or missing token; reload the page"})
                 return
@@ -485,7 +474,7 @@ def make_handler(app: App):
                 self._json(exc.status, {"error": str(exc)})
             except (PlanError, ProfileError, ProviderError) as exc:
                 self._json(400, {"error": str(exc)})
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._json(500, {"error": f"{exc.__class__.__name__}: {exc}"})
 
         # --- static ---

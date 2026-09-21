@@ -23,9 +23,15 @@ _DUR_CLOCK = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)$")
 _DUR_MMSS = re.compile(r"^(\d{1,3}):(\d{2}(?:\.\d+)?)$")
 
 _DUR_FACTOR = {
-    "h": 3600.0, "hr": 3600.0, "hrs": 3600.0,
-    "m": 60.0, "min": 60.0, "mins": 60.0,
-    "s": 1.0, "sec": 1.0, "secs": 1.0,
+    "h": 3600.0,
+    "hr": 3600.0,
+    "hrs": 3600.0,
+    "m": 60.0,
+    "min": 60.0,
+    "mins": 60.0,
+    "s": 1.0,
+    "sec": 1.0,
+    "secs": 1.0,
 }
 
 
@@ -71,7 +77,7 @@ def parse_duration(text: str | int | float) -> float:
 
 def format_duration(seconds: float) -> str:
     """Render seconds as h:mm:ss or m:ss."""
-    seconds = int(round(seconds))
+    seconds = round(seconds)
     hours, rem = divmod(seconds, 3600)
     minutes, secs = divmod(rem, 60)
     if hours:
@@ -84,10 +90,14 @@ def format_duration(seconds: float) -> str:
 _DIST = re.compile(r"^(\d+(?:\.\d+)?)\s*(km|k|m|mi|mile|miles|yd|yds)?$", re.I)
 
 _DIST_FACTOR = {
-    "km": 1000.0, "k": 1000.0,
+    "km": 1000.0,
+    "k": 1000.0,
     "m": 1.0,
-    "mi": METRES_PER_MILE, "mile": METRES_PER_MILE, "miles": METRES_PER_MILE,
-    "yd": 0.9144, "yds": 0.9144,
+    "mi": METRES_PER_MILE,
+    "mile": METRES_PER_MILE,
+    "miles": METRES_PER_MILE,
+    "yd": 0.9144,
+    "yds": 0.9144,
 }
 
 
@@ -116,9 +126,7 @@ def format_distance(metres: float, imperial: bool = False) -> str:
 
 # --- Pace -------------------------------------------------------------------
 
-_PACE = re.compile(
-    r"^(\d{1,3}):(\d{2}(?:\.\d+)?)\s*(?:/\s*(km|k|mi|mile))?$", re.I
-)
+_PACE = re.compile(r"^(\d{1,3}):(\d{2}(?:\.\d+)?)\s*(?:/\s*(km|k|mi|mile))?$", re.I)
 
 
 def parse_pace(text: str, default_unit: str = "km") -> float:
@@ -143,7 +151,7 @@ def parse_pace(text: str, default_unit: str = "km") -> float:
 def format_pace(sec_per_km: float, imperial: bool = False) -> str:
     if imperial:
         sec_per_km = sec_per_km * (METRES_PER_MILE / 1000.0)
-    total = int(round(sec_per_km))
+    total = round(sec_per_km)
     minutes, seconds = divmod(total, 60)
     suffix = "/mi" if imperial else "/km"
     return f"{minutes}:{seconds:02d}{suffix}"

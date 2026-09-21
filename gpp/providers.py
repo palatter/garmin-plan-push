@@ -28,9 +28,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -97,9 +98,7 @@ class AnthropicProvider:
             "messages": [{"role": "user", "content": user}],
         }
         if schema and self.config.strict_schema:
-            request["output_config"] = {
-                "format": {"type": "json_schema", "schema": schema}
-            }
+            request["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
 
         try:
             response = client.messages.create(**request)
@@ -138,9 +137,7 @@ class OpenAICompatibleProvider:
         self.name = config.name
         self.config = config
         self.model = config.model or KIND_DEFAULTS["openai"]["model"]
-        self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get(
-            "docs", OPENAI_MODELS_URL
-        )
+        self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get("docs", OPENAI_MODELS_URL)
 
     def complete(self, system: str, user: str, schema: dict | None) -> str:
         try:
@@ -220,9 +217,7 @@ class ManualProvider:
         self.config = config
         self.ask = ask
         self.prompt_path = Path(config.options.get("prompt_file", "plan-prompt.txt"))
-        self.response_path = Path(
-            config.options.get("response_file", "plan-response.json")
-        )
+        self.response_path = Path(config.options.get("response_file", "plan-response.json"))
 
     def complete(self, system: str, user: str, schema: dict | None) -> str:
         full_prompt = f"{system}\n\nREQUEST\n{user}\n"
@@ -303,8 +298,7 @@ def resolve(config: ProviderConfig) -> ProviderConfig:
     defaults = KIND_DEFAULTS.get(kind)
     if defaults is None:
         raise ProviderError(
-            f"unknown provider kind {config.kind!r}; known: "
-            + ", ".join(sorted(KINDS))
+            f"unknown provider kind {config.kind!r}; known: " + ", ".join(sorted(KINDS))
         )
     if config.model is None:
         config.model = defaults.get("model")
@@ -376,12 +370,13 @@ def describe_failure(name: str, model: str | None, exc: Exception, docs_url: str
         hint = f" Current names: {docs_url}" if docs_url else ""
         return (
             f"{name} does not recognise the model {model!r}. Model names change "
-            f"as vendors retire them - set  model = \"...\"  under "
+            f'as vendors retire them - set  model = "..."  under '
             f"[ai.providers.{name}] in profile.toml.{hint}"
         )
 
     if status in (401, 403) or any(
-        s in lowered for s in ("authentication", "api key", "api_key", "unauthorized", "permission denied")
+        s in lowered
+        for s in ("authentication", "api key", "api_key", "unauthorized", "permission denied")
     ):
         return (
             f"{name} rejected the API key. Check the environment variable is set "

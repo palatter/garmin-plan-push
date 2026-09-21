@@ -26,6 +26,7 @@ from .providers import (
 )
 from .render import render_plan
 
+
 def _load_profile(explicit: str | None) -> Profile:
     """Resolve the profile.
 
@@ -68,7 +69,6 @@ def cmd_web(args: argparse.Namespace) -> int:
 def cmd_init(args: argparse.Namespace) -> int:
     """Terminal setup, for people who would rather not open a browser."""
     from .estimate import COMMON_RACES, EstimateError, lthr_from_max, threshold_from_race
-
     from .units import format_pace
 
     print("\nLet's work out your training paces.\n")
@@ -134,7 +134,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print(f"\nSaved to {path}\n")
     print(profile.describe())
-    print("\nNext:  gpp generate \"four weeks to a 10k\"   (or: gpp web)")
+    print('\nNext:  gpp generate "four weeks to a 10k"   (or: gpp web)')
     return 0
 
 
@@ -237,7 +237,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     line(
         True if token_dir.exists() else None,
         "saved login",
-        "found - push won't ask for a password" if token_dir.exists()
+        "found - push won't ask for a password"
+        if token_dir.exists()
         else "none yet - first push will ask for your Garmin password",
     )
     line(
@@ -298,7 +299,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    profile, plan, compiled = _load(args)
+    _, plan, compiled = _load(args)
     print(f"OK: {plan.plan} - {len(compiled)} workout(s) valid")
     return 0
 
@@ -310,10 +311,8 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_compile(args: argparse.Namespace) -> int:
-    _, plan, compiled = _load(args)
-    payload = [
-        {"date": item.date, "workout": item.payload} for item in compiled
-    ]
+    _, _, compiled = _load(args)
+    payload = [{"date": item.date, "workout": item.payload} for item in compiled]
     text = json.dumps(payload, indent=2)
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
@@ -336,9 +335,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         return 0
 
     if not args.yes:
-        answer = input(
-            f"Push {len(compiled)} workout(s) to Garmin Connect? [y/N] "
-        ).strip().lower()
+        answer = input(f"Push {len(compiled)} workout(s) to Garmin Connect? [y/N] ").strip().lower()
         if answer not in ("y", "yes"):
             print("Aborted.")
             return 1
@@ -397,9 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     web = sub.add_parser("web", help="open the graphical app in your browser")
     web.add_argument("--port", type=int, default=8765)
-    web.add_argument(
-        "--no-browser", action="store_true", help="don't open a browser window"
-    )
+    web.add_argument("--no-browser", action="store_true", help="don't open a browser window")
     web.set_defaults(func=cmd_web)
 
     init = sub.add_parser("init", help="set up your profile in the terminal")
@@ -416,7 +411,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check profile, AI keys and Garmin setup")
     doctor.add_argument(
-        "--ping", action="store_true",
+        "--ping",
+        action="store_true",
         help="actually call each configured AI provider (costs a few tokens)",
     )
     doctor.set_defaults(func=cmd_doctor)
@@ -435,9 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="how many times to hand validation errors back to the model",
     )
-    generate.add_argument(
-        "--show", action="store_true", help="also render the plan as text"
-    )
+    generate.add_argument("--show", action="store_true", help="also render the plan as text")
     generate.set_defaults(func=cmd_generate)
 
     for name, help_text, func in (
@@ -464,12 +458,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace this tool's own earlier workouts on the same day (default)",
     )
     push.add_argument(
-        "--no-replace", dest="replace", action="store_false",
+        "--no-replace",
+        dest="replace",
+        action="store_false",
         help="fail instead of replacing",
     )
-    push.add_argument(
-        "--no-verify", action="store_true", help="skip reading workouts back"
-    )
+    push.add_argument("--no-verify", action="store_true", help="skip reading workouts back")
     push.add_argument("--email", help="Garmin account email")
     push.add_argument("--token-dir", help="where to cache the auth token")
     push.set_defaults(func=cmd_push)

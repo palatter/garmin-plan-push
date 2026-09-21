@@ -10,9 +10,7 @@ from gpp.timeline import (
     workout_timeline,
 )
 
-PROFILE = Profile.from_dict(
-    {"pace": {"threshold": "4:00/km"}, "hr": {"lthr": 170}}
-)
+PROFILE = Profile.from_dict({"pace": {"threshold": "4:00/km"}, "hr": {"lthr": 170}})
 
 
 def build(steps):
@@ -117,9 +115,7 @@ def test_time_based_steps_contribute_estimated_distance():
 
 
 def test_hr_zone_targets_still_get_an_intensity():
-    workout = build(
-        [{"kind": "run", "duration": "10m", "target": {"type": "hr", "zone": 5}}]
-    )
+    workout = build([{"kind": "run", "duration": "10m", "target": {"type": "hr", "zone": 5}}])
     block = workout_timeline(workout, PROFILE)[0]
     assert 0 < block["intensity"] <= 1.0
 
@@ -127,7 +123,7 @@ def test_hr_zone_targets_still_get_an_intensity():
 def test_totals_stay_consistent_when_the_drawn_blocks_are_capped():
     """Regression: summary totals must cover the whole session, not the
     truncated block list, or time and distance contradict each other."""
-    groups = 6                      # 6 x 50 x 2 = 600 blocks, past the 400 cap
+    groups = 6  # 6 x 50 x 2 = 600 blocks, past the 400 cap
     reps = 50
     workout = build(
         [
@@ -135,8 +131,11 @@ def test_totals_stay_consistent_when_the_drawn_blocks_are_capped():
                 "kind": "repeat",
                 "reps": reps,
                 "steps": [
-                    {"kind": "run", "distance": "400m",
-                     "target": {"type": "pace", "zone": "interval"}},
+                    {
+                        "kind": "run",
+                        "distance": "400m",
+                        "target": {"type": "pace", "zone": "interval"},
+                    },
                     {"kind": "recover", "duration": "60s"},
                 ],
             }
@@ -147,7 +146,7 @@ def test_totals_stay_consistent_when_the_drawn_blocks_are_capped():
     summary = workout_summary(workout, PROFILE)
 
     total_reps = groups * reps
-    assert len(blocks) == MAX_BLOCKS    # drawing is capped
+    assert len(blocks) == MAX_BLOCKS  # drawing is capped
     assert summary["truncated"] is True
 
     # ...but the numbers printed beside the chart describe the whole session.

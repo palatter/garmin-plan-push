@@ -155,7 +155,7 @@ class Target:
     high: int | None = None
 
     @classmethod
-    def from_dict(cls, data: dict | None) -> "Target":
+    def from_dict(cls, data: dict | None) -> Target:
         if not data:
             return cls()
         return cls(**data)
@@ -170,14 +170,14 @@ class Step:
     target: Target = field(default_factory=Target)
     note: str | None = None
     reps: int | None = None
-    steps: list["Step"] = field(default_factory=list)
+    steps: list[Step] = field(default_factory=list)
 
     @property
     def is_repeat(self) -> bool:
         return self.kind == "repeat"
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Step":
+    def from_dict(cls, data: dict) -> Step:
         if data.get("kind") == "repeat":
             return cls(
                 kind="repeat",
@@ -204,7 +204,7 @@ class Workout:
     notes: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Workout":
+    def from_dict(cls, data: dict) -> Workout:
         return cls(
             name=data["name"],
             date=dt.date.fromisoformat(data["date"]),
@@ -220,7 +220,7 @@ class Plan:
     workouts: list[Workout]
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Plan":
+    def from_dict(cls, data: dict) -> Plan:
         validate(data)
         return cls(
             plan=data["plan"],
@@ -228,7 +228,7 @@ class Plan:
         )
 
     @classmethod
-    def load(cls, path: str | Path) -> "Plan":
+    def load(cls, path: str | Path) -> Plan:
         raw = Path(path).read_text(encoding="utf-8")
         try:
             data = json.loads(raw)
@@ -287,8 +287,7 @@ def _check_step(step: dict, where: str, depth: int) -> None:
     bounds = [k for k in ("duration", "distance", "until") if step.get(k) is not None]
     if len(bounds) != 1:
         raise PlanError(
-            f"{where}: needs exactly one of duration / distance / until, "
-            f"got {bounds or 'none'}"
+            f"{where}: needs exactly one of duration / distance / until, got {bounds or 'none'}"
         )
 
     target = step.get("target")
@@ -309,9 +308,8 @@ def _check_step(step: dict, where: str, depth: int) -> None:
                 f"slow={target['slow']}; `fast` must be the quicker pace"
             )
 
-    if target["type"] in ("hr", "cadence") and "low" in target:
-        if target["high"] <= target["low"]:
-            raise PlanError(
-                f"{where}: {target['type']} target high ({target['high']}) "
-                f"must be greater than low ({target['low']})"
-            )
+    if target["type"] in ("hr", "cadence") and "low" in target and target["high"] <= target["low"]:
+        raise PlanError(
+            f"{where}: {target['type']} target high ({target['high']}) "
+            f"must be greater than low ({target['low']})"
+        )

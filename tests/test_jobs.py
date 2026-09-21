@@ -72,9 +72,7 @@ def test_ask_receives_the_provided_value(registry):
 
 
 def test_multiline_ask_carries_the_relay_text(registry):
-    job = registry.start(
-        "t", lambda j: j.ask("Paste it", multiline=True, relay="THE PROMPT")
-    )
+    job = registry.start("t", lambda j: j.ask("Paste it", multiline=True, relay="THE PROMPT"))
     assert wait_for(lambda: job.snapshot()["status"] == "awaiting_input")
     snap = job.snapshot()
     assert snap["multiline"] is True

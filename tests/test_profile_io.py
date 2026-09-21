@@ -26,11 +26,11 @@ def test_round_trips_through_a_file(tmp_path):
 @pytest.mark.parametrize(
     "name",
     [
-        "Pat\nrick",       # a pasted value with a newline
-        'Pat "The Bus"',   # quotes
-        "Pat\\rick",       # a backslash
-        "Pat\trick",       # a tab
-        "Pat\x07rick",     # a stray control character
+        "Pat\nrick",  # a pasted value with a newline
+        'Pat "The Bus"',  # quotes
+        "Pat\\rick",  # a backslash
+        "Pat\trick",  # a tab
+        "Pat\x07rick",  # a stray control character
     ],
 )
 def test_awkward_names_still_produce_loadable_toml(tmp_path, name):
@@ -39,7 +39,7 @@ def test_awkward_names_still_produce_loadable_toml(tmp_path, name):
     path = profile.save(tmp_path / "profile.toml")
 
     tomllib.loads(path.read_text(encoding="utf-8"))  # must parse
-    assert Profile.load(path).name == name           # and survive intact
+    assert Profile.load(path).name == name  # and survive intact
 
 
 def test_malformed_toml_raises_profile_error_not_a_decode_error(tmp_path):

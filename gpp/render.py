@@ -46,10 +46,7 @@ def describe_target(target: Target, profile: Profile) -> str:
         unit = "mi" if profile.imperial else "km"
         slow = parse_pace(target.slow, unit)
         fast = parse_pace(target.fast, unit)
-        return (
-            f"{format_pace(slow, profile.imperial)}"
-            f"-{format_pace(fast, profile.imperial)}"
-        )
+        return f"{format_pace(slow, profile.imperial)}-{format_pace(fast, profile.imperial)}"
 
     if target.type == "hr":
         if target.zone is not None:
@@ -73,9 +70,7 @@ def describe_extent(step: Step, profile: Profile) -> str:
     return "?"
 
 
-def _render_step(
-    step: Step, profile: Profile, number: str, lines: list[str], indent: int
-) -> None:
+def _render_step(step: Step, profile: Profile, number: str, lines: list[str], indent: int) -> None:
     pad = "  " * indent
     if step.is_repeat:
         note = f"   ({step.note})" if step.note else ""
@@ -106,9 +101,7 @@ def render_workout(compiled: CompiledWorkout, profile: Profile) -> str:
     return "\n".join(lines)
 
 
-def render_plan(
-    plan: Plan, compiled: list[CompiledWorkout], profile: Profile
-) -> str:
+def render_plan(plan: Plan, compiled: list[CompiledWorkout], profile: Profile) -> str:
     total = sum(c.estimated_seconds for c in compiled)
     lines = [
         f"{plan.plan} - {len(compiled)} workout(s), ~{format_duration(total)} total",

@@ -14,8 +14,8 @@ profile, or a pace range that resolves backwards.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from .compile import CompileError, compile_plan
 from .plan import PLAN_SCHEMA, Plan, PlanError

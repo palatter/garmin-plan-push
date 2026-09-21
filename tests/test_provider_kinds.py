@@ -14,7 +14,6 @@ from gpp.providers import (
     resolve,
 )
 
-
 # --- kinds and defaults -----------------------------------------------------
 
 
@@ -37,16 +36,22 @@ def test_claude_is_an_alias_for_anthropic():
 
 def test_user_values_are_never_overwritten():
     config = ProviderConfig(
-        name="x", kind="gemini", model="gemini-custom", base_url="http://proxy", api_key_env="MY_KEY"
+        name="x",
+        kind="gemini",
+        model="gemini-custom",
+        base_url="http://proxy",
+        api_key_env="MY_KEY",
     )
     resolve(config)
     assert (config.model, config.base_url, config.api_key_env) == (
-        "gemini-custom", "http://proxy", "MY_KEY"
+        "gemini-custom",
+        "http://proxy",
+        "MY_KEY",
     )
 
 
 def test_unknown_kind_is_rejected_with_the_known_list():
-    with pytest.raises(ProviderError, match="known:.*gemini"):
+    with pytest.raises(ProviderError, match=r"known:.*gemini"):
         resolve(ProviderConfig(name="x", kind="skynet"))
 
 
@@ -108,7 +113,9 @@ class _Exc(Exception):
 
 
 def test_retired_model_names_get_the_fix_spelled_out():
-    msg = describe_failure("gemini", "gemini-1.0", _Exc("model gemini-1.0 not found", 404), "https://docs")
+    msg = describe_failure(
+        "gemini", "gemini-1.0", _Exc("model gemini-1.0 not found", 404), "https://docs"
+    )
     assert "does not recognise the model 'gemini-1.0'" in msg
     assert "[ai.providers.gemini]" in msg
     assert "https://docs" in msg
