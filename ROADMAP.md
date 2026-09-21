@@ -38,7 +38,7 @@ High value, low effort, no new subsystems.
 | # | Feature | Effort | Why |
 |---|---|---|---|
 | 11 | **Read completed activities from Garmin** | L | The keystone. Everything adaptive below depends on it. Unofficial API exposes activity lists and details. |
-| 12 | **Taper generation** | M | Needs #7. Distance-scaled volume reduction into race day. Every serious tool does this; we currently can't express it. |
+| 12 | **Taper generation** | M | Needs #7. The evidence here is unusually clear: Bosquet et al.'s meta-analysis (27 studies) found the optimal taper cuts volume **41–60%** over **~2 weeks** while **keeping intensity and frequency**, for a ~2.2% performance gain — and cutting more than 60% performs *worse* ([Semantic Scholar](https://www.semanticscholar.org/paper/Effects-of-tapering-on-performance:-a-Bosquet-Montpetit/a41517ab5fa06b92568b861e2b1aa32b3003d214)). Those four numbers are the whole spec. |
 | 13 | **Deload weeks** | M | 3:1 or 2:1 loading patterns. Cheap to generate, and the single most common thing missing from naive LLM-written plans. |
 | 14 | **Compliance review** | L | Needs #11. Final Surge colour-codes planned vs actual duration with user-tunable thresholds (green 80–120%, yellow 50–79%/121–150%, red outside) ([blog.finalsurge.com](https://blog.finalsurge.com/workout-completion-color-coding/)). Concrete and copyable. |
 | 15 | **Re-estimate threshold from recent runs** | L | Needs #11. Our threshold is entered once and rots. Stryd recomputes Critical Power on every upload ([blog.stryd.com](https://blog.stryd.com/2019/07/09/introducing-auto-calculated-critical-power/)); COROS rewrites zones from a field test and re-scales already-scheduled workouts ([coros.com](https://coros.com/stories/coros-metrics/c/running-fitness-test)). |
@@ -68,7 +68,7 @@ High value, low effort, no new subsystems.
 | 32 | Import an existing plan (reverse of export) | L |
 | 33 | Pace→power transpilation of a pace-based plan | M |
 | 34 | Plan sharing — publish a block for a friend to import | M |
-| 35 | VDOT / Daniels tables as an alternative zone model | M |
+| 35 | VDOT / Daniels tables as an alternative zone model — note VDOT **underestimates VO₂max in recreational runners** (d = 3.44, [PubMed](https://pubmed.ncbi.nlm.nih.gov/28426511/)); the *paces* remain useful, the VO₂ number shouldn't be shown | M |
 | 36 | Critical-speed model as an alternative to threshold multipliers | L |
 | 37 | Pain & injury log (Final Surge's PAIR) | S |
 | 38 | Session RPE capture after each run | S |
@@ -119,6 +119,22 @@ significantly higher overuse-injury risk when a *single run* exceeded ~110% of
 the longest run in the previous 30 days. That is a better-supported rule, it
 targets the thing that actually varies, and it is cheap to check at plan-
 generation time. Warn, don't block.
+
+### Guardrails the evidence *does* support
+
+Three rules with real backing, all cheap to check at generation time:
+
+1. **Long-run spike** (#10) — warn when a single run exceeds ~110% of the
+   longest in the prior 30 days. Best-supported injury signal found.
+2. **Taper shape** (#12) — 41–60% volume cut over ~2 weeks, intensity and
+   frequency held. Warn if a generated taper cuts frequency or exceeds 60%.
+3. **Intensity distribution** — roughly 80% easy / 20% hard by time.
+   Polarized training shows a small but significant VO₂ advantage across 17
+   studies and 437 athletes (Oliveira et al., *Sports Medicine* 2024), though
+   the broader literature does **not** crown one universal winner
+   ([PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC11679080/)). So: warn when
+   a plan's hard time exceeds ~30%, but don't enforce a ratio — the honest
+   reading is "mostly easy is well supported; the exact split is not."
 
 ### What we should copy instead
 
@@ -210,8 +226,9 @@ are **not** reflected above. What's missing:
   intervals.icu especially is a gap, since it's the closest free analogue.
 - **Open-source prior art** — GoldenCheetah, Runalyze, existing Garmin workout
   builders. Likely contains directly reusable constant tables.
-- **Daniels / Pfitzinger methodology** — #35 and #36 are named but not
-  specified.
+- **Pfitzinger / critical-speed methodology** — #36 is named but not
+  specified. (Daniels/VDOT, taper, and intensity distribution were
+  subsequently researched directly and are reflected above.)
 
 Also: Reddit was unreachable from the research environment, so the "what do
 runners actually complain about" signal comes from App Store reviews,
