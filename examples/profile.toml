@@ -1,0 +1,56 @@
+# Copy this to ./profile.toml and edit. Everything downstream derives from it.
+
+name = "Patrick"
+units = "metric"          # or "imperial"
+
+[pace]
+# Your threshold pace: roughly what you could hold for a hard hour, or your
+# current 10k pace plus ~10-15 s/km. This single number drives every pace zone,
+# so it is worth getting roughly right and re-checking every 6-8 weeks.
+threshold = "4:30/km"
+
+# Optional: override any zone. First number is the SLOWER bound, as a multiple
+# of threshold pace, so it is always the larger of the two.
+# [pace.zones]
+# easy = [1.30, 1.18]
+
+[hr]
+# Optional. Needed only if a plan uses heart-rate targets.
+lthr = 170                # lactate threshold HR
+max = 188
+
+# --- AI providers ------------------------------------------------------------
+# Any of these can write your plans. The DSL is the contract, so the choice of
+# model is yours and switching is a one-word change.
+
+[ai]
+default = "claude"
+
+[ai.providers.claude]
+kind = "anthropic"
+model = "claude-opus-5"
+api_key_env = "ANTHROPIC_API_KEY"
+
+# [ai.providers.gpt]
+# kind = "openai"
+# model = "gpt-4o"
+# api_key_env = "OPENAI_API_KEY"
+
+# Any OpenAI-compatible endpoint: OpenRouter, Groq, Together, vLLM, LM Studio.
+# [ai.providers.openrouter]
+# kind = "openai-compatible"
+# base_url = "https://openrouter.ai/api/v1"
+# model = "meta-llama/llama-3.3-70b-instruct"
+# api_key_env = "OPENROUTER_API_KEY"
+
+# Local models. base_url defaults to http://localhost:11434/v1
+# [ai.providers.local]
+# kind = "ollama"
+# model = "llama3.3"
+
+# No API key, no SDK: writes the prompt to a file, you paste the answer back.
+# Works with any chat window you already have open.
+[ai.providers.paste]
+kind = "manual"
+prompt_file = "plan-prompt.txt"
+response_file = "plan-response.json"

@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 
 # Personal config and generated artefacts
-profile.toml
+/profile.toml
 plan-prompt.txt
 plan-response.json
 *.plan.json
