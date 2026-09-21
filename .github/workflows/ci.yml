@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # The app is installed by end users on all three, and the one bug class
+    # that actually bites here — path handling and file encodings — only shows
+    # up when you run the matrix.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --extra dev
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Smoke-test the CLI
+        shell: bash
+        run: |
+          uv run gpp --help
+          uv run gpp --profile examples/profile.toml zones
+          uv run gpp --profile examples/profile.toml check examples/week.json
+          uv run gpp --profile examples/profile.toml show examples/week.json
+
+      - name: Smoke-test the web app
+        shell: bash
+        run: |
+          uv run gpp --profile examples/profile.toml web --port 8799 --no-browser &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null "http://127.0.0.1:8799/" && break
+            sleep 1
+          done
+          # The page must load, static assets must be packaged, and the token
+          # gate must reject an unsigned call.
+          curl -sf -o /dev/null -w 'page %{http_code}\n'   "http://127.0.0.1:8799/"
+          curl -sf -o /dev/null -w 'app.js %{http_code}\n' "http://127.0.0.1:8799/static/app.js"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+                 -H 'Content-Type: application/json' -d '{}' \
+                 "http://127.0.0.1:8799/api/state")
+          test "$code" = "403" || { echo "token gate returned $code, expected 403"; exit 1; }
+
+  wheel:
+    # The web UI's assets live outside .py files, so a wheel that silently
+    # drops them would still pass the tests above and break every install.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --wheel
+      - name: Assert the static assets shipped
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          need = {
+              "gpp/web/static/index.html",
+              "gpp/web/static/app.js",
+              "gpp/web/static/style.css",
+          }
+          missing = need - set(names)
+          if missing:
+              sys.exit(f"wheel is missing {sorted(missing)}")
+          print(f"wheel contains all {len(need)} web assets")
+          PY
