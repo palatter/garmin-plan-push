@@ -19,7 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.12", "3.13"]
+        # Floor (what garminconnect needs) and the current release.
+        python: ["3.12", "3.14"]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -28,6 +29,12 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          # Without this the matrix is decorative: uv picks its own Python
+          # and every job silently tests the same one.
+          python-version: ${{ matrix.python }}
+
+      - name: Prove the matrix is real
+        run: uv run python -c "import sys; v=f'{sys.version_info.major}.{sys.version_info.minor}'; assert v=='${{ matrix.python }}', v; print('python', v)"
 
       - name: Install
         run: uv sync --extra dev
@@ -59,6 +66,15 @@ jobs:
                  -H 'Content-Type: application/json' -d '{}' \
                  "http://127.0.0.1:8799/api/state")
           test "$code" = "403" || { echo "token gate returned $code, expected 403"; exit 1; }
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --extra dev
+      - run: uv run ruff check gpp tests
+      - run: uv run ruff format --check gpp tests
 
   wheel:
     # The web UI's assets live outside .py files, so a wheel that silently
