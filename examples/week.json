@@ -1,0 +1,122 @@
+{
+  "plan": "Autumn 10k block",
+  "workouts": [
+    {
+      "name": "Easy 45",
+      "date": "2026-09-22",
+      "sport": "running",
+      "notes": "Pure aerobic volume. If in doubt, go slower.",
+      "steps": [
+        {
+          "kind": "run",
+          "duration": "45m",
+          "target": { "type": "pace", "zone": "easy" }
+        }
+      ]
+    },
+    {
+      "name": "Threshold 5x1k",
+      "date": "2026-09-24",
+      "sport": "running",
+      "notes": "Comfortably hard, not a race. Last rep should feel like the first.",
+      "steps": [
+        {
+          "kind": "warmup",
+          "duration": "15m",
+          "target": { "type": "pace", "zone": "easy" }
+        },
+        {
+          "kind": "repeat",
+          "reps": 5,
+          "steps": [
+            {
+              "kind": "run",
+              "distance": "1km",
+              "target": { "type": "pace", "zone": "threshold" }
+            },
+            {
+              "kind": "recover",
+              "duration": "90s",
+              "target": { "type": "pace", "zone": "recovery" }
+            }
+          ]
+        },
+        {
+          "kind": "cooldown",
+          "duration": "10m",
+          "target": { "type": "pace", "zone": "easy" }
+        }
+      ]
+    },
+    {
+      "name": "Hills + strides",
+      "date": "2026-09-26",
+      "sport": "running",
+      "notes": "Neuromuscular work. Effort over pace on the hill reps.",
+      "steps": [
+        {
+          "kind": "warmup",
+          "duration": "12m",
+          "target": { "type": "hr", "zone": 2 }
+        },
+        {
+          "kind": "repeat",
+          "reps": 8,
+          "steps": [
+            {
+              "kind": "run",
+              "duration": "45s",
+              "target": { "type": "none" },
+              "note": "Strong uphill, tall posture"
+            },
+            { "kind": "recover", "until": "lap", "target": { "type": "none" } }
+          ]
+        },
+        {
+          "kind": "repeat",
+          "reps": 4,
+          "steps": [
+            {
+              "kind": "run",
+              "distance": "100m",
+              "target": { "type": "cadence", "low": 180, "high": 195 }
+            },
+            {
+              "kind": "recover",
+              "duration": "60s",
+              "target": { "type": "pace", "zone": "recovery" }
+            }
+          ]
+        },
+        {
+          "kind": "cooldown",
+          "duration": "10m",
+          "target": { "type": "pace", "zone": "easy" }
+        }
+      ]
+    },
+    {
+      "name": "Long run w/ MP finish",
+      "date": "2026-09-28",
+      "sport": "running",
+      "notes": "Steady through, then lift to marathon effort for the last 20 minutes.",
+      "steps": [
+        {
+          "kind": "run",
+          "duration": "1h10m",
+          "target": { "type": "pace", "zone": "easy" }
+        },
+        {
+          "kind": "run",
+          "duration": "20m",
+          "target": { "type": "pace", "slow": "4:55/km", "fast": "4:45/km" }
+        },
+        {
+          "kind": "cooldown",
+          "duration": "5m",
+          "target": { "type": "pace", "zone": "recovery" }
+        }
+      ]
+    }
+  ]
+}
