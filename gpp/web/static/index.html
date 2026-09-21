@@ -16,7 +16,7 @@
     <span>Training Plans</span>
   </div>
   <div class="topbar-actions">
-    <button class="chip" id="profile-chip" hidden></button>
+    <button class="chip" id="profile-chip" aria-haspopup="dialog" hidden></button>
     <button class="icon-btn" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
         <circle cx="12" cy="12" r="4.5"/>
@@ -47,19 +47,21 @@
             <legend class="field-label">Units</legend>
             <div class="segmented" role="radiogroup" aria-label="Units">
               <button type="button" class="seg is-active" data-units="metric" role="radio" aria-checked="true">Kilometres</button>
-              <button type="button" class="seg" data-units="imperial" role="radio" aria-checked="false">Miles</button>
+              <button type="button" class="seg" data-units="imperial" role="radio" aria-checked="false" tabindex="-1">Miles</button>
             </div>
           </fieldset>
         </div>
 
         <div class="card">
           <h2 class="card-title">Threshold pace</h2>
-          <div class="tabs" role="tablist">
-            <button class="tab is-active" data-tab="race" role="tab" aria-selected="true">From a race</button>
-            <button class="tab" data-tab="known" role="tab" aria-selected="false">I know it</button>
+          <div class="tabs" role="tablist" aria-label="How to set your threshold pace">
+            <button class="tab is-active" data-tab="race" role="tab" id="tab-race"
+                    aria-selected="true" aria-controls="panel-race">From a race</button>
+            <button class="tab" data-tab="known" role="tab" id="tab-known" tabindex="-1"
+                    aria-selected="false" aria-controls="panel-known">I know it</button>
           </div>
 
-          <div class="tab-panel" data-panel="race">
+          <div class="tab-panel" data-panel="race" id="panel-race" role="tabpanel" aria-labelledby="tab-race">
             <div class="row">
               <label class="field grow">
                 <span class="field-label">Distance</span>
@@ -75,10 +77,10 @@
                 <input type="text" id="s-race-time" placeholder="e.g. 47:30" inputmode="numeric">
               </label>
             </div>
-            <p class="hint" id="s-estimate-note">Pick a race you ran hard in the last few months.</p>
+            <p class="hint" id="s-estimate-note" aria-live="polite">Pick a race you ran hard in the last few months.</p>
           </div>
 
-          <div class="tab-panel" data-panel="known" hidden>
+          <div class="tab-panel" data-panel="known" id="panel-known" role="tabpanel" aria-labelledby="tab-known" hidden>
             <label class="field">
               <span class="field-label">Threshold pace</span>
               <input type="text" id="s-threshold" placeholder="4:30/km">
@@ -108,10 +110,10 @@
         <div class="card sticky">
           <h2 class="card-title">Your zones</h2>
           <p class="hint" id="zone-hint">They'll appear as you type.</p>
-          <ul class="zones" id="zone-list"></ul>
+          <ul class="zones" id="zone-list" aria-live="polite"></ul>
         </div>
         <button class="btn primary lg" id="s-save" disabled>Save and continue</button>
-        <p class="error" id="setup-error" hidden></p>
+        <p class="error" id="setup-error" role="alert" hidden></p>
       </aside>
     </div>
   </section>
@@ -149,7 +151,7 @@
       <div class="spinner" aria-hidden="true"></div>
       <div class="progress-body">
         <strong id="c-progress-title">Writing your plan…</strong>
-        <ul class="log" id="c-log"></ul>
+        <ul class="log" id="c-log" aria-live="polite" aria-atomic="false"></ul>
       </div>
     </div>
 
@@ -170,7 +172,7 @@
       <button type="button" class="btn primary" id="c-relay-send">Use this plan</button>
     </div>
 
-    <p class="error" id="compose-error" hidden></p>
+    <p class="error" id="compose-error" role="alert" hidden></p>
   </section>
 
   <!-- ===================== REVIEW ===================== -->
@@ -214,7 +216,7 @@
 
     <div class="progress inline-progress" id="p-progress" hidden>
       <div class="spinner" aria-hidden="true"></div>
-      <ul class="log" id="p-log"></ul>
+      <ul class="log" id="p-log" aria-live="polite" aria-atomic="false"></ul>
     </div>
 
     <div class="mfa" id="p-mfa" hidden>
@@ -225,8 +227,8 @@
       <button type="button" class="btn primary" id="p-mfa-send">Submit code</button>
     </div>
 
-    <ul class="results" id="p-results" hidden></ul>
-    <p class="error" id="push-error" hidden></p>
+    <ul class="results" id="p-results" aria-live="polite" hidden></ul>
+    <p class="error" id="push-error" role="alert" hidden></p>
 
     <div class="dialog-foot">
       <button type="button" class="btn ghost" id="p-cancel">Close</button>

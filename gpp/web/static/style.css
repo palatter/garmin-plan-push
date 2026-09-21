@@ -14,10 +14,15 @@
 
   --text:          hsl(30 10% 12%);
   --text-soft:     hsl(30 6% 40%);
-  --text-faint:    hsl(30 5% 56%);
+  /* 43%, down from 56%. This token carries real content — hints, session
+     notes, stat labels, step times — so it has to clear WCAG AA 4.5:1 on
+     every surface it lands on, not just on white. At 56% it was 3.2:1.
+     Solved against the worst case (--bg-sunk), which gives 4.56:1. */
+  --text-faint:    hsl(30 6% 43%);
 
-  --accent:        hsl(16 82% 48%);
-  --accent-soft:   hsl(16 82% 48% / 0.10);
+  /* 45%, down from 48%: white-on-accent was 4.05:1, under AA at button size. */
+  --accent:        hsl(16 84% 45%);
+  --accent-soft:   hsl(16 84% 45% / 0.10);
   --accent-text:   hsl(0 0% 100%);
 
   --danger:        hsl(0 68% 44%);
@@ -48,7 +53,7 @@
 
     --text:          hsl(35 18% 94%);
     --text-soft:     hsl(35 8% 68%);
-    --text-faint:    hsl(35 6% 50%);
+    --text-faint:    hsl(35 6% 54%);
 
     --accent:        hsl(18 88% 56%);
     --accent-soft:   hsl(18 88% 56% / 0.14);
@@ -74,7 +79,7 @@
   --border-strong: hsl(30 6% 30%);
   --text:          hsl(35 18% 94%);
   --text-soft:     hsl(35 8% 68%);
-  --text-faint:    hsl(35 6% 50%);
+  --text-faint:    hsl(35 6% 54%);
   --accent:        hsl(18 88% 56%);
   --accent-soft:   hsl(18 88% 56% / 0.14);
   --accent-text:   hsl(30 20% 8%);

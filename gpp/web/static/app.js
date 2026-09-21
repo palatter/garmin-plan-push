@@ -151,24 +151,47 @@ async function refreshZonePreview() {
   }
 }
 
-function initSetup() {
-  $$('.seg').forEach(btn => btn.addEventListener('click', () => {
-    $$('.seg').forEach(b => {
-      b.classList.toggle('is-active', b === btn);
-      b.setAttribute('aria-checked', String(b === btn));
+/* A radiogroup or tablist promises arrow-key navigation and a single tab stop.
+   Declaring the role without the behaviour is worse than declaring nothing:
+   a screen reader tells the user to press arrows and nothing happens. */
+function rovingGroup(items, selectedAttr, onSelect) {
+  const select = (item, focus = true) => {
+    items.forEach(el => {
+      const on = el === item;
+      el.classList.toggle('is-active', on);
+      el.setAttribute(selectedAttr, String(on));
+      el.tabIndex = on ? 0 : -1;
     });
+    if (focus) item.focus();
+    onSelect(item);
+  };
+
+  items.forEach((item, index) => {
+    item.addEventListener('click', () => select(item, false));
+    item.addEventListener('keydown', e => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      let target = null;
+      if (step) target = items[(index + step + items.length) % items.length];
+      else if (e.key === 'Home') target = items[0];
+      else if (e.key === 'End') target = items[items.length - 1];
+      if (!target) return;
+      e.preventDefault();
+      select(target);
+    });
+  });
+  return select;
+}
+
+function initSetup() {
+  rovingGroup($$('.seg'), 'aria-checked', btn => {
     state.units = btn.dataset.units;
     scheduleZonePreview();
-  }));
+  });
 
-  $$('.tab').forEach(tab => tab.addEventListener('click', () => {
-    $$('.tab').forEach(t => {
-      t.classList.toggle('is-active', t === tab);
-      t.setAttribute('aria-selected', String(t === tab));
-    });
+  rovingGroup($$('.tab'), 'aria-selected', tab => {
     $$('.tab-panel').forEach(p => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
     scheduleZonePreview();
-  }));
+  });
 
   ['#s-race-time', '#s-threshold'].forEach(sel =>
     $(sel).addEventListener('input', scheduleZonePreview));
@@ -383,6 +406,33 @@ function renderReview(data) {
   });
 }
 
+/* Collapse the expanded timeline back into a spoken description, folding
+   consecutive repeats: "15:00 warm up, then 4 times (8:00 threshold, 2:00
+   recovery), then 10:00 cool down". */
+function describeSession(w) {
+  const parts = [];
+  let i = 0;
+  while (i < w.timeline.length) {
+    const b = w.timeline[i];
+    if (b.of && b.of > 1) {
+      const groupSize = w.timeline
+        .slice(i)
+        .findIndex(x => x.rep !== b.rep);
+      const size = groupSize === -1 ? w.timeline.length - i : groupSize;
+      const inner = w.timeline
+        .slice(i, i + size)
+        .map(x => `${x.extent} ${KIND_LABEL[x.kind] || x.kind}, ${x.target}`)
+        .join('; ');
+      parts.push(`${b.of} times: ${inner}`);
+      i += size * b.of;                       // skip the other repetitions
+    } else {
+      parts.push(`${b.extent} ${KIND_LABEL[b.kind] || b.kind}, ${b.target}`);
+      i += 1;
+    }
+  }
+  return `Session profile. ${parts.join('. Then ')}.`;
+}
+
 function workoutCard(w, index) {
   const card = document.createElement('article');
   card.className = 'workout';
@@ -410,6 +460,11 @@ function workoutCard(w, index) {
 
   const bar = document.createElement('div');
   bar.className = 'profile-bar';
+  // The chart is colour and height only, and `title` never appears on touch.
+  // One spoken sentence beats 30 unreachable tooltips; the step table below
+  // carries the detail.
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', describeSession(w));
   const totalSeconds = w.timeline.reduce((a, b) => a + b.seconds, 0) || 1;
   for (const block of w.timeline) {
     const seg = document.createElement('div');
