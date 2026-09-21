@@ -18,18 +18,23 @@ Security posture, because this endpoint can be handed a Garmin password:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 import secrets
 import threading
 import webbrowser
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .. import checks
+from .. import adapt, checks, library, oneline
 from ..compile import compile_plan
+from ..diff import diff_plans
 from ..estimate import EstimateError, lthr_from_max, threshold_from_race
-from ..generate import generate_plan
+from ..formats import FormatError, export_share, export_workout
+from ..generate import generate_plan, regenerate_workout
 from ..load import plan_dashboard
 from ..plan import Plan, PlanError
 from ..profile import Profile, ProfileError, default_save_path, find_profile
@@ -75,6 +80,7 @@ class App:
         self.token = secrets.token_urlsafe(32)
         self.jobs = JobRegistry()
         self.profile_path = profile_path
+        self.library_root: Path | None = None  # tests point this somewhere disposable
         self._lock = threading.Lock()
 
     # --- profile ---
@@ -110,6 +116,7 @@ class App:
                 "path": str(self.profile_path or find_profile()),
             },
             "zones": _zones_of(profile),
+            "athlete": _athlete_of(profile),
             "providers": [
                 {
                     "name": name,
@@ -165,25 +172,53 @@ class App:
             raise AppError(str(exc)) from exc
 
     def save_profile(self, body: dict) -> dict:
-        existing = self.try_profile()
-        raw = dict(existing.raw) if existing else {}
+        """Write the form back as TOML, keeping every section the form does not own.
 
-        data: dict[str, Any] = {
-            "name": (body.get("name") or "athlete").strip() or "athlete",
-            "units": "imperial" if body.get("imperial") else "metric",
-            "pace": {"threshold": body.get("threshold") or "5:00/km"},
-        }
-        hr: dict[str, Any] = {}
-        if body.get("lthr"):
-            hr["lthr"] = int(body["lthr"])
-        if body.get("hr_max"):
-            hr["max"] = int(body["hr_max"])
-        if hr:
-            data["hr"] = hr
-        if raw.get("ai"):
-            data["ai"] = raw["ai"]
+        Only keys present in the body are touched, so the setup screen can
+        save paces without knowing about the athlete block and vice versa.
+        """
+        existing = self.try_profile()
+        raw = deepcopy(existing.raw) if existing else {}
+        data: dict[str, Any] = dict(raw)
+        if "name" in body or "name" not in data:
+            data["name"] = (body.get("name") or data.get("name") or "athlete").strip() or "athlete"
+        if "imperial" in body:
+            data["units"] = "imperial" if body.get("imperial") else "metric"
+        pace = dict(raw.get("pace") or {})
+        if body.get("threshold"):
+            pace["threshold"] = body["threshold"]
+        pace.setdefault("threshold", "5:00/km")
+        data["pace"] = pace
+
+        hr = dict(raw.get("hr") or {})
+        for key, name in (("lthr", "lthr"), ("hr_max", "max")):
+            if key in body:
+                if body[key]:
+                    hr[name] = int(body[key])
+                else:
+                    hr.pop(name, None)
+        _put(data, "hr", hr)
         if body.get("providers"):
             data["ai"] = body["providers"]
+
+        athlete = dict(raw.get("athlete") or {})
+        for key in ("injuries", "constraints"):
+            if key in body:
+                athlete[key] = _lines(body[key])
+        if "instructions" in body:
+            athlete["instructions"] = str(body["instructions"] or "").strip()
+        for key in ("longest_recent_run_km", "recent_weekly_km"):
+            if key in body:
+                athlete[key] = _number(body[key], key)
+        _put(data, "athlete", {k: v for k, v in athlete.items() if v not in (None, "", [])})
+        if "availability" in body:
+            av = body.get("availability") or {}
+            _put(data, "availability", {k: v for k, v in av.items() if v not in (None, "", [], 0)})
+        if "goal_race" in body:
+            goal = body.get("goal_race") or {}
+            _put(
+                data, "goal_race", {k: v for k, v in goal.items() if v} if goal.get("date") else {}
+            )
 
         try:
             profile = Profile.from_dict(data)
@@ -218,6 +253,7 @@ class App:
             summary = workout_summary(workout, profile)
             workouts.append(
                 {
+                    "index": len(workouts),
                     "name": workout.name,
                     "date": workout.date.isoformat(),
                     "notes": workout.notes,
@@ -227,6 +263,7 @@ class App:
                     "estimate": format_duration(item.estimated_seconds),
                     "seconds": item.estimated_seconds,
                     "summary": summary,
+                    "hard_seconds": summary["hard_seconds"],
                     "timeline": workout_timeline(workout, profile),
                     "tag": item.tag,
                 }
@@ -313,6 +350,139 @@ class App:
 
         return {"job": self.jobs.start("push", work).id}
 
+    def oneline(self, body: dict) -> dict:
+        """A sentence -> a workout, for the edit dialog's fast path (#87)."""
+        text = (body.get("text") or "").strip()
+        if not text:
+            raise AppError(
+                "type the session first, e.g. 15m warm up, 5 x 1km @ T w/ 2m jog, 10m cool down"
+            )
+        date = str(body.get("date") or dt.date.today().isoformat())
+        try:
+            workout = oneline.parse_workout(text, name=body.get("name") or None, date=date)
+        except (oneline.OneLineError, PlanError, ValueError) as exc:
+            raise AppError(str(exc)) from exc
+        return {"workout": workout.to_dict()}
+
+    def diff(self, body: dict) -> dict:
+        """What changed between two versions of a plan (#42)."""
+        return diff_plans(_plan_of(body.get("before")), _plan_of(body.get("after"))).to_dict()
+
+    def adapt_plan(self, body: dict) -> dict:
+        """Pause, replan around missed sessions, or build a return-to-run ramp.
+
+        Every change comes back with its reason; the UI shows them beside
+        the diff rather than silently rewriting the calendar.
+        """
+        profile = self.profile()
+        action = body.get("action")
+        try:
+            if action == "pause":
+                start = _date_of(body.get("start"), "start")
+                days = int(body.get("days") or 0)
+                if days < 1:
+                    raise AppError("how many days off?")
+                reason = str(body.get("reason") or "break")
+                result = adapt.pause_plan(_plan_of(body.get("plan")), start, days, reason)
+            elif action == "missed":
+                dates = [_date_of(d, "date") for d in body.get("dates") or []]
+                if not dates:
+                    raise AppError("which sessions were missed?")
+                result = adapt.replan_missed(_plan_of(body.get("plan")), dates, profile)
+            elif action == "return":
+                start = _date_of(body.get("start"), "start")
+                tier, why = adapt.layoff_tier(int(body.get("days_off") or 0))
+                result = adapt.Adaptation(plan=library.return_to_run(start, tier), reasons=[why])
+            else:
+                raise AppError("action must be pause, missed or return")
+        except (PlanError, library.LibraryError, ValueError) as exc:
+            raise AppError(str(exc)) from exc
+        described = self._describe(result.plan, profile)
+        described["adaptation"] = {
+            "reasons": result.reasons,
+            "dropped": result.dropped,
+            "moved": result.moved,
+        }
+        return described
+
+    def export(self, body: dict) -> dict:
+        """The plan as JSON or a share bundle, or one session in a cross-training format."""
+        profile = self.profile()
+        plan = _plan_of(body.get("plan"))
+        fmt = str(body.get("format") or "json").lower()
+        base = _slug(plan.plan)
+        if fmt == "json":
+            return {"text": plan.dumps(), "filename": f"{base}.json", "mime": "application/json"}
+        if fmt == "share":
+            text = export_share(plan, profile, note=(body.get("note") or None))
+            return {"text": text, "filename": f"{base}.share.json", "mime": "application/json"}
+        try:
+            workout = plan.workouts[int(body.get("index"))]
+        except (TypeError, ValueError, IndexError) as exc:
+            raise AppError("which session? pass its index") from exc
+        try:
+            text = export_workout(workout, profile, fmt)
+        except FormatError as exc:
+            raise AppError(str(exc)) from exc
+        ext = {"icu": "txt", "zwo": "zwo", "mrc": "mrc", "erg": "erg"}[fmt]
+        filename = f"{_slug(workout.name)}-{workout.date.isoformat()}.{ext}"
+        return {"text": text, "filename": filename, "mime": "text/plain"}
+
+    def library_action(self, body: dict) -> dict:
+        """Saved sessions and plan templates on this machine (#5, #6)."""
+        root = self.library_root
+        action = body.get("action") or "list"
+        try:
+            if action == "list":
+                return {"workouts": library.list_workouts(root), "plans": library.list_plans(root)}
+            if action == "save_workout":
+                workout = body.get("workout")
+                if not isinstance(workout, dict):
+                    raise AppError("no session to save")
+                path = library.save_workout(workout, name=body.get("name") or None, root=root)
+                return {"saved": str(path), "workouts": library.list_workouts(root)}
+            if action == "save_plan":
+                plan = _plan_of(body.get("plan"))
+                path = library.save_plan(plan, name=body.get("name") or None, root=root)
+                return {"saved": str(path), "plans": library.list_plans(root)}
+            if action == "workout":
+                date = _date_of(body.get("date"), "date")
+                workout = library.load_workout(str(body.get("name") or ""), date, root=root)
+                return {"workout": workout.to_dict()}
+            if action == "plan":
+                start = _date_of(body["start"], "start") if body.get("start") else _next_monday()
+                race = _date_of(body["race_date"], "race date") if body.get("race_date") else None
+                plan = library.apply_plan(str(body.get("name") or ""), start, race, root=root)
+                return self._describe(plan, self.profile())
+        except (library.LibraryError, PlanError) as exc:
+            raise AppError(str(exc)) from exc
+        raise AppError("unknown library action")
+
+    def regenerate(self, body: dict) -> dict:
+        """Rewrite one session with the model, in place (#41)."""
+        profile = self.profile()
+        configs, default = load_providers(profile.raw)
+        name = body.get("provider") or pick_default(configs, default)
+        if name not in configs:
+            raise AppError(f"unknown provider {name!r}")
+        config = configs[name]
+        if is_manual(config):
+            raise AppError(
+                "rewriting one session needs an API provider; with paste, edit the session by hand"
+            )
+        plan = _plan_of(body.get("plan"))
+        date = str(body.get("date") or "")
+        instruction = (body.get("instruction") or "").strip()
+        if not instruction:
+            raise AppError("say what should change about this session")
+
+        def work(job) -> dict:
+            provider = build_provider(config)
+            result = regenerate_workout(provider, profile, plan, date, instruction, log=job.say)
+            return self._describe(result, profile)
+
+        return {"job": self.jobs.start("regenerate", work).id}
+
     def job(self, body: dict) -> dict:
         job = self.jobs.get(body.get("id", ""))
         if job is None:
@@ -326,6 +496,94 @@ class App:
         if not job.provide(str(body.get("value", ""))):
             raise AppError("that job is not waiting for input")
         return {"ok": True}
+
+
+def _athlete_of(profile: Profile) -> dict:
+    """The onboarding answers, for pre-filling the setup screen (#95)."""
+    a = profile.availability
+    g = profile.goal_race
+    return {
+        "injuries": list(profile.injuries),
+        "constraints": list(profile.constraints),
+        "instructions": profile.instructions or "",
+        "longest_recent_run_km": profile.longest_recent_run_km,
+        "recent_weekly_km": profile.recent_weekly_km,
+        "availability": (
+            {
+                "days": list(a.days),
+                "weekday_max_minutes": a.weekday_max_minutes,
+                "weekend_max_minutes": a.weekend_max_minutes,
+                "long_run_day": a.long_run_day,
+                "sessions_per_week": a.sessions_per_week,
+            }
+            if a
+            else None
+        ),
+        "goal_race": (
+            {
+                "name": g.name,
+                "date": g.date.isoformat(),
+                "distance": g.distance,
+                "priority": g.priority,
+                "goal_time": g.goal_time,
+            }
+            if g
+            else None
+        ),
+    }
+
+
+def _put(data: dict, key: str, value: dict) -> None:
+    """A section is present or absent, never an empty table."""
+    if value:
+        data[key] = value
+    else:
+        data.pop(key, None)
+
+
+def _lines(value: Any) -> list[str]:
+    if isinstance(value, str):
+        value = value.splitlines()
+    return [str(x).strip() for x in value or [] if str(x).strip()]
+
+
+def _number(value: Any, key: str) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise AppError(f"{key.replace('_', ' ')} must be a number") from exc
+
+
+def _plan_of(raw: Any) -> Plan:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise AppError(f"that is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise AppError("no plan supplied")
+    try:
+        return Plan.from_dict(raw)
+    except PlanError as exc:
+        raise AppError(str(exc)) from exc
+
+
+def _date_of(value: Any, label: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(str(value or ""))
+    except ValueError as exc:
+        raise AppError(f"{label} must be a date like 2026-03-14") from exc
+
+
+def _next_monday() -> dt.date:
+    today = dt.date.today()
+    return today + dt.timedelta(days=7 - today.weekday())
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "plan"
 
 
 def _zones_of(profile: Profile) -> list[dict]:
@@ -355,6 +613,12 @@ ROUTES = {
     "/api/push": "push",
     "/api/job": "job",
     "/api/job-input": "job_input",
+    "/api/oneline": "oneline",
+    "/api/diff": "diff",
+    "/api/adapt": "adapt_plan",
+    "/api/export": "export",
+    "/api/library": "library_action",
+    "/api/regenerate": "regenerate",
 }
 
 

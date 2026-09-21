@@ -7,6 +7,7 @@
 <title>Training Plans</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#127939;</text></svg>">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/review.css">
 </head>
 <body>
 
@@ -17,6 +18,11 @@
   </div>
   <div class="topbar-actions">
     <button class="chip" id="profile-chip" aria-haspopup="dialog" hidden></button>
+    <button class="icon-btn" id="palette-btn" title="Commands (Ctrl K)" aria-label="Commands">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M4 7h16M4 12h10M4 17h7"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
         <circle cx="12" cy="12" r="4.5"/>
@@ -104,6 +110,102 @@
           <p class="hint">Only needed if you want heart-rate targets. Enter max
             and we'll estimate threshold.</p>
         </details>
+
+        <details class="card as-details" id="s-about">
+          <summary><h2 class="card-title">About your training <span class="muted">— what a coach would ask</span></h2></summary>
+          <p class="hint about-lede">The one clear finding from the evaluation of AI-written plans:
+            the more the model knows, the better the plan. Everything here goes into every prompt
+            and into the sanity checks. All optional.</p>
+
+          <h3 class="sub">Goal race</h3>
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Race</span>
+              <input type="text" id="s-goal-name" placeholder="e.g. City half">
+            </label>
+            <label class="field">
+              <span class="field-label">Date</span>
+              <input type="date" id="s-goal-date">
+            </label>
+          </div>
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Distance</span>
+              <select id="s-goal-dist">
+                <option value="">—</option>
+                <option>5k</option><option>10k</option><option>half marathon</option>
+                <option>marathon</option><option>50k</option><option>other</option>
+              </select>
+            </label>
+            <label class="field grow">
+              <span class="field-label">Goal time</span>
+              <input type="text" id="s-goal-time" placeholder="e.g. 1:45:00">
+            </label>
+          </div>
+
+          <h3 class="sub">When you can run</h3>
+          <div class="days" role="group" aria-label="Days you can run">
+            <button type="button" class="day" data-day="mon" aria-pressed="false">Mon</button>
+            <button type="button" class="day" data-day="tue" aria-pressed="false">Tue</button>
+            <button type="button" class="day" data-day="wed" aria-pressed="false">Wed</button>
+            <button type="button" class="day" data-day="thu" aria-pressed="false">Thu</button>
+            <button type="button" class="day" data-day="fri" aria-pressed="false">Fri</button>
+            <button type="button" class="day" data-day="sat" aria-pressed="false">Sat</button>
+            <button type="button" class="day" data-day="sun" aria-pressed="false">Sun</button>
+          </div>
+          <p class="hint about-gap">Leave them all unselected for "any day".</p>
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Sessions a week</span>
+              <input type="number" id="s-sessions" min="1" max="14" placeholder="5">
+            </label>
+            <label class="field grow">
+              <span class="field-label">Weekday max (min)</span>
+              <input type="number" id="s-weekday-max" min="15" max="300" placeholder="60">
+            </label>
+            <label class="field grow">
+              <span class="field-label">Weekend max (min)</span>
+              <input type="number" id="s-weekend-max" min="15" max="400" placeholder="150">
+            </label>
+            <label class="field grow">
+              <span class="field-label">Long run day</span>
+              <select id="s-long-day">
+                <option value="">—</option>
+                <option value="mon">Mon</option><option value="tue">Tue</option><option value="wed">Wed</option>
+                <option value="thu">Thu</option><option value="fri">Fri</option><option value="sat">Sat</option>
+                <option value="sun">Sun</option>
+              </select>
+            </label>
+          </div>
+
+          <h3 class="sub">Where you are now</h3>
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Longest run in the last month (km)</span>
+              <input type="number" id="s-longest" min="0" max="200" step="0.5" placeholder="16">
+            </label>
+            <label class="field grow">
+              <span class="field-label">Typical weekly volume (km)</span>
+              <input type="number" id="s-weekly" min="0" max="400" step="1" placeholder="40">
+            </label>
+          </div>
+          <p class="hint about-gap">The long-run guardrail — the best-supported injury signal
+            there is — needs the first number; the ramp check needs the second.</p>
+
+          <h3 class="sub">Injuries and constraints</h3>
+          <label class="field">
+            <span class="field-label">Injury history <span class="muted">— one per line</span></span>
+            <textarea id="s-injuries" rows="2" placeholder="Left Achilles, twinges after hills (spring 2026)"></textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Standing rules <span class="muted">— one per line</span></span>
+            <textarea id="s-constraints" rows="2" placeholder="No hills for 6 weeks&#10;No running Mondays"></textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Anything else the coach should always know</span>
+            <textarea id="s-instructions" rows="2" placeholder="I hate track work. Long runs on trails."></textarea>
+          </label>
+        </details>
       </div>
 
       <aside class="stack">
@@ -141,9 +243,12 @@
           <span class="field-label">Written by</span>
           <select id="c-provider" aria-describedby="c-provider-hint"></select>
         </label>
-        <button class="btn primary" id="c-generate">
-          <span class="btn-label">Write my plan</span>
-        </button>
+        <div class="row">
+          <button class="btn ghost" id="c-library">Open a template</button>
+          <button class="btn primary" id="c-generate">
+            <span class="btn-label">Write my plan</span>
+          </button>
+        </div>
       </div>
       <p class="hint" id="c-provider-hint" aria-live="polite" hidden></p>
     </div>
@@ -185,12 +290,52 @@
       </div>
       <div class="review-actions">
         <button class="btn ghost" id="r-back">Start over</button>
-        <button class="btn ghost" id="r-download">Download</button>
+        <button class="btn ghost" id="r-library">Library</button>
+        <button class="btn ghost" id="r-export">Export</button>
         <button class="btn primary" id="r-push">Send to Garmin</button>
       </div>
     </div>
-    <div class="legend" id="r-legend"></div>
+
+    <div class="review-bar">
+      <div class="segmented" role="radiogroup" aria-label="View">
+        <button type="button" class="seg is-active" data-view="list" role="radio" aria-checked="true">List</button>
+        <button type="button" class="seg" data-view="calendar" role="radio" aria-checked="false" tabindex="-1">Calendar</button>
+      </div>
+      <div class="legend" id="r-legend"></div>
+      <p class="hint shortcuts"><kbd>Ctrl</kbd><kbd>K</kbd> commands · drag a session to another day · arrow keys move a focused session</p>
+    </div>
+
+    <div class="panels">
+      <section class="card panel" id="panel-health" aria-labelledby="health-title">
+        <div class="panel-head">
+          <h2 id="health-title">Plan health</h2>
+          <span class="hint" id="health-totals"></span>
+        </div>
+        <div class="health" id="health-body"></div>
+      </section>
+
+      <section class="card panel" id="panel-sanity" aria-labelledby="sanity-title">
+        <div class="panel-head">
+          <h2 id="sanity-title">Sanity report</h2>
+          <span class="badge" id="sanity-badge"></span>
+        </div>
+        <ul class="findings" id="sanity-body"></ul>
+      </section>
+
+      <section class="card panel" id="panel-changes" aria-labelledby="changes-title">
+        <div class="panel-head">
+          <h2 id="changes-title">Changes <span class="muted" id="changes-label"></span></h2>
+          <span class="row">
+            <button type="button" class="btn sm ghost" id="changes-undo" disabled>Undo</button>
+            <button type="button" class="btn sm ghost" id="changes-reset" disabled>Reset</button>
+          </span>
+        </div>
+        <ul class="changes" id="changes-body"></ul>
+      </section>
+    </div>
+
     <div class="workouts" id="r-workouts"></div>
+    <div class="calendar" id="r-calendar" hidden></div>
   </section>
 </main>
 
@@ -200,6 +345,7 @@
     <h2>Send to Garmin Connect</h2>
     <p class="hint">Your password is used once to sign in and is never saved.
       It goes from this page straight to Garmin.</p>
+    <p class="notice" id="p-blocks" hidden></p>
 
     <label class="field">
       <span class="field-label">Garmin Connect email</span>
@@ -246,11 +392,246 @@
     <p class="hint" id="settings-path"></p>
     <div class="dialog-foot">
       <button type="button" class="btn ghost" id="st-close">Close</button>
-      <button type="button" class="btn" id="st-edit">Edit paces</button>
+      <button type="button" class="btn" id="st-edit">Edit profile</button>
     </div>
   </div>
 </dialog>
 
+<!-- ===================== EDIT SESSION ===================== -->
+<dialog id="edit-dialog" class="wide">
+  <form method="dialog" class="dialog-body" id="edit-form">
+    <h2>Edit session</h2>
+    <div class="row">
+      <label class="field grow">
+        <span class="field-label">Name</span>
+        <input type="text" id="e-name" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Date</span>
+        <input type="date" id="e-date" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Role</span>
+        <input type="text" id="e-role" list="role-options" placeholder="easy">
+        <datalist id="role-options">
+          <option value="easy"></option><option value="medium-long"></option><option value="quality"></option>
+          <option value="long"></option><option value="recovery"></option><option value="race"></option><option value="cross"></option><option value="strength"></option><option value="rest"></option>
+        </datalist>
+      </label>
+    </div>
+    <label class="field">
+      <span class="field-label">Why this session <span class="muted">— goes on the wrist as the first step's note</span></span>
+      <input type="text" id="e-notes" maxlength="200" placeholder="e.g. Threshold: controlled, not a race">
+    </label>
+
+    <div class="tabs" role="tablist" aria-label="Steps">
+      <button type="button" class="tab is-active" data-etab="cues" role="tab" aria-selected="true">Steps and cues</button>
+      <button type="button" class="tab" data-etab="line" role="tab" aria-selected="false" tabindex="-1">Rewrite in one line</button>
+      <button type="button" class="tab" data-etab="json" role="tab" aria-selected="false" tabindex="-1">JSON</button>
+    </div>
+
+    <div class="etab" data-epanel="cues">
+      <table class="cues" id="e-cues"><tbody></tbody></table>
+      <p class="hint">A cue is what the watch shows for that step — "tall posture", "relax the shoulders". Keep them short.</p>
+    </div>
+    <div class="etab" data-epanel="line" hidden>
+      <label class="field">
+        <span class="field-label">Describe the session</span>
+        <input type="text" id="e-line" placeholder="15m warm up, 5 x 1km @ T w/ 2m jog, 10m cool down">
+      </label>
+      <div class="row">
+        <button type="button" class="btn" id="e-parse">Use this</button>
+        <span class="hint" id="e-line-note" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="etab" data-epanel="json" hidden>
+      <label class="field">
+        <span class="field-label">Steps as JSON</span>
+        <textarea id="e-json" rows="10" spellcheck="false"></textarea>
+      </label>
+      <p class="hint">Edits here win over the cues tab when you save.</p>
+    </div>
+
+    <p class="error" id="edit-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="e-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="e-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== WATCH PREVIEW ===================== -->
+<dialog id="watch-dialog">
+  <div class="dialog-body">
+    <h2 id="wt-title">On the watch</h2>
+    <p class="hint">What the step screen shows on a Fenix during this session, step by step.
+      Cues travel as step notes and appear when the step begins.</p>
+    <div class="watch-wrap">
+      <div class="watch" id="wt-face" role="img" aria-labelledby="wt-label wt-extent wt-target">
+        <div class="wt-top"><span id="wt-step"></span><span id="wt-rep"></span></div>
+        <div class="wt-label" id="wt-label"></div>
+        <div class="wt-big" id="wt-extent"></div>
+        <div class="wt-target" id="wt-target"></div>
+        <div class="wt-note" id="wt-note"></div>
+      </div>
+      <ol class="wt-list" id="wt-list"></ol>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="wt-prev">Previous</button>
+      <button type="button" class="btn ghost" id="wt-next">Next</button>
+      <button type="button" class="btn" id="wt-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== MISSED: READAPT OR KEEP ===================== -->
+<dialog id="missed-dialog">
+  <div class="dialog-body">
+    <h2>Missed a session?</h2>
+    <p class="lede" id="m-text"></p>
+    <p class="hint"><strong>Readapt</strong> moves or drops the sessions around it by rule — a missed
+      quality session next to another one is dropped rather than stacked, a long run goes to the next
+      free weekend day — and lists every change with its reason. <strong>Keep</strong> leaves the plan
+      exactly as it is.</p>
+    <p class="error" id="missed-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="m-cancel">Cancel</button>
+      <button type="button" class="btn" id="m-keep">Keep the plan</button>
+      <button type="button" class="btn primary" id="m-readapt">Readapt</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== PAUSE ===================== -->
+<dialog id="pause-dialog">
+  <div class="dialog-body">
+    <h2>Pause the plan</h2>
+    <p class="hint">Illness, a holiday, a niggle. Everything from the start date shifts by the number of
+      days; the first week back is scaled down; sessions that would land after the race are dropped.</p>
+    <div class="row">
+      <label class="field grow"><span class="field-label">From</span><input type="date" id="pa-start"></label>
+      <label class="field grow"><span class="field-label">Days off</span><input type="number" id="pa-days" min="1" max="90" value="7"></label>
+      <label class="field grow"><span class="field-label">Reason</span>
+        <select id="pa-reason"><option value="illness">Illness</option><option value="holiday">Holiday</option><option value="injury">Injury</option><option value="break">Other</option></select></label>
+    </div>
+    <p class="error" id="pause-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="pa-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="pa-go">Pause</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== RETURN TO RUN ===================== -->
+<dialog id="return-dialog">
+  <div class="dialog-body">
+    <h2>Back after a layoff</h2>
+    <p class="hint">Stryd's published tiers: up to a week off, just resume; 8–14 days, restart the phase;
+      15–28, back to aerobic work; longer, start again at foundation. This builds the ramp for the tier.</p>
+    <div class="row">
+      <label class="field grow"><span class="field-label">Days off</span><input type="number" id="rt-days" min="1" max="365" value="21"></label>
+      <label class="field grow"><span class="field-label">Start</span><input type="date" id="rt-start"></label>
+    </div>
+    <p class="error" id="return-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="rt-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="rt-go">Build the ramp</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== REWRITE WITH AI ===================== -->
+<dialog id="rewrite-dialog">
+  <div class="dialog-body">
+    <h2 id="rw-title">Rewrite this session</h2>
+    <p class="hint">The model rewrites just this one, keeping the rest of the week. Say what should change.</p>
+    <label class="field">
+      <span class="field-label">Instruction</span>
+      <input type="text" id="rw-text" placeholder="Make it a hill session instead">
+    </label>
+    <div class="progress inline-progress" id="rw-progress" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <ul class="log" id="rw-log" aria-live="polite"></ul>
+    </div>
+    <p class="error" id="rewrite-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="rw-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="rw-go">Rewrite</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== EXPORT ===================== -->
+<dialog id="export-dialog">
+  <div class="dialog-body">
+    <h2>Export</h2>
+    <div class="export-grid">
+      <button type="button" class="btn" data-export="json">Plan as JSON</button>
+      <button type="button" class="btn" data-export="share">Share bundle for a friend</button>
+    </div>
+    <p class="hint">A share bundle carries zone names, not your paces — whoever imports it gets
+      their own paces. Hand it to <code>gpp import --share</code>.</p>
+    <h3 class="sub">One session</h3>
+    <div class="row">
+      <label class="field grow"><span class="field-label">Session</span><select id="x-workout"></select></label>
+      <label class="field grow"><span class="field-label">Format</span>
+        <select id="x-format">
+          <option value="icu">intervals.icu text</option>
+          <option value="zwo">Zwift ZWO</option>
+          <option value="mrc">MRC</option>
+          <option value="erg">ERG (needs a power profile)</option>
+        </select></label>
+    </div>
+    <div class="row">
+      <button type="button" class="btn" id="x-download">Download</button>
+      <button type="button" class="btn ghost" id="x-copy">Copy to clipboard</button>
+      <span class="ok-note" id="x-copied" hidden>Copied</span>
+    </div>
+    <p class="error" id="export-error" role="alert" hidden></p>
+    <div class="dialog-foot"><button type="button" class="btn ghost" id="x-close">Close</button></div>
+  </div>
+</dialog>
+
+<!-- ===================== LIBRARY ===================== -->
+<dialog id="library-dialog" class="wide">
+  <div class="dialog-body">
+    <h2>Library</h2>
+    <p class="hint">Sessions and plan templates saved on this machine, plus the built-ins.</p>
+    <div class="lib-grid">
+      <section>
+        <h3 class="sub">Sessions</h3>
+        <label class="field inline"><span class="field-label">Add on</span><input type="date" id="l-date"></label>
+        <ul class="lib-list" id="l-workouts"></ul>
+      </section>
+      <section>
+        <h3 class="sub">Plan templates</h3>
+        <label class="field inline"><span class="field-label">Start Monday</span><input type="date" id="l-start"></label>
+        <ul class="lib-list" id="l-plans"></ul>
+        <button type="button" class="btn sm" id="l-save-plan">Save the current plan as a template</button>
+      </section>
+    </div>
+    <p class="error" id="library-error" role="alert" hidden></p>
+    <div class="dialog-foot"><button type="button" class="btn ghost" id="l-close">Close</button></div>
+  </div>
+</dialog>
+
+<!-- ===================== COMMAND PALETTE ===================== -->
+<dialog id="palette" class="palette">
+  <div class="palette-body">
+    <input type="text" id="pal-input" placeholder="Type a command…" aria-label="Command"
+           autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true"
+           aria-controls="pal-list" aria-autocomplete="list">
+    <ul id="pal-list" role="listbox" aria-label="Commands"></ul>
+    <p class="hint pal-foot"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> run · <kbd>Esc</kbd> close</p>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+  <span id="toast-text"></span>
+  <button type="button" class="btn sm" id="toast-action" hidden></button>
+</div>
+
+<script src="/static/review.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

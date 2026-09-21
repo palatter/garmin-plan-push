@@ -12,7 +12,12 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   units: 'metric',
   threshold: null,      // "4:30/km"
-  plan: null,           // last describe() payload
+  plan: null,           // last describe() payload; state.plan.json is the plan itself
+  baseline: null,       // the plan as generated / last pushed, for the diff
+  baselineLabel: null,
+  history: [],          // previous plan JSONs, for undo
+  lastAdaptation: null, // reasons from the last pause / replan
+  view: 'list',         // list | calendar
   providers: [],
   pollTimer: null,
 };
@@ -116,7 +121,7 @@ function scheduleZonePreview() {
 }
 
 async function refreshZonePreview() {
-  const activeTab = $('.tab.is-active').dataset.tab;
+  const activeTab = $('.tab[data-tab].is-active').dataset.tab;
   setError('#setup-error', '');
 
   try {
@@ -183,12 +188,13 @@ function rovingGroup(items, selectedAttr, onSelect) {
 }
 
 function initSetup() {
-  rovingGroup($$('.seg'), 'aria-checked', btn => {
+  initAthleteFields();
+  rovingGroup($$('.seg[data-units]'), 'aria-checked', btn => {
     state.units = btn.dataset.units;
     scheduleZonePreview();
   });
 
-  rovingGroup($$('.tab'), 'aria-selected', tab => {
+  rovingGroup($$('.tab[data-tab]'), 'aria-selected', tab => {
     $$('.tab-panel').forEach(p => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
     scheduleZonePreview();
   });
@@ -216,6 +222,7 @@ function initSetup() {
         threshold: state.threshold,
         lthr: $('#s-lthr').value || null,
         hr_max: $('#s-hrmax').value || null,
+        ...collectAthlete(),
       });
       await boot();
     } catch (err) {
@@ -223,6 +230,60 @@ function initSetup() {
       btn.disabled = false;
     }
   });
+}
+
+/* The onboarding answers -- goal race, availability, injuries, constraints.
+   They ride along with every profile save and are pre-filled on return. */
+
+function initAthleteFields() {
+  $$('.day').forEach(b => b.addEventListener('click', () => {
+    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+  }));
+}
+
+function collectAthlete() {
+  const num = sel => { const v = $(sel).value.trim(); return v ? Number(v) : null; };
+  return {
+    injuries: $('#s-injuries').value,
+    constraints: $('#s-constraints').value,
+    instructions: $('#s-instructions').value,
+    longest_recent_run_km: num('#s-longest'),
+    recent_weekly_km: num('#s-weekly'),
+    availability: {
+      days: $$('.day[aria-pressed="true"]').map(b => b.dataset.day),
+      sessions_per_week: num('#s-sessions'),
+      weekday_max_minutes: num('#s-weekday-max'),
+      weekend_max_minutes: num('#s-weekend-max'),
+      long_run_day: $('#s-long-day').value || null,
+    },
+    goal_race: {
+      name: $('#s-goal-name').value.trim(),
+      date: $('#s-goal-date').value,
+      distance: $('#s-goal-dist').value,
+      goal_time: $('#s-goal-time').value.trim(),
+    },
+  };
+}
+
+function fillAthlete(a) {
+  if (!a) return;
+  const av = a.availability || {}, goal = a.goal_race || {};
+  $('#s-injuries').value = (a.injuries || []).join('\n');
+  $('#s-constraints').value = (a.constraints || []).join('\n');
+  $('#s-instructions').value = a.instructions || '';
+  $('#s-longest').value = a.longest_recent_run_km ?? '';
+  $('#s-weekly').value = a.recent_weekly_km ?? '';
+  $$('.day').forEach(b => b.setAttribute('aria-pressed', String((av.days || []).includes(b.dataset.day))));
+  $('#s-sessions').value = av.sessions_per_week ?? '';
+  $('#s-weekday-max').value = av.weekday_max_minutes ?? '';
+  $('#s-weekend-max').value = av.weekend_max_minutes ?? '';
+  $('#s-long-day').value = av.long_run_day || '';
+  $('#s-goal-name').value = goal.name || '';
+  $('#s-goal-date').value = goal.date || '';
+  $('#s-goal-dist').value = goal.distance || '';
+  $('#s-goal-time').value = goal.goal_time || '';
+  const answered = (a.injuries || []).length || (a.constraints || []).length || goal.date || (av.days || []).length;
+  if (answered) $('#s-about').open = true;
 }
 
 /* ------------------------------------------------------------- compose --- */
@@ -278,9 +339,7 @@ async function generate() {
     });
     const done = await pollJob(job, '#c-log', showRelay);
     hideRelay();
-    state.plan = done.result;
-    renderReview(done.result);
-    show('review');
+    openPlan(done.result, true, 'generated');
   } catch (err) {
     setError('#compose-error', err.message);
   } finally {
@@ -375,183 +434,6 @@ function pollJob(id, logSel, onInput) {
   });
 }
 
-/* -------------------------------------------------------------- review --- */
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const KIND_LABEL = {
-  warmup: 'Warm up', run: 'Run', recover: 'Recover',
-  rest: 'Rest', cooldown: 'Cool down',
-};
-
-function fmtDuration(seconds) {
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
-}
-
-function fmtDistance(metres) {
-  if (!metres) return '—';
-  return state.units === 'imperial'
-    ? `${(metres / 1609.344).toFixed(1)} mi`
-    : `${(metres / 1000).toFixed(1)} km`;
-}
-
-function renderLegend() {
-  const names = [
-    ['Recovery', 0.08], ['Easy', 0.24], ['Steady', 0.42],
-    ['Marathon', 0.56], ['Threshold', 0.72], ['Interval', 0.88], ['Reps', 1.0],
-  ];
-  $('#r-legend').innerHTML = '';
-  for (const [label, t] of names) {
-    const span = document.createElement('span');
-    const dot = document.createElement('i');
-    dot.style.background = rampColor(t);
-    span.append(dot, document.createTextNode(label));
-    $('#r-legend').append(span);
-  }
-}
-
-function renderReview(data) {
-  $('#r-title').textContent = data.plan;
-
-  const total = data.workouts.reduce((a, w) => a + w.seconds, 0);
-  const dist = data.workouts.reduce((a, w) => a + (w.summary.metres || 0), 0);
-  $('#r-summary').textContent =
-    `${data.workouts.length} sessions · about ${fmtDuration(total)} of running · ${fmtDistance(dist)}`;
-
-  renderLegend();
-
-  const host = $('#r-workouts');
-  host.innerHTML = '';
-  data.workouts.forEach((w, i) => {
-    host.append(workoutCard(w, i));
-  });
-}
-
-/* Collapse the expanded timeline back into a spoken description, folding
-   consecutive repeats: "15:00 warm up, then 4 times (8:00 threshold, 2:00
-   recovery), then 10:00 cool down". */
-function describeSession(w) {
-  const parts = [];
-  let i = 0;
-  while (i < w.timeline.length) {
-    const b = w.timeline[i];
-    if (b.of && b.of > 1) {
-      const groupSize = w.timeline
-        .slice(i)
-        .findIndex(x => x.rep !== b.rep);
-      const size = groupSize === -1 ? w.timeline.length - i : groupSize;
-      const inner = w.timeline
-        .slice(i, i + size)
-        .map(x => `${x.extent} ${KIND_LABEL[x.kind] || x.kind}, ${x.target}`)
-        .join('; ');
-      parts.push(`${b.of} times: ${inner}`);
-      i += size * b.of;                       // skip the other repetitions
-    } else {
-      parts.push(`${b.extent} ${KIND_LABEL[b.kind] || b.kind}, ${b.target}`);
-      i += 1;
-    }
-  }
-  return `Session profile. ${parts.join('. Then ')}.`;
-}
-
-function workoutCard(w, index) {
-  const card = document.createElement('article');
-  card.className = 'workout';
-  card.style.animationDelay = `${Math.min(index * 45, 300)}ms`;
-
-  const date = new Date(`${w.date}T00:00:00`);
-  const head = document.createElement('div');
-  head.className = 'w-head';
-  head.innerHTML = `
-    <div class="w-date">
-      <span class="dow">${WEEKDAYS[date.getDay()]}</span>
-      <span class="dom">${date.getDate()}</span>
-    </div>
-    <div>
-      <div class="w-name"></div>
-      <div class="w-note"></div>
-    </div>
-    <div class="w-stats">
-      <div class="w-stat"><span class="v">${fmtDuration(w.seconds)}</span><span class="k">Time</span></div>
-      <div class="w-stat"><span class="v">${fmtDistance(w.summary.metres)}</span><span class="k">Distance</span></div>
-    </div>`;
-  $('.w-name', head).textContent = w.name;
-  if (w.notes) $('.w-note', head).textContent = w.notes;
-  else $('.w-note', head).remove();
-
-  const bar = document.createElement('div');
-  bar.className = 'profile-bar';
-  // The chart is colour and height only, and `title` never appears on touch.
-  // One spoken sentence beats 30 unreachable tooltips; the step table below
-  // carries the detail.
-  bar.setAttribute('role', 'img');
-  bar.setAttribute('aria-label', describeSession(w));
-  const totalSeconds = w.timeline.reduce((a, b) => a + b.seconds, 0) || 1;
-  for (const block of w.timeline) {
-    const seg = document.createElement('div');
-    seg.className = 'seg-block' + (block.open_ended ? ' is-open' : '');
-    seg.style.flex = `${(block.seconds / totalSeconds) * 100} 0 0`;
-    seg.style.background = rampColor(block.intensity);
-    seg.style.height = `${28 + block.intensity * 72}%`;
-    const rep = block.rep ? ` (rep ${block.rep}/${block.of})` : '';
-    seg.title = `${KIND_LABEL[block.kind] || block.kind}${rep} · ${block.extent} · ${block.target}`;
-    bar.append(seg);
-  }
-
-  const steps = document.createElement('details');
-  steps.className = 'w-steps';
-  const rows = w.timeline.map(b => {
-    const tr = document.createElement('tr');
-    const rep = b.rep ? ` <span class="muted">${b.rep}/${b.of}</span>` : '';
-    tr.innerHTML = `
-      <td>${b.extent}</td>
-      <td><span class="kind"><i class="dot"></i>${KIND_LABEL[b.kind] || b.kind}${rep}</span></td>
-      <td class="tgt">${b.target}</td>`;
-    $('.dot', tr).style.background = rampColor(b.intensity);
-    return tr;
-  });
-  const table = document.createElement('table');
-  const tbody = document.createElement('tbody');
-  rows.forEach(r => tbody.append(r));
-  table.append(tbody);
-  const notes = [];
-  if (w.summary.open_ended) notes.push('includes a lap-button step');
-  if (w.summary.truncated) notes.push('chart shows the first ' + w.timeline.length);
-  steps.innerHTML =
-    `<summary>${w.timeline.length} steps${notes.length ? ' · ' + notes.join(' · ') : ''}</summary>`;
-  steps.append(table);
-
-  card.append(head, bar, steps);
-  return card;
-}
-
-function initReview() {
-  $('#r-back').addEventListener('click', () => show('compose'));
-
-  $('#r-download').addEventListener('click', () => {
-    if (!state.plan) return;
-    const blob = new Blob([JSON.stringify(state.plan.json, null, 2)],
-                          { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${state.plan.plan.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  $('#r-push').addEventListener('click', () => {
-    setError('#push-error', '');
-    $('#p-results').hidden = true;
-    $('#p-results').innerHTML = '';
-    $('#p-progress').hidden = true;
-    $('#p-mfa').hidden = true;
-    $('#p-log').innerHTML = '';
-    $('#p-go').disabled = false;
-    $('#push-dialog').showModal();
-  });
-}
-
 /* ---------------------------------------------------------------- push --- */
 
 function initPush() {
@@ -599,6 +481,10 @@ function initPush() {
       // line is the one telling the user to sync their watch. Hiding it here
       // would erase the only instruction that matters.
       renderPushResults(done.result.results);
+      // From here on, "Changes" means changes since this push.
+      state.baseline = structuredClone(state.plan.json);
+      state.baselineLabel = 'the last push';
+      renderChanges();
     } catch (err) {
       setError('#push-error', err.message);
       $('#p-go').disabled = false;
@@ -680,7 +566,16 @@ async function boot() {
   $('#s-threshold').value = s.profile.threshold;
   if (s.profile.lthr) $('#s-lthr').value = s.profile.lthr;
   if (s.profile.hr_max) $('#s-hrmax').value = s.profile.hr_max;
-  $$('.seg').forEach(b => b.classList.toggle('is-active', b.dataset.units === state.units));
+  fillAthlete(s.athlete);
+  $$('.seg[data-units]').forEach(b => {
+    const on = b.dataset.units === state.units;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  // The threshold is known now, so "Edit profile" lands on a form that can be
+  // saved as it is rather than one waiting for a race time.
+  $('#tab-known').click();
 
   show('compose');
 }
@@ -690,6 +585,7 @@ initSetup();
 initCompose();
 initRelay();
 initReview();
+initPalette();
 initPush();
 initSettings();
 boot().catch(err => {

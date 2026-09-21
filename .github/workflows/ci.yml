@@ -92,6 +92,8 @@ jobs:
           need = {
               "gpp/web/static/index.html",
               "gpp/web/static/app.js",
+              "gpp/web/static/review.js",
+              "gpp/web/static/review.css",
               "gpp/web/static/style.css",
           }
           missing = need - set(names)
