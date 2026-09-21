@@ -1,8 +1,9 @@
 # Roadmap
 
-Fifty candidate features, from research into what comparable tools do, what
-the Garmin platform exposes that we don't touch, and what the training-science
-literature actually supports.
+One hundred candidate features in two batches, from research into what
+comparable tools do, what the Garmin platform exposes that we don't touch, and
+what the training-science literature actually supports. The [second fifty](#second-fifty)
+came from a follow-up pass that closed most of the first batch's research gaps.
 
 Tiered by value-per-effort, not by excitement. **Effort** is S (hours), M (a
 day or two), L (a week+), XL (a project). Sources are cited where a claim is
@@ -150,6 +151,125 @@ work. State the rule, show the user why the plan changed, let them override.
 
 ---
 
+## Second fifty
+
+From the follow-up research: intervals.icu, TrainingPeaks, Runna and Garmin
+Run Coach, Runalyze and GoldenCheetah, Pfitzinger's plan structure, the
+critical-speed literature, heat-adjustment formulas, HRV-guided training
+trials, `python-garminconnect`'s read-side, and — most usefully — the
+documented ways AI-generated plans go wrong. Same tiers and effort scale.
+
+### Plan sanity — the ways AI plans actually fail
+
+A coaching-expert evaluation of ChatGPT-written plans found they *"increased
+training variables too rapidly, violating individual progression principles"*,
+that quality *rises with the amount of input information provided*, and that
+runners describe them as swinging *"between very mild or incredibly intense,
+with no middle ground"* ([PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC10915606),
+[Third Coast](https://thirdcoasttraining.com/why-ai-running-plans-fail-what-runners-need-to-know/)).
+Every item here is a check we can run on the plan *before* it reaches a watch.
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 51 | **Plan sanity report** shown on the review screen: ramp too fast, no rest days, hard sessions back-to-back, no moderate sessions. The single highest-leverage item in this batch — it turns the documented failure modes into a checklist. | 1 | M |
+| 52 | **Injury history and constraints in the profile**, fed to every prompt. The study's clearest finding: more input, better plan. "Left Achilles, no hills for 6 weeks" should never have to be retyped. | 1 | S |
+| 53 | **Consecutive-hard-days rule** — flag two quality sessions in a row unless the user declared a double day. | 1 | S |
+| 54 | **"Middle gear" check** — warn when a plan has no steady/moderate sessions at all, the mild-or-brutal pattern runners complain about. | 1 | S |
+| 55 | **Monotony index** (Runalyze / Foster): variance of daily load over 7 days. The same load every day is the pattern that precedes overtraining ([Runalyze](https://appsforstrava.com/app/runalyze)). Computable on the plan itself, no history needed. | 2 | S |
+| 56 | **Per-session-type progression cap** — e.g. threshold minutes week over week — as a warning, not a block. | 2 | S |
+| 57 | **Weekly structure lint** (Pfitzinger): a recovery day after each quality day; strides present in base weeks; a medium-long run midweek in marathon blocks. | 2 | M |
+| 58 | **Return-to-run templates**: Pfitzinger's five-week post-race recovery, and a post-injury ramp using the Stryd layoff tiers (#19). | 2 | M |
+
+### Periodization and methodology
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 59 | **Mesocycle scaffolding** the generator must fill: Pfitzinger's five — mileage establishment → lactate-threshold endurance → race preparation (VO₂) → taper → recovery ([Running With Rock](https://runningwithrock.com/pfitz-marathon-training-explained/)). A skeleton with phase goals beats "write me 16 weeks". | 2 | M |
+| 60 | **Medium-long run** as a named session type (~90–120 min midweek). | 2 | S |
+| 61 | **Threshold-embedded long runs** ("10 miles with 5 at 15k–HM pace") in the workout library — the DSL already expresses it; it needs to be a one-click template. | 2 | S |
+| 62 | **Strides** as a first-class step: short, fast, full recovery, no target. Naive plans omit them entirely. | 1 | S |
+| 63 | **Critical-speed profile option**: two all-out trials (e.g. 5 min and 20 min) → CS and D′ by linear regression. A 2-point model is as good as 3-point with trivial bias ([PubMed](https://pubmed.ncbi.nlm.nih.gov/30427230/)). A field test, not a race, for people who don't race. | 2 | M |
+| 64 | **Marathon Shape** (Runalyze): weighted 6-month weekly mileage (⅔) + 10-week long runs (⅓) → "do you have the endurance for this distance". Needs #11. | 3 | M |
+| 65 | **VDOT-style zone names** (E / M / T / I / R) as an alternative labelling of our bands, since intervals.icu users think in them. | 3 | S |
+| 66 | **Race-time predictions across distances** with honest error bars, from CS or VDOT. | 3 | M |
+
+### Adaptation signals — only what the evidence supports
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 67 | **HRV-guided downgrade** of a quality session when morning HRV is below baseline. Evidence is real but modest: an 8-week RCT in professional runners (n = 12) found small-to-medium effects on submaximal parameters ([ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0031938421003413)); the meta-analysis is cautious. Ship as a *suggestion with the reason shown*, never an automatic rewrite. | 3 | M |
+| 68 | **Training Readiness gate** — read Garmin's own score and nudge "today's session looks too hard for how you slept". Garmin Run Coach already adjusts daily on sleep, HRV and readiness. | 3 | M |
+| 69 | **Illness and holiday modes** (Runna) — explicit pause, with the layoff tiers applied on return. | 2 | M |
+| 70 | **"Readapt or keep?" prompt** after a missed run, Runna's exact UX ([Runna vs Garmin Coach](https://www.runningwestwardho.co.uk/post/runna-vs-garmin-coach)). Pairs with #18. | 2 | M |
+| 71 | **Running Tolerance** (Garmin metric) as a volume-ceiling hint when generating. | 3 | M |
+| 72 | **Sleep-aware day swap** — move a quality session by a day when the night before was bad. | 3 | L |
+
+### Environment
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 73 | **Dew-point pace adjustment**, the rule of thumb coaches actually use: add 0.025 min/mile per °F of dew point above 60 °F; or temperature + dew point ≥ 100 → adjust, ≥ 180 → no hard running ([Runners Connect](https://runnersconnect.net/training/tools/temperature-calculator/)). Needs no history — a forecast or a typed number. | 1 | S |
+| 74 | **sWBGT race-day pacing** from a weather API: `0.567·T + 0.393·e + 3.94`, applied to published marathon performance curves from 7,867 athletes across 1,258 races ([Running Writings](https://apps.runningwritings.com/heat-adjusted-pace/)). | 3 | M |
+| 75 | **Altitude adjustment** — *not researched*: this pass found heat evidence but no comparable altitude formula. Listed so it isn't forgotten, not so it gets built on a guess. | — | — |
+| 76 | **Daylight-aware scheduling** for early or late runs. A nicety. | 3 | S |
+
+### Garmin platform depth
+
+`python-garminconnect` now exposes 16 advanced-metrics methods (training
+readiness, training status, HRV, VO₂, training zones, running tolerance) plus
+training-plan objects, an exercise catalog, in-place workout editing and
+push-to-device ([GitHub](https://github.com/cyberjunky/python-garminconnect)).
+All reverse-engineered; all subject to breaking without notice.
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 77 | **Read training status / readiness / HRV / VO₂ / tolerance** — the keystone alongside #11; everything in the previous table depends on it. | 2 | L |
+| 78 | **In-place workout editing** (`update_workout`) instead of delete-and-recreate — keeps Garmin's IDs and any history attached to them. | 1 | S |
+| 79 | **Push to device** (`push_workout_to_device`) so a workout lands on the watch now, not at the next sync. | 1 | S |
+| 80 | **Exercise catalog search** for strength sessions — needed for #22. | 2 | M |
+| 81 | **Push a block as a Garmin training-plan object** rather than loose workouts; schema unverified, so this is L not M. | 3 | L |
+| 82 | **Per-step cues on the watch** — the Fenix displays optional step notes during a workout ([Garmin manual](https://www8.garmin.com/manuals/webhelp/GUID-C001C335-A8EC-4A41-AB0E-BAC434259F92/EN-US/GUID-54A017B7-95D1-4C96-A39F-AEA91B7ACE29.html)). We send `description`; verify it renders, then let the UI author cues like "tall posture". | 1 | S |
+| 83 | **Daily Suggested Workout conflict warning** — a pushed plan and Garmin's own suggestions compete for the same day. | 2 | S |
+| 84 | ~~**Python-floor watch**~~ **done** — turned out not to be hypothetical; see below. The project now requires Python 3.12, matching `python-garminconnect` 0.3.16. | — | — |
+
+### Interoperability
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 85 | **Import and export intervals.icu's text workout syntax** — the closest free tool, 160k athletes, and its plain-text format is a natural sibling of our DSL ([intervals.icu](https://www.intervals.icu/features/workout-builder/)). | 2 | M |
+| 86 | **Export FIT workout files** (the USB sideload path from the very first conversation), plus ZWO/MRC/ERG for cross-training on a bike. | 2 | M |
+| 87 | **One-line workout generator** — TrainingPeaks lets coaches type `20min warmup, 6x3m @ threshold w/ 2min recovery, 10 min cooldown` and get a structured workout ([TrainingPeaks](https://www.trainingpeaks.com/learn/articles/introducing-trainingpeaks-workout-builder/)). A fast path for people who know exactly what they want. | 1 | S |
+| 88 | **An MCP server** exposing generate / preview / push, so *any* assistant — Claude, ChatGPT, Gemini, a local model — can drive the tool conversationally. IcuSync already does this for intervals.icu; `garmin_mcp` exists for the read-side. Directly serves "runs generated by any AI". | 2 | M |
+| 89 | **RPE targets** (TrainingPeaks supports perceived exertion). Garmin has no RPE target type, so compile to "no target" plus a step note — honest, and still useful for runners without a HR strap. | 3 | S |
+| 90 | **Per-session load number** (rTSS / TRIMP) on the review card, auto-calculated the way TrainingPeaks does — a load *number*, never an ACWR. | 2 | M |
+
+### App experience
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 91 | **Lap-alert text** — the watch's lap alert message is customisable; author it per workout. | 3 | S |
+| 92 | **"Why this session" line** pushed as the first step note, so the purpose is on the wrist. | 2 | S |
+| 93 | **Watch-screen preview** — a mock of what the step screen will show, so surprises happen on a laptop. | 3 | M |
+| 94 | **Plan-health dashboard**: weekly volume, hard-time share, long-run trend. The gap every adaptive tool was criticised for lacking. | 2 | M |
+| 95 | **Onboarding asks the right questions**: injury history, availability, goal race — feeding #52, #17 and #7 in one screen. | 1 | M |
+| 96 | **Command palette and shortcuts** — `⌘K` to jump between compose / review / push. | 3 | S |
+
+### Distribution and operations
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 97 | **Pin GitHub Actions to commit SHAs** — supply-chain hygiene now that the repo is public and Dependabot will keep the pins fresh. | 1 | S |
+| 98 | **Release workflow**: tag → build wheel → GitHub Release with notes, so `uv tool install` can target a version instead of `main`. | 1 | S |
+| 99 | **Homebrew tap and winget manifest**. Package managers don't dodge SmartScreen (see the stack assessment) but they do make install one familiar command. | 3 | M |
+| 100 | **`gpp doctor --bundle`**: write a local diagnostics file for bug reports — versions, profile shape, last error — and never upload it. | 2 | S |
+
+### What this batch changed in the first fifty
+
+- **#11 (read activities) and #77 (read metrics) are the same keystone** seen from two sides; do them together.
+- **#24 (weather) is now two items**: #73 is a Tier 1 rule of thumb needing no infrastructure; #74 is the proper model.
+- **#22 (strength) depends on #80.**
+- **The Dependabot advisory was not a false positive.** `python-garminconnect` <= 0.3.4 set insecure permissions on the OAuth token store. Our declared floor was `>=0.2.19` and our Python floor was 3.11 - but 0.3.16 needs Python 3.12, so the lock file had silently forked: `0.3.16` for 3.12+, **`0.3.2` for 3.11**. Every Python 3.11 install, including three green CI jobs, was running the vulnerable version. Fixed by requiring Python >= 3.12 and `garminconnect >= 0.3.16`; the lock now has one entry. A passing matrix can hide a forked resolution.
+
 ## Tech stack assessment
 
 Measured, not assumed.
@@ -215,20 +335,24 @@ it only if you're shipping to strangers.
 
 ## Coverage gaps in this research
 
-Six of eight research streams died on a session rate limit and their findings
-are **not** reflected above. What's missing:
+The first batch lost six of eight research streams to a session rate limit.
+The follow-up pass (done directly, not via subagents) covered intervals.icu,
+TrainingPeaks, Runna and Garmin Run Coach, Runalyze and GoldenCheetah,
+Pfitzinger, critical speed, heat adjustment, HRV-guided training and the
+`python-garminconnect` read-side — those are reflected in the second fifty.
 
-- **Garmin platform deep-dive** — the read-side (training status, HRV, Body
-  Battery, race predictor) and Courses API are sketched from general knowledge,
-  not verified endpoint-by-endpoint. Items #26–#30 are lower-confidence.
-- **intervals.icu / TrainingPeaks / Runna / Garmin Coach** — the competitor
-  set here is Final Surge, Stryd, COROS, Humango and AI Endurance only.
-  intervals.icu especially is a gap, since it's the closest free analogue.
-- **Open-source prior art** — GoldenCheetah, Runalyze, existing Garmin workout
-  builders. Likely contains directly reusable constant tables.
-- **Pfitzinger / critical-speed methodology** — #36 is named but not
-  specified. (Daniels/VDOT, taper, and intensity distribution were
-  subsequently researched directly and are reflected above.)
+Still not researched, stated so nobody builds on a guess:
+
+- **Altitude pace adjustment** (#75) — no formula found in this pass.
+- **Garmin's training-plan object schema** (#27, #81) — the library exposes
+  it; the shape is unverified.
+- **Courses API** (#26) — sketched from the official docs' description only.
+- **Reddit** was unreachable from the research environment throughout, so the
+  "what runners complain about" signal comes from App Store reviews,
+  Trustpilot, coaching blogs and the one peer-reviewed evaluation of
+  ChatGPT-written plans. Several review samples are small (Stryd n = 24,
+  Humango n = 21, AI Endurance n = 24) and indicate failure *modes*, not
+  prevalence.
 
 Also: Reddit was unreachable from the research environment, so the "what do
 runners actually complain about" signal comes from App Store reviews,

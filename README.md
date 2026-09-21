@@ -17,7 +17,8 @@ and your Garmin password never leaves your machine.
 ## Install
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (one
-command on any OS — the link has it). Then:
+command on any OS — the link has it; it fetches Python 3.12+ for you if
+needed). Then:
 
 ```bash
 uv tool install git+https://github.com/palatter/garmin-plan-push
