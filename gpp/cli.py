@@ -397,6 +397,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", help="path to profile.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    from .cli_extra import register
+
+    register(sub)
+
     web = sub.add_parser("web", help="open the graphical app in your browser")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="don't open a browser window")
