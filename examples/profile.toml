@@ -1,6 +1,6 @@
 # Copy this to ./profile.toml and edit. Everything downstream derives from it.
 
-name = "Patrick"
+name = "Runner"
 units = "metric"          # or "imperial"
 
 [pace]

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Nothing here writes to the repo. Scope the token down so a compromised
+# action or dependency in this workflow can read, but not push or comment.
+permissions:
+  contents: read
+
 jobs:
   test:
     # The app is installed by end users on all three, and the one bug class

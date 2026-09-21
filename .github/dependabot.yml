@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # garminconnect tracks an unofficial API and ships fixes when Garmin
+  # changes things; staying current is how the push keeps working.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
