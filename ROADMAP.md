@@ -1,6 +1,6 @@
 # Roadmap
 
-One hundred candidate features in two batches, from research into what
+Two hundred candidate features in three batches, from research into what
 comparable tools do, what the Garmin platform exposes that we don't touch, and
 what the training-science literature actually supports. The [second fifty](#second-fifty)
 came from a follow-up pass that closed most of the first batch's research gaps.
@@ -316,6 +316,188 @@ All reverse-engineered; all subject to breaking without notice.
 - **#24 (weather) is now two items**: #73 is a Tier 1 rule of thumb needing no infrastructure; #74 is the proper model.
 - **#22 (strength) depends on #80.**
 - **The Dependabot advisory was not a false positive.** `python-garminconnect` <= 0.3.4 set insecure permissions on the OAuth token store. Our declared floor was `>=0.2.19` and our Python floor was 3.11 - but 0.3.16 needs Python 3.12, so the lock file had silently forked: `0.3.16` for 3.12+, **`0.3.2` for 3.11**. Every Python 3.11 install, including three green CI jobs, was running the vulnerable version. Fixed by requiring Python >= 3.12 and `garminconnect >= 0.3.16`; the lock now has one entry. A passing matrix can hide a forked resolution.
+
+## Third hundred
+
+From a third research pass (21 September 2026) and a line-by-line review of
+the push path, the checks, adaptation, generation and the DSL. This batch is
+different from the first two in one way: **every item was chosen to be
+buildable here** — no paid certificates, no unverified Garmin schemas — so
+the list is a plan, not a wish list. The review findings come first because
+some of them are bugs that would bite on the first real push.
+
+Sources for the research half, in one place: [python-garminconnect releases](https://github.com/cyberjunky/python-garminconnect/releases)
+(0.3.16, 146+ methods, MFA resubmission since 0.3.12, `get_next_scheduled_workout`),
+[Garmin's 2026 feature roll-down](https://www.dcrainmaker.com/2026/08/garmin-fenix9-software-feature-overview.html)
+and [Load Focus](https://www8.garmin.com/manuals/webhelp/GUID-EECCAC99-90D6-4AB1-9A3A-EC433D3365E2/EN-US/GUID-C3205D96-DAB6-4C93-A225-5B8D7B5A5621.html),
+[Stryd Assistant](https://the5krunner.com/2026/06/03/stryd-assistant-adaptive-training/),
+[Runna's 2026 updates](https://www.runningwestwardho.co.uk/post/runna-app-updates-2026-smarter-training-plans-adaptive-coaching-new-features-explained)
+and [Adapt for Heat](https://endurance.biz/2026/industry-news/runna-updates-app-to-support-year-round-training/),
+[intervals.icu's plan builder](https://www.intervals.icu/features/annual-training-plan/),
+[Garmin's acquisition of TrainingPeaks](https://gadgetsandwearables.com/2026/07/22/garmin-acquires-trainingpeaks-trainheroic/),
+[Garmin Coach complaints](https://www.athletedata.health/guides/garmin-coach-vs-ai-coach),
+the [BMB study of AI marathon plans](https://www.thefitfuturist.com/en/news/ai-marathon-training-plan-study/),
+[Anthropic structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
+[Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs),
+[LLM-as-judge practice](https://www.openlayer.com/blog/llm-as-judge-evaluation-guide),
+[Strava's API policy](https://sahha.ai/blog/health-api-ai-restrictions/),
+the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encoding-workout-files/),
+[uv trusted publishing](https://github.com/astral-sh/trusted-publishing-examples),
+[WCAG 2.2](https://www.w3.org/TR/WCAG22/), and the science:
+[TID in recreational vs elite runners](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11329428/),
+[durability and resilience](https://onlinelibrary.wiley.com/doi/10.1111/sms.70032),
+[strength training and running economy](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11052887/),
+[heat acclimation](https://www.gssiweb.org/sports-science-exchange/article/sse-153-heat-acclimatization-to-improve-athletic-performance-in-warm-hot-environments),
+[fuelling and gut training](https://runnersconnect.net/marathon-gut-training/),
+[marathon pacing at scale](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0352808),
+[cadence and loading](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12440572/),
+[menstrual-cycle phase and performance](https://journals.physiology.org/doi/full/10.1152/japplphysiol.00223.2025),
+[Garmin's step-note limit](https://forums.garmin.com/sports-fitness/cycling/f/edge-530/209957/display-step-notes).
+
+### Fixes from the review
+
+| # | Fix | Tier | Effort |
+|---|---|---|---|
+| 101 | **Push scopes to the plan's own slug.** `_push_one` collected every gpp-tagged workout on the date, any plan, so pushing plan B updated or deleted plan A's session on a shared day. | 1 | S |
+| 102 | **Double days re-push safely.** The calendar snapshot was taken once, so two sessions on one date both matched the same stale workout: the second overwrote the first in place, then tried to delete ids already gone. Matched candidates are consumed per item, same-title first. | 1 | S |
+| 103 | **ASCII-only tag slugs.** `str.isalnum()` kept "ö", the tag regex only accepts `[a-z0-9]`, so a plan named "Höst 10k" was never recognised as ours on re-push and duplicated forever. | 1 | S |
+| 104 | **Verify what matters.** Read-back now compares end-condition type and value, both target bounds, iteration counts and sport, not just step type and one bound. | 1 | S |
+| 105 | **MFA-safe connect.** The `TypeError` fallback re-created the client without `prompt_mfa`/`tokenstore`; MFA accounts got a baffling failure. Also: a login failure now names the token cache and suggests clearing it, because garth tokens go stale silently. | 1 | S |
+| 106 | **Constraint parsing that understands "No running Mondays".** The old regex turned that into keyword "running" and blocked every session. Day-of-week rules become availability rules; generic words are ignored; "for 6 weeks" bounds the rule in time. | 1 | M |
+| 107 | **Race day is not taper volume.** A marathon in race week made every taper look shallow; race-role sessions are excluded from taper and ramp arithmetic. | 1 | S |
+| 108 | **Rest days are distinct dates.** A double day plus a rest day was flagged as "no rest day". | 2 | S |
+| 109 | **One role-inference helper.** checks, adapt and load computed the median three ways and could disagree on which session is the long run. | 2 | S |
+| 110 | **Replanning checks the neighbours.** A moved quality session could land next to another; a moved long run could follow a quality day. | 1 | S |
+| 111 | **Scale clock-format durations.** `1:05:00` and `1h05m` long runs were left unscaled on the return week. | 2 | S |
+| 112 | **Pausing shifts the phase scaffolding** (`weeks`) along with the sessions. | 3 | S |
+| 113 | **The prompt knows what day it is.** Today, the weekday, the default start (next Monday) and the horizon are stated; "four weeks to a 10k" no longer leaves the year to chance. A "plan starts in the past" check backs it. | 1 | S |
+| 114 | **Real multi-turn corrections.** The previous answer was pasted back truncated to 4,000 characters with "fix only that"; the model could not see what it wrote. Corrections are now assistant/user turns with the full previous output. | 1 | M |
+| 115 | **Truncation is detected, not misreported.** A 16-week plan overflows 16k tokens; the old path said "unbalanced braces" and retried into the same wall. `max_tokens` scales with the horizon, `stop_reason` is checked, and the retry raises the limit. | 1 | S |
+| 116 | **Streaming fallback for compatible servers** that reject `stream_options`: the retry drops streaming as well as the response format. | 2 | S |
+| 117 | **`gpp push` counts in-place updates** in its summary line ("0 pushed" after a successful update). | 3 | S |
+| 118 | **Step notes fit the watch.** Schema and compiler cap notes at Garmin's 212 characters; workout names are trimmed to what Connect keeps. | 2 | S |
+
+### Generation quality
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 119 | **Native structured outputs on every provider** — JSON-schema mode for OpenAI and Gemini, `format` for Ollama, the verified Anthropic parameter — each with automatic fallback to prompt-only JSON. Grammar-constrained decoding makes malformed JSON impossible and is measured ~6× faster locally. | 1 | M |
+| 120 | **A level envelope in the prompt**: weekly-km range, long-run cap and sessions per week derived from the profile, as numbers. The BMB study's clearest failure was plans that do not differentiate performance levels. | 1 | M |
+| 121 | **Prompt caching and a cost total** — the large, constant system prompt is cached; the run reports tokens and cost summed over attempts. | 2 | S |
+| 122 | **Chunked generation for long plans**: one mesocycle per call with a running summary of what came before, so 24-week plans do not overflow and each phase gets the model's full attention. | 2 | L |
+| 123 | **`gpp eval`** — a plan-quality harness: fixed athlete profiles × requests → sanity findings, correction turns, tokens and cost per provider, with a rubric decomposed into discrete checks rather than one holistic score. | 2 | M |
+| 124 | **`gpp providers --bench`** measures a local model on this machine (schema compliance, correction turns, seconds) and replaces the unverified verdict table with results. | 2 | M |
+| 125 | **Plan rationale**: the model states the block's logic — phases, weekly volumes, the key sessions — as `summary`, shown on the review screen and kept with the plan. Athletica's differentiator is explaining the reasoning. | 1 | S |
+| 126 | **Intensity-distribution choice** in the profile: pyramidal (default for recreational runners, where the 2025 meta-analysis finds it better), polarized, or sub-threshold "singles". Prompt rules and check thresholds follow the choice. | 2 | M |
+| 127 | **Race-specific session library** by distance (5k/10k/half/marathon), Daniels- and Pfitzinger-shaped, with a source line on each. | 2 | M |
+| 128 | **Heat block**: ten to fourteen days before a hot race, five or six sessions carry post-run passive-heat notes (30–45 min hot bath or sauna, as effective as exercising in heat) and a race-week checklist. | 2 | M |
+| 129 | **Fuelling practice on long runs**: sessions of 90 min or more carry a carbohydrate cue that progresses 30 → 90 g/h over six to eight weeks, and the plan grows a gut-training checklist. | 2 | S |
+| 130 | **Strength sessions placed by rule**: two a week on easy days, never the day before quality or the long run, 48 h apart. | 2 | M |
+| 131 | **Post-race recovery plan** (Pfitzinger's five weeks) offered the day after an A race, as Runna and Stryd now do. | 2 | S |
+| 132 | **Continue from the last block**: a new plan starts from the final weeks of the previous one instead of resetting — volume, long run and sessions carried forward into the prompt. | 1 | M |
+
+### Sanity checks
+
+| # | Check | Tier | Effort |
+|---|---|---|---|
+| 133 | Long run above ~35% of the week's volume in a marathon build (40% shorter distances) — the "one huge run and nothing else" pattern. | 1 | S |
+| 134 | Two long runs in one week. | 2 | S |
+| 135 | Quality or long session the day after a race. | 2 | S |
+| 136 | A hard session inside the last three days before the A race. | 1 | S |
+| 137 | Strength the day before quality or the long run. | 3 | S |
+| 138 | Goal race set but no race-day session; marathon goal without a long run of at least 30 km in the block. | 2 | S |
+| 139 | Weekly minutes exceed the availability envelope (sum of the daily limits). | 2 | S |
+| 140 | Date sanity: sessions before today, a plan spanning more than a year, an A race before the first session. | 1 | S |
+| 141 | Target sanity: HR above `hr_max`, cadence outside 150–200, explicit paces faster than the athlete's repetition zone. | 2 | S |
+| 142 | Ten or more consecutive days without a rest day, across week boundaries. | 2 | S |
+
+### Garmin platform
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 143 | **Load Focus preview**: the plan's minutes bucketed the way the watch does it — low aerobic, high aerobic, anaerobic — so the four-week distribution is known before it is run. | 2 | M |
+| 144 | **FIT workout export** with a built-in encoder (file_id, workout, workout_step, repeat steps, targets, notes, CRC) for USB sideload; no dependency, round-trip tested. | 2 | L |
+| 145 | **Push-time conflict check**: the calendar's next scheduled and suggested workouts on the plan's dates are listed before anything is sent, completing #83. | 2 | S |
+| 146 | **Token health in `gpp doctor`**: cache age, a cheap authenticated call, and the fix when it is stale. | 1 | S |
+| 147 | **Retry with backoff** on 429/5xx for reads, and a "Garmin changed something" message naming the library version when the transport probe fails — the March 2026 breakage shape. | 2 | S |
+| 148 | **Push receipts**: every push writes a local record (ids, hashes, dates, plan) so `gpp pushes` lists them and `gpp unpush --receipt` removes exactly those, even if names changed since. | 1 | M |
+| 149 | **Import Garmin's HR zones into the profile** (`gpp garmin-predict --apply-zones`), completing #28. | 3 | S |
+| 150 | **Reverse compile**: read a Garmin workout back into the DSL (by id or from the calendar), so hand-made workouts can be edited, saved to the library and re-pushed. | 2 | M |
+| 151 | **Race-day session**: with a goal race and time, the plan gets a race workout with pacing targets — even splits by default, the 10-10-10 structure for marathons — pushed like any other. | 1 | M |
+| 152 | **Body status log** (illness, injury, cycle symptoms) that feeds the pause suggestion — logging only; phase-based periodization is deliberately not done, see below. | 3 | S |
+| 153 | **MFA retry in the web app**: a wrong code re-prompts instead of failing the whole push (the library keeps the session since 0.3.12). | 2 | S |
+| 154 | **Live dry run**: `gpp push --dry-run --live` reads the calendar and prints exactly what would be created, updated, deleted and left alone. | 1 | S |
+
+### App experience
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 155 | **Recap after a run** (Stryd's headline feature): once synced, each session card gets a plain-language line — duration and distance vs plan, pace vs target, HR drift — and `gpp recap`. | 2 | M |
+| 156 | **The week ahead**: a panel and `gpp week` with next week's sessions, volume, phase and the key session, two or three days before the phase changes. | 2 | S |
+| 157 | **Move without dragging**: a "Move to…" control on every card and chip (WCAG 2.5.7) and all targets at least 24 px (2.5.8). | 1 | S |
+| 158 | **Rationale panel** on the review screen, from #125. | 2 | S |
+| 159 | **Load Focus chart** beside plan health, from #143. | 3 | S |
+| 160 | **ICS export**: the plan as calendar events with the session text, for Google/Apple/Outlook. | 1 | S |
+| 161 | **Print view**: a print stylesheet that lays a week per row on one page. | 3 | S |
+| 162 | **Installable**: web-app manifest and service worker so the local app pins to a dock or home screen. | 3 | S |
+| 163 | **Shortcut sheet** on `?` and a few more keys (edit the focused card, jump to today). | 3 | S |
+| 164 | **Education snippets**: what each session type does and the evidence line, in the edit dialog and the watch preview; `gpp why threshold`. | 2 | M |
+| 165 | **Never lose the plan on refresh**: the current plan autosaves locally; recent plans reopen from the compose screen and `gpp plans`. | 1 | M |
+| 166 | **Hot-day toggle** per session: dew-point-adjusted targets and a note, from `environment.py`, without editing the plan. | 2 | S |
+| 167 | **Mileage graph** from synced runs against the plan (Runna's consistency view). | 3 | M |
+| 168 | **First-run checklist** after setup — write, review, send — with empty states that say what to do next. | 2 | S |
+| 169 | **Accessibility test**: every control labelled, no duplicate ids, every dialog has a heading, checked in the test suite against the real page. | 2 | S |
+| 170 | **Contrast test** for the new stylesheet's token pairs, measured, in the suite. | 3 | S |
+
+### Command line and developer experience
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 171 | `gpp next` — the next session with its steps, watch-style, and `gpp today` folded in. | 2 | S |
+| 172 | `gpp plans` — recent plans (from #165) to open, diff or push. | 2 | S |
+| 173 | Shell completions generated from the parser (`gpp completions bash|zsh|fish|powershell`). | 3 | S |
+| 174 | `--json` on every read-only command, for scripts and assistants. | 2 | S |
+| 175 | `gpp doctor` checks Python and uv versions, the Windows shim on PATH, the library version, and Garmin reachability. | 2 | S |
+| 176 | `[defaults]` in the profile: provider, attempts, port, device, replace. | 3 | S |
+| 177 | `gpp profile set key value` — edit one field without opening the TOML. | 3 | S |
+| 178 | `--verbose` writes a debug log (request metadata, never secrets) that `doctor --bundle` can attach. | 3 | S |
+
+### Data and interoperability
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 179 | **intervals.icu push**: send the plan to an intervals.icu calendar over its API, the approved-partner route to Garmin for anyone who would rather not use the unofficial one. | 2 | M |
+| 180 | CSV export, one row per session. | 3 | S |
+| 181 | Markdown export — the plan as a document for Notion, Obsidian or email. | 3 | S |
+| 182 | `gpp schema` prints the DSL's JSON Schema and a one-page reference, for other tools and assistants. | 3 | S |
+| 183 | Import a Garmin calendar month into a plan (from #150). | 3 | S |
+| 184 | `gpp backup` / `gpp restore` — profile, library, history and recent plans in one archive. | 3 | S |
+| 185 | Plan file versioning: saving keeps the last five versions beside the file; `gpp diff` against any of them. | 3 | S |
+| 186 | Share bundles carry the rationale and the race, and `gpp import` re-bases to the recipient's next Monday by default. | 3 | S |
+
+### Operations and distribution
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 187 | **PyPI via trusted publishing** — separate build and publish jobs, OIDC, no stored token — in the release workflow, so `uv tool install garmin-plan-push` works once the project name is claimed. | 1 | S |
+| 188 | `gpp --version`, and `uvx` / `pipx` install lines in the README. | 3 | S |
+| 189 | CHANGELOG.md, and release notes assembled from it by the release workflow. | 2 | S |
+| 190 | Type checking in CI (`ty`, Astral's checker, in beta) as an advisory job until it is stable. | 2 | S |
+| 191 | Coverage in CI with a floor. | 2 | S |
+| 192 | Property-based tests (hypothesis) for the unit parsers and the compile round trip. | 2 | M |
+| 193 | CodeQL, dependency review and an OpenSSF Scorecard workflow, all pinned. | 2 | S |
+| 194 | The web smoke test runs on every OS in the matrix, not only Linux. | 2 | S |
+
+### Coaching content
+
+| # | Feature | Tier | Effort |
+|---|---|---|---|
+| 195 | **Deliberately not doing, extended**: cycle-phase periodization (high-quality studies find no phase effect), Strava import (its API policy forbids any AI use of the data), and sleep prescriptions beyond a nudge — written up with sources. | 1 | S |
+| 196 | **Durability work** in marathon peak phases: fast-finish long runs, hill and downhill notes, fuelling practice — the trainable components of physiological resilience. | 2 | M |
+| 197 | `gpp race-plan` — split targets for the goal time, even by default, negative or 10-10-10 on request, with the pacing evidence on the page. | 2 | S |
+| 198 | **Cadence cue for injury history**: a 5–10% cadence lift as a step cue and a check, where the injury history warrants it. | 3 | S |
+| 199 | **Weather in today's advice**: `gpp today` adjusts targets for the day's dew point and suggests moving a quality session earlier or later. | 2 | S |
+| 200 | **Education library** behind #164 with citations, as `gpp why <session>` and in the app. | 2 | M |
 
 ## Tech stack assessment
 
