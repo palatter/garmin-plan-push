@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from .compile import _estimate_step_seconds
+from .compile import _estimate_step_seconds, resolve_pace_bounds
 from .plan import Step, Target, Workout
 from .profile import Profile
-from .render import describe_extent, describe_target
-from .units import parse_distance, parse_duration, parse_pace
+from .render import describe_extent, describe_target, step_label
+from .units import parse_distance, parse_duration
 
 # Where each named zone sits on a 0..1 intensity scale, for colour.
 ZONE_INTENSITY = {
@@ -35,6 +35,8 @@ ZONE_INTENSITY = {
 KIND_FALLBACK_INTENSITY = {
     "warmup": 0.22,
     "run": 0.65,
+    "stride": 0.95,
+    "exercise": 0.5,
     "recover": 0.12,
     "rest": 0.0,
     "cooldown": 0.18,
@@ -64,26 +66,27 @@ def intensity_for(step: Step, profile: Profile) -> float:
     target = step.target
     if target.type == "pace":
         if target.zone is not None:
-            name = str(target.zone).lower()
+            name = profile.canonical_zone(str(target.zone))
             if name in ZONE_INTENSITY:
                 return ZONE_INTENSITY[name]
-        elif target.fast is not None:
-            # Position an explicit pace against the athlete's own zones.
-            try:
-                pace = parse_pace(target.fast, "mi" if profile.imperial else "km")
-            except Exception:
-                return KIND_FALLBACK_INTENSITY.get(step.kind, 0.5)
-            return _intensity_from_pace(pace, profile)
-    elif target.type == "hr" and target.zone is not None:
+        try:
+            _, fast = resolve_pace_bounds(target, profile)
+        except Exception:
+            return KIND_FALLBACK_INTENSITY.get(step.kind, 0.5)
+        return _intensity_from_pace(fast, profile)
+    if target.type == "hr" and target.zone is not None:
         return min(1.0, 0.12 + 0.2 * (int(target.zone) - 1))
+    if target.type == "power" and target.zone is not None:
+        return min(1.0, 0.1 + 0.15 * (int(target.zone) - 1))
+    if target.type == "rpe" and target.value is not None:
+        return min(1.0, max(0.0, target.value / 10.0))
     return KIND_FALLBACK_INTENSITY.get(step.kind, 0.5)
 
 
 def _intensity_from_pace(pace: float, profile: Profile) -> float:
     """Find which of the athlete's zones a raw pace falls in."""
     best_name, best_gap = None, None
-    for name in profile.pace_zones:
-        slow, fast = profile.pace_zone(name)
+    for name, (slow, fast) in profile.zone_table().items():
         if fast <= pace <= slow:
             return ZONE_INTENSITY.get(name, 0.5)
         gap = min(abs(pace - slow), abs(pace - fast))
@@ -103,7 +106,7 @@ def _emit(step: Step, profile: Profile, out: list[Block], rep: tuple[int, int] |
 
     out.append(
         Block(
-            label=step.kind,
+            label=step_label(step),
             kind=step.kind,
             seconds=seconds,
             intensity=intensity_for(step, profile),
@@ -185,20 +188,16 @@ def _total_distance(steps: list[Step], profile: Profile) -> float:
             total += _total_distance(step.steps, profile) * int(step.reps or 1)
         elif step.distance is not None:
             total += parse_distance(step.distance)
-        elif step.duration is not None:
+        elif step.duration is not None and step.kind != "exercise":
             seconds = parse_duration(step.duration)
             pace = _pace_for(step.target, profile)
             total += (seconds / pace) * 1000
-        # lap-button steps contribute nothing knowable
+        # lap-button and rep-counted steps contribute nothing knowable
     return total
 
 
 def _pace_for(target: Target, profile: Profile) -> float:
     if target.type == "pace":
-        if target.zone is not None:
-            slow, fast = profile.pace_zone(str(target.zone))
-            return (slow + fast) / 2
-        if target.fast is not None:
-            unit = "mi" if profile.imperial else "km"
-            return (parse_pace(target.slow, unit) + parse_pace(target.fast, unit)) / 2
+        slow, fast = resolve_pace_bounds(target, profile)
+        return (slow + fast) / 2
     return profile.estimate_pace()

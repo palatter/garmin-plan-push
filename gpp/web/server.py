@@ -220,6 +220,8 @@ class App:
                     "date": workout.date.isoformat(),
                     "notes": workout.notes,
                     "sport": workout.sport,
+                    "role": workout.role,
+                    "phase": workout.phase,
                     "estimate": format_duration(item.estimated_seconds),
                     "seconds": item.estimated_seconds,
                     "summary": summary,
@@ -231,10 +233,8 @@ class App:
             "plan": plan.plan,
             "workouts": workouts,
             "text": render_plan(plan, compiled, profile),
-            "json": {
-                "plan": plan.plan,
-                "workouts": [_workout_to_dict(w) for w in plan.workouts],
-            },
+            "json": plan.to_dict(),
+            "race": plan.a_race.to_dict() if plan.a_race else None,
         }
 
     def generate(self, body: dict) -> dict:
@@ -338,44 +338,6 @@ def _zones_of(profile: Profile) -> list[dict]:
             }
         )
     return zones
-
-
-def _workout_to_dict(workout) -> dict:
-    """Re-serialise a parsed workout so the UI can hand it back on push."""
-
-    def step_to_dict(step) -> dict:
-        if step.is_repeat:
-            out = {
-                "kind": "repeat",
-                "reps": step.reps,
-                "steps": [step_to_dict(s) for s in step.steps],
-            }
-            if step.note:
-                out["note"] = step.note
-            return out
-        out: dict[str, Any] = {"kind": step.kind}
-        for field_name in ("duration", "distance", "until"):
-            value = getattr(step, field_name)
-            if value is not None:
-                out[field_name] = value
-        target = {k: v for k, v in vars(step.target).items() if v is not None}
-        if target.get("type") and target["type"] != "none":
-            out["target"] = target
-        elif target.get("type") == "none":
-            out["target"] = {"type": "none"}
-        if step.note:
-            out["note"] = step.note
-        return out
-
-    result = {
-        "name": workout.name,
-        "date": workout.date.isoformat(),
-        "sport": workout.sport,
-        "steps": [step_to_dict(s) for s in workout.steps],
-    }
-    if workout.notes:
-        result["notes"] = workout.notes
-    return result
 
 
 ROUTES = {

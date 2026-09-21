@@ -1,18 +1,27 @@
 """Athlete profile: turns zone names into concrete pace / heart-rate targets.
 
 The plan DSL talks in zone names ("easy", "threshold") so an LLM never has to
-invent numbers. This module is the only place those become real paces, derived
-from your threshold pace and LTHR. Change your threshold here and every future
-plan re-derives correctly.
+invent numbers. This module is the only place those become real paces. Three
+models can back the zones:
+
+  threshold  multipliers of a threshold pace (the default; needs one number)
+  cs         fractions of critical speed, fitted from two all-out trials
+  vdot       Daniels' intensities, from a recent race
+
+The profile also carries what a coach would know that a model cannot guess:
+injury history, standing constraints, availability, the goal race, and any
+persistent instructions. All of it is fed into every prompt.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .units import UnitError, format_pace, parse_pace
+from . import models
+from .units import UnitError, format_pace, parse_distance, parse_duration, parse_pace
 
 # Multipliers applied to threshold pace (seconds per km).
 # >1 is SLOWER than threshold, <1 is FASTER. (slow_bound, fast_bound)
@@ -26,6 +35,21 @@ DEFAULT_PACE_ZONES: dict[str, tuple[float, float]] = {
     "repetition": (0.92, 0.85),
 }
 
+# Daniels' letter names, for people who think in E/M/T/I/R.
+ZONE_ALIASES: dict[str, str] = {
+    "e": "easy",
+    "m": "marathon",
+    "t": "threshold",
+    "i": "interval",
+    "r": "repetition",
+    "tempo": "threshold",
+    "vo2": "interval",
+    "vo2max": "interval",
+    "jog": "recovery",
+    "mp": "marathon",
+    "hmp": "threshold",
+}
+
 # Fractions of LTHR (Friel running zones). (low, high)
 DEFAULT_HR_ZONES: dict[int, tuple[float, float]] = {
     1: (0.70, 0.85),
@@ -35,6 +59,9 @@ DEFAULT_HR_ZONES: dict[int, tuple[float, float]] = {
     5: (1.00, 1.06),
 }
 
+ZONE_MODELS = ("threshold", "cs", "vdot")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
 # Zone used to estimate the duration of a distance-based step that has no
 # pace target of its own.
 FALLBACK_ESTIMATE_ZONE = "easy"
@@ -42,6 +69,54 @@ FALLBACK_ESTIMATE_ZONE = "easy"
 
 class ProfileError(ValueError):
     """The athlete profile is missing or inconsistent."""
+
+
+@dataclass
+class Availability:
+    days: list[str] = field(default_factory=list)  # mon..sun, empty = any
+    weekday_max_minutes: int | None = None
+    weekend_max_minutes: int | None = None
+    long_run_day: str | None = None
+    sessions_per_week: int | None = None
+
+    def allows(self, day: dt.date) -> bool:
+        if not self.days:
+            return True
+        return WEEKDAYS[day.weekday()] in self.days
+
+    def max_minutes(self, day: dt.date) -> int | None:
+        return self.weekend_max_minutes if day.weekday() >= 5 else self.weekday_max_minutes
+
+    def describe(self) -> str:
+        parts = []
+        if self.days:
+            parts.append("runs on " + ", ".join(d.title() for d in self.days))
+        if self.sessions_per_week:
+            parts.append(f"{self.sessions_per_week} sessions a week")
+        if self.weekday_max_minutes:
+            parts.append(f"weekday sessions at most {self.weekday_max_minutes} min")
+        if self.weekend_max_minutes:
+            parts.append(f"weekend sessions at most {self.weekend_max_minutes} min")
+        if self.long_run_day:
+            parts.append(f"long run on {self.long_run_day.title()}")
+        return "; ".join(parts)
+
+
+@dataclass
+class GoalRace:
+    name: str
+    date: dt.date
+    distance: str | None = None
+    priority: str = "A"
+    goal_time: str | None = None
+
+    def describe(self) -> str:
+        text = f"{self.name} on {self.date.isoformat()}"
+        if self.distance:
+            text += f" ({self.distance})"
+        if self.goal_time:
+            text += f", goal {self.goal_time}"
+        return text
 
 
 @dataclass
@@ -55,21 +130,53 @@ class Profile:
         default_factory=lambda: dict(DEFAULT_PACE_ZONES)
     )
     hr_zones: dict[int, tuple[float, float]] = field(default_factory=lambda: dict(DEFAULT_HR_ZONES))
+    zone_model: str = "threshold"
+    # critical speed, from [cs] trials
+    cs: models.CriticalSpeed | None = None
+    # VDOT, from a [vdot] race
+    vdot: float | None = None
+    # running power, for pace<->power transpilation and power targets
+    power_cp: int | None = None
+    power_pace_at_cp: float | None = None  # seconds per km
+    # what a coach would know
+    instructions: str | None = None
+    injuries: list[str] = field(default_factory=list)
+    constraints: list[str] = field(default_factory=list)
+    availability: Availability | None = None
+    goal_race: GoalRace | None = None
+    longest_recent_run_km: float | None = None
+    recent_weekly_km: float | None = None
+    language: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     # The parsed config file, kept so the [ai] block can be read from the same
     # place without loading the file twice.
     raw: dict = field(default_factory=dict, repr=False)
 
     # --- zone resolution ---
 
+    def zone_table(self) -> dict[str, tuple[float, float]]:
+        """(slower, faster) seconds/km for every zone, under the active model."""
+        if self.zone_model == "cs" and self.cs is not None:
+            return models.cs_zones(self.cs.cs_mps)
+        if self.zone_model == "vdot" and self.vdot is not None:
+            return models.vdot_zones(self.vdot)
+        return {
+            name: (self.threshold_pace * slow, self.threshold_pace * fast)
+            for name, (slow, fast) in self.pace_zones.items()
+        }
+
+    def canonical_zone(self, zone: str) -> str:
+        key = zone.strip().lower()
+        return ZONE_ALIASES.get(key, key)
+
     def pace_zone(self, zone: str) -> tuple[float, float]:
         """Return (slower, faster) bounds in seconds per km."""
-        key = zone.strip().lower()
-        if key not in self.pace_zones:
-            raise ProfileError(
-                f"unknown pace zone {zone!r}; known: " + ", ".join(sorted(self.pace_zones))
-            )
-        slow_mult, fast_mult = self.pace_zones[key]
-        return self.threshold_pace * slow_mult, self.threshold_pace * fast_mult
+        key = self.canonical_zone(zone)
+        table = self.zone_table()
+        if key not in table:
+            raise ProfileError(f"unknown pace zone {zone!r}; known: " + ", ".join(sorted(table)))
+        return table[key]
 
     def hr_zone(self, zone: int) -> tuple[int, int]:
         """Return (low, high) bpm."""
@@ -91,13 +198,23 @@ class Profile:
     def describe(self) -> str:
         lines = [f"Profile: {self.name}"]
         lines.append(f"  threshold pace  {format_pace(self.threshold_pace, self.imperial)}")
+        if self.zone_model != "threshold":
+            lines.append(f"  zone model      {self.zone_model}")
+        if self.cs:
+            lines.append(
+                f"  critical speed  {format_pace(self.cs.cs_pace, self.imperial)}"
+                f"  (D' {self.cs.d_prime_m:.0f} m)"
+            )
+        if self.vdot:
+            lines.append(f"  VDOT            {self.vdot:.1f}")
         if self.lthr:
             lines.append(f"  LTHR            {self.lthr} bpm")
         if self.hr_max:
             lines.append(f"  HR max          {self.hr_max} bpm")
+        if self.power_cp:
+            lines.append(f"  critical power  {self.power_cp} W")
         lines.append("  pace zones:")
-        for name in self.pace_zones:
-            slow, fast = self.pace_zone(name)
+        for name, (slow, fast) in self.zone_table().items():
             lines.append(
                 f"    {name:<11} {format_pace(slow, self.imperial)}"
                 f" - {format_pace(fast, self.imperial)}"
@@ -107,6 +224,20 @@ class Profile:
             for zone in sorted(self.hr_zones):
                 low, high = self.hr_zone(zone)
                 lines.append(f"    Z{zone}          {low} - {high} bpm")
+        if self.goal_race:
+            lines.append(f"  goal race       {self.goal_race.describe()}")
+        if self.availability:
+            lines.append(f"  availability    {self.availability.describe()}")
+        if self.injuries:
+            lines.append("  injuries        " + "; ".join(self.injuries))
+        if self.constraints:
+            lines.append("  constraints     " + "; ".join(self.constraints))
+        if self.longest_recent_run_km:
+            lines.append(f"  longest recent run  {self.longest_recent_run_km:g} km")
+        if self.recent_weekly_km:
+            lines.append(f"  recent weekly volume {self.recent_weekly_km:g} km")
+        if self.instructions:
+            lines.append(f"  instructions    {self.instructions}")
         return "\n".join(lines)
 
     # --- loading ---
@@ -114,12 +245,13 @@ class Profile:
     @classmethod
     def from_dict(cls, data: dict) -> Profile:
         imperial = str(data.get("units", "metric")).lower() in ("imperial", "us")
+        unit = "mi" if imperial else "km"
 
         pace_cfg = data.get("pace", {})
         if "threshold" not in pace_cfg:
             raise ProfileError('profile needs [pace] threshold, e.g. "4:05/km"')
         try:
-            threshold = parse_pace(pace_cfg["threshold"], default_unit="mi" if imperial else "km")
+            threshold = parse_pace(pace_cfg["threshold"], default_unit=unit)
         except UnitError as exc:
             raise ProfileError(str(exc)) from exc
 
@@ -135,10 +267,91 @@ class Profile:
                 )
             zones[name.lower()] = (slow, fast)
 
+        zone_model = str(pace_cfg.get("model", "threshold")).lower()
+        if zone_model not in ZONE_MODELS:
+            raise ProfileError(f"pace model must be one of {', '.join(ZONE_MODELS)}")
+
         hr_cfg = data.get("hr", {})
         hr_zones = dict(DEFAULT_HR_ZONES)
         for key, bounds in (hr_cfg.get("zones") or {}).items():
             hr_zones[int(key)] = (float(bounds[0]), float(bounds[1]))
+
+        cs = None
+        cs_cfg = data.get("cs") or {}
+        if cs_cfg.get("trials"):
+            trials = []
+            for trial in cs_cfg["trials"]:
+                try:
+                    trials.append(
+                        (parse_distance(trial["distance"]), parse_duration(trial["time"]))
+                    )
+                except (KeyError, UnitError) as exc:
+                    raise ProfileError(f"[cs] trial needs distance and time: {exc}") from exc
+            try:
+                cs = models.critical_speed(trials)
+            except models.ModelError as exc:
+                raise ProfileError(f"[cs]: {exc}") from exc
+        if zone_model == "cs" and cs is None:
+            raise ProfileError('pace model "cs" needs [cs] trials')
+
+        vdot = None
+        vdot_cfg = data.get("vdot") or {}
+        if vdot_cfg.get("value"):
+            vdot = float(vdot_cfg["value"])
+        elif vdot_cfg.get("distance") and vdot_cfg.get("time"):
+            try:
+                vdot = models.vdot_from_race(
+                    parse_distance(vdot_cfg["distance"]), parse_duration(vdot_cfg["time"])
+                )
+            except (UnitError, models.ModelError) as exc:
+                raise ProfileError(f"[vdot]: {exc}") from exc
+        if zone_model == "vdot" and vdot is None:
+            raise ProfileError('pace model "vdot" needs a [vdot] race (distance + time) or value')
+
+        power_cfg = data.get("power") or {}
+        power_cp = int(power_cfg["cp"]) if power_cfg.get("cp") else None
+        power_pace = None
+        if power_cfg.get("pace_at_cp"):
+            try:
+                power_pace = parse_pace(power_cfg["pace_at_cp"], default_unit=unit)
+            except UnitError as exc:
+                raise ProfileError(f"[power] pace_at_cp: {exc}") from exc
+        if power_cp and not power_pace:
+            # Without a matched pace, assume CP is roughly a threshold effort.
+            power_pace = threshold
+
+        athlete = data.get("athlete") or {}
+        availability = None
+        avail_cfg = data.get("availability") or {}
+        if avail_cfg:
+            days = [str(d).lower()[:3] for d in avail_cfg.get("days", [])]
+            bad = [d for d in days if d not in WEEKDAYS]
+            if bad:
+                raise ProfileError(f"[availability] days must be mon..sun, got {bad}")
+            long_day = avail_cfg.get("long_run_day")
+            availability = Availability(
+                days=days,
+                weekday_max_minutes=avail_cfg.get("weekday_max_minutes"),
+                weekend_max_minutes=avail_cfg.get("weekend_max_minutes"),
+                long_run_day=str(long_day).lower()[:3] if long_day else None,
+                sessions_per_week=avail_cfg.get("sessions_per_week"),
+            )
+
+        goal = None
+        goal_cfg = data.get("goal_race") or {}
+        if goal_cfg.get("date"):
+            try:
+                goal = GoalRace(
+                    name=goal_cfg.get("name", "Goal race"),
+                    date=dt.date.fromisoformat(str(goal_cfg["date"])),
+                    distance=goal_cfg.get("distance"),
+                    priority=str(goal_cfg.get("priority", "A")).upper(),
+                    goal_time=goal_cfg.get("goal_time"),
+                )
+            except ValueError as exc:
+                raise ProfileError(f"[goal_race] date: {exc}") from exc
+
+        location = data.get("location") or {}
 
         return cls(
             name=data.get("name", "athlete"),
@@ -148,6 +361,21 @@ class Profile:
             hr_max=hr_cfg.get("max"),
             pace_zones=zones,
             hr_zones=hr_zones,
+            zone_model=zone_model,
+            cs=cs,
+            vdot=vdot,
+            power_cp=power_cp,
+            power_pace_at_cp=power_pace,
+            instructions=(athlete.get("instructions") or data.get("instructions") or None),
+            injuries=[str(x) for x in athlete.get("injuries", [])],
+            constraints=[str(x) for x in athlete.get("constraints", [])],
+            availability=availability,
+            goal_race=goal,
+            longest_recent_run_km=athlete.get("longest_recent_run_km"),
+            recent_weekly_km=athlete.get("recent_weekly_km"),
+            language=athlete.get("language"),
+            latitude=location.get("latitude"),
+            longitude=location.get("longitude"),
             raw=data,
         )
 
@@ -173,13 +401,12 @@ class Profile:
 
         Hand-rolled rather than via a TOML writer: the output is a file a human
         will read and edit, so it keeps comments and a stable field order that
-        a generic serialiser would throw away. Only the fields the setup flow
-        collects are written; anything else in `raw` is preserved verbatim
-        underneath.
+        a generic serialiser would throw away.
         """
+        raw = self.raw or {}
         lines = [
             "# garmin-plan-push profile.",
-            "# Written by `gpp init`; safe to edit by hand.",
+            "# Written by gpp; safe to edit by hand.",
             "",
             f'name = "{_escape(self.name)}"',
             f'units = "{"imperial" if self.imperial else "metric"}"',
@@ -189,6 +416,8 @@ class Profile:
             "# Every pace zone derives from this, so re-check it every 6-8 weeks.",
             f'threshold = "{format_pace(self.threshold_pace, self.imperial)}"',
         ]
+        if self.zone_model != "threshold":
+            lines.append(f'model = "{self.zone_model}"')
 
         custom = {
             name: bounds
@@ -206,7 +435,93 @@ class Profile:
             if self.hr_max:
                 lines.append(f"max = {self.hr_max}")
 
-        ai_block = _render_ai(self.raw.get("ai"))
+        cs_cfg = raw.get("cs") or {}
+        if cs_cfg.get("trials"):
+            lines += ["", "[cs]", "# Two or more all-out trials of 2-20 minutes."]
+            lines.append(
+                "trials = ["
+                + ", ".join(
+                    f'{{ distance = "{_escape(str(t["distance"]))}", time = "{_escape(str(t["time"]))}" }}'
+                    for t in cs_cfg["trials"]
+                )
+                + "]"
+            )
+
+        vdot_cfg = raw.get("vdot") or {}
+        if vdot_cfg:
+            lines += ["", "[vdot]"]
+            for key in ("distance", "time", "value"):
+                if vdot_cfg.get(key) is not None:
+                    lines.append(_kv(key, vdot_cfg[key]))
+
+        if self.power_cp:
+            lines += ["", "[power]", f"cp = {self.power_cp}"]
+            if self.power_pace_at_cp:
+                lines.append(f'pace_at_cp = "{format_pace(self.power_pace_at_cp, self.imperial)}"')
+
+        athlete_lines = []
+        if self.instructions:
+            athlete_lines.append(f'instructions = "{_escape(self.instructions)}"')
+        if self.injuries:
+            athlete_lines.append(
+                "injuries = [" + ", ".join(f'"{_escape(x)}"' for x in self.injuries) + "]"
+            )
+        if self.constraints:
+            athlete_lines.append(
+                "constraints = [" + ", ".join(f'"{_escape(x)}"' for x in self.constraints) + "]"
+            )
+        if self.longest_recent_run_km is not None:
+            athlete_lines.append(f"longest_recent_run_km = {self.longest_recent_run_km}")
+        if self.recent_weekly_km is not None:
+            athlete_lines.append(f"recent_weekly_km = {self.recent_weekly_km}")
+        if self.language:
+            athlete_lines.append(f'language = "{_escape(self.language)}"')
+        if athlete_lines:
+            lines += [
+                "",
+                "[athlete]",
+                "# What a coach would know and a model cannot guess.",
+                *athlete_lines,
+            ]
+
+        if self.availability:
+            a = self.availability
+            lines += ["", "[availability]"]
+            if a.days:
+                lines.append("days = [" + ", ".join(f'"{d}"' for d in a.days) + "]")
+            for key, value in (
+                ("weekday_max_minutes", a.weekday_max_minutes),
+                ("weekend_max_minutes", a.weekend_max_minutes),
+                ("sessions_per_week", a.sessions_per_week),
+            ):
+                if value is not None:
+                    lines.append(f"{key} = {int(value)}")
+            if a.long_run_day:
+                lines.append(f'long_run_day = "{a.long_run_day}"')
+
+        if self.goal_race:
+            g = self.goal_race
+            lines += [
+                "",
+                "[goal_race]",
+                f'name = "{_escape(g.name)}"',
+                f'date = "{g.date.isoformat()}"',
+            ]
+            if g.distance:
+                lines.append(f'distance = "{_escape(g.distance)}"')
+            lines.append(f'priority = "{g.priority}"')
+            if g.goal_time:
+                lines.append(f'goal_time = "{_escape(g.goal_time)}"')
+
+        if self.latitude is not None and self.longitude is not None:
+            lines += [
+                "",
+                "[location]",
+                f"latitude = {self.latitude}",
+                f"longitude = {self.longitude}",
+            ]
+
+        ai_block = _render_ai(raw.get("ai"))
         if ai_block:
             lines += ["", ai_block]
 
@@ -248,6 +563,14 @@ def _escape(value: str) -> str:
     return "".join(out)
 
 
+def _kv(key: str, value) -> str:
+    if isinstance(value, bool):
+        return f"{key} = {str(value).lower()}"
+    if isinstance(value, (int, float)):
+        return f"{key} = {value}"
+    return f'{key} = "{_escape(str(value))}"'
+
+
 def _render_ai(ai: dict | None) -> str:
     """Re-emit the [ai] block so saving a profile does not drop provider config."""
     if not ai:
@@ -258,12 +581,7 @@ def _render_ai(ai: dict | None) -> str:
     for name, entry in (ai.get("providers") or {}).items():
         lines += ["", f"[ai.providers.{name}]"]
         for key, value in entry.items():
-            if isinstance(value, bool):
-                lines.append(f"{key} = {str(value).lower()}")
-            elif isinstance(value, (int, float)):
-                lines.append(f"{key} = {value}")
-            else:
-                lines.append(f'{key} = "{_escape(str(value))}"')
+            lines.append(_kv(key, value))
     return "\n".join(lines)
 
 
@@ -272,15 +590,32 @@ DEFAULT_PROFILE_PATHS = (
     Path.home() / ".config" / "gpp" / "profile.toml",
 )
 
+PROFILES_DIR = Path.home() / ".config" / "gpp" / "profiles"
 
-def find_profile() -> Path | None:
-    """The profile this machine should use, if one exists yet."""
+
+def find_profile(athlete: str | None = None) -> Path | None:
+    """The profile this machine should use, if one exists yet.
+
+    With `athlete`, look for a named profile under ~/.config/gpp/profiles/ so
+    several people can share one install.
+    """
+    if athlete:
+        candidate = PROFILES_DIR / f"{athlete}.toml"
+        return candidate if candidate.exists() else None
     for candidate in DEFAULT_PROFILE_PATHS:
         if candidate.exists():
             return candidate
     return None
 
 
-def default_save_path() -> Path:
-    """Where a new profile goes: beside the project if writable, else XDG config."""
+def list_profiles() -> list[str]:
+    if not PROFILES_DIR.exists():
+        return []
+    return sorted(p.stem for p in PROFILES_DIR.glob("*.toml"))
+
+
+def default_save_path(athlete: str | None = None) -> Path:
+    """Where a new profile goes."""
+    if athlete:
+        return PROFILES_DIR / f"{athlete}.toml"
     return DEFAULT_PROFILE_PATHS[0]
