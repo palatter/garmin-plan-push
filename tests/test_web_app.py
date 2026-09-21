@@ -118,6 +118,7 @@ def test_preview_carries_index_hard_time_and_step_notes(app):
     out = app.preview({"plan": plan})
     assert [w["index"] for w in out["workouts"]] == [0, 1, 2]
     assert out["workouts"][0]["hard_seconds"] > 0
+    assert out["workouts"][0]["load"] > 0
     assert [b["note"] for b in out["workouts"][0]["timeline"]] == [None, "tall posture", None]
     assert out["report"]["ok"]
     assert out["dashboard"]["sessions"] == 3

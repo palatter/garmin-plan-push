@@ -381,6 +381,7 @@ function workoutCard(w, index, position) {
     <div class="w-stats">
       <div class="w-stat"><span class="v">${fmtDuration(w.seconds)}</span><span class="k">Time</span></div>
       <div class="w-stat"><span class="v">${fmtDistance(w.summary.metres)}</span><span class="k">Distance</span></div>
+      <div class="w-stat" title="Session load: minutes weighted by intensity (a TRIMP-style number, never a ratio)"><span class="v">${w.load ?? '—'}</span><span class="k">Load</span></div>
     </div>`;
   $('.w-name', head).textContent = w.name;
   if (w.notes) $('.w-note', head).textContent = w.notes;

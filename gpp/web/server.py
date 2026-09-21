@@ -35,7 +35,7 @@ from ..diff import diff_plans
 from ..estimate import EstimateError, lthr_from_max, threshold_from_race
 from ..formats import FormatError, export_share, export_workout
 from ..generate import generate_plan, regenerate_workout
-from ..load import plan_dashboard
+from ..load import plan_dashboard, session_load
 from ..plan import Plan, PlanError
 from ..profile import Profile, ProfileError, default_save_path, find_profile
 from ..providers import (
@@ -264,6 +264,7 @@ class App:
                     "seconds": item.estimated_seconds,
                     "summary": summary,
                     "hard_seconds": summary["hard_seconds"],
+                    "load": round(session_load(workout, profile)),
                     "timeline": workout_timeline(workout, profile),
                     "tag": item.tag,
                 }

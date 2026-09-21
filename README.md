@@ -1,12 +1,13 @@
 # garmin-plan-push
 
 Describe the training you want in plain English. Get real structured workouts
-on your Garmin watch.
+on your Garmin watch — and a plan that is checked, editable and adaptable
+before and after it gets there.
 
 ```
 "four weeks to a 10k, five runs a week"
         ↓
-   an AI writes it  →  validator rejects bad plans  →  you review the chart
+   an AI writes it  →  validator + sanity checks  →  you review, edit, drag
         ↓
    Garmin Connect  →  your watch
 ```
@@ -31,23 +32,48 @@ gpp web
 That opens the app. It asks for a recent race time, works out your training
 paces, and you're ready. There is nothing else to configure.
 
-To update later: `uv tool upgrade garmin-plan-push`
+To update later: `uv tool upgrade garmin-plan-push`. Tagged releases with the
+wheel attached are on the
+[releases page](https://github.com/palatter/garmin-plan-push/releases).
 
 ## Using it
 
 **Setup** happens once. You don't need to know your threshold pace — give it a
 race you ran hard ("10k, 47:30") and it derives everything, showing your zones
-live as you type.
+live as you type. Under *About your training* it asks what a coach would ask:
+goal race, which days you can run, injury history, standing rules ("no hills
+for six weeks"), your longest recent run. All optional; all of it goes into
+every prompt and into the sanity checks.
 
 **Write a plan** by describing it the way you'd tell a coach: *"Four weeks to a
 10k. Five runs a week, one long run Sunday, one threshold session and one set
-of hills. Keep Mondays easy."*
+of hills. Keep Mondays easy."* Or open a template from the library and set its
+start date.
 
-**Review** before anything is sent. Each session is drawn as a profile — you
-can see the shape of the intervals at a glance, colour-coded by effort, with
-every step listed underneath.
+**Review** before anything is sent:
 
-**Send to Garmin**, enter your Connect login, and sync your watch.
+- Each session is drawn as a profile, colour-coded by effort, with every step
+  listed underneath and its load number (minutes weighted by intensity).
+- The **sanity report** lists what the checks found — a long run that jumps
+  past anything in the last month, a weekly ramp over 25%, hard days back to
+  back, a taper that cuts too little or too much — with the dates to look at.
+- **Plan health** shows every week as a bar: height is volume, colour is the
+  share of hard running.
+- **Edit** any session: date, name, the "why" line that goes on the wrist, a
+  cue per step ("tall posture"), or retype the whole session in one line —
+  `15m warm up, 5 x 1km @ T w/ 2m jog, 10m cool down`.
+- **Calendar** view: drag a session to another day (arrow keys work too); the
+  checks re-run and the weekly totals update.
+- **On the watch** previews the step screens a Fenix will show, step by step.
+- **Changes** is the diff against the plan as generated or last pushed, with
+  undo and reset.
+- **Missed** a session? *Readapt* moves or drops what is around it by rule and
+  says why; *Keep* leaves the plan alone. **Pause** for an illness or holiday
+  shifts everything and scales the first week back.
+- <kbd>Ctrl</kbd> <kbd>K</kbd> opens a command palette for all of the above.
+
+**Send to Garmin**, enter your Connect login, and sync your watch. Re-sending
+an edited plan updates the workouts in place, so Garmin keeps their IDs.
 
 ### Which AI writes the plan
 
@@ -70,7 +96,15 @@ setx GEMINI_API_KEY AIza...           # Gemini
 ```
 
 Then restart the app. `gpp doctor --ping` proves each key and model actually
-work before you rely on them.
+work before you rely on them. Generation streams, and each call reports its
+tokens and estimated cost. `gpp providers` lists which local models (via
+Ollama) are good enough to hold the schema and which are not.
+
+**From another assistant**: `gpp mcp` runs the tool as an MCP server, so
+Claude, ChatGPT, Gemini or a local model can check, preview, adapt and push
+plans conversationally. Push is a dry run unless you have set
+`GARMIN_EMAIL` and `GARMIN_PASSWORD` (or signed in before); the assistant
+never sees either.
 
 ## Sharing it with someone
 
@@ -79,6 +113,8 @@ all they need. Everything else is self-contained: no server to run, no
 account, no API key required if they use the paste option.
 
 Their profile is their own — paces, zones and plans live on their machine.
+To hand a friend a plan, **Export → Share bundle**: it carries zone names, not
+your paces, so `gpp import` gives them the same plan at *their* paces.
 
 ## Which watches work
 
@@ -87,6 +123,47 @@ Anything that supports structured workouts: **Fenix 6/7/8**, **Epix**,
 
 Older models like the Forerunner 235 or Vivoactive 3 don't accept structured
 workouts at all, so this won't help there.
+
+## What the checks enforce, and what they refuse to
+
+Every plan — generated, pasted, edited or dragged — goes through the same
+rules before it reaches a watch. Blocking findings go straight back to the
+model as a correction; warnings are shown to you. The rules are the ones with
+evidence behind them:
+
+- a single run more than ~10% longer than the longest in the previous 30
+  days (the best-supported injury signal there is);
+- a weekly ramp over 25%, or four rising weeks without a deload;
+- two quality sessions back to back, no rest day, no recovery day after
+  quality work, no moderate sessions at all ("mild or brutal");
+- Foster's monotony index over 2;
+- a taper outside the 41–60% volume cut, or one that drops frequency or
+  intensity (Bosquet's meta-analysis);
+- a B or C race inside the 14 days before the A race;
+- anything that violates your availability or standing rules.
+
+Two things every comparable tool ships are **deliberately absent**: the
+acute:chronic workload ratio (no evidence it predicts injury) and the 10%
+rule (never validated in a trial). [ROADMAP.md](ROADMAP.md) has the sources.
+
+## After the plan
+
+Once you have synced runs from Garmin (`gpp sync`), the plan stops being a
+one-way document:
+
+| | |
+|---|---|
+| `gpp compliance plan.json` | planned vs actual per session, colour-coded the Final Surge way |
+| `gpp reestimate` | re-derive your threshold from recent runs (`--apply` writes it) |
+| `gpp today --plan plan.json` | should today's session be easier? from readiness, HRV and sleep — a nudge with its reason, never a rewrite |
+| `gpp shape --distance marathon` | do you have the endurance for the distance (Runalyze's marathon shape) |
+| `gpp missed plan.json 2026-03-14` | replan around a missed session, with a reason for every change |
+| `gpp pause plan.json --start 2026-03-14 --days 7` | illness or holiday |
+| `gpp layoff 21` | what a break of N days means, by Stryd's tiers |
+| `gpp log rpe 7` / `gpp log pain 3 --name knee` | session RPE and a pain log with a trend |
+
+None of it is automatic. Every adaptation is a stated rule, shown with its
+reason, and you can undo it.
 
 ## Why it's built this way
 
@@ -103,10 +180,11 @@ tested code. Three consequences:
   `low`/`high`, because "low pace" is genuinely ambiguous and models get it
   wrong about half the time. Each step takes exactly one of
   duration/distance/lap. Zone names are a closed set resolved from *your*
-  threshold, so a model cannot invent paces.
-- **Errors are fed back.** Anything the validator or compiler rejects goes
-  straight back to the model as a correction turn, and only a plan that
-  survives is shown to you.
+  threshold, so a model cannot invent paces — and when your threshold changes,
+  every future session changes with it.
+- **Errors are fed back.** Anything the validator, compiler or sanity checks
+  reject goes straight back to the model as a correction turn, and only a plan
+  that survives is shown to you.
 - **Nothing is trusted blindly.** Garmin's workout API is undocumented outside
   their partner program, so every magic constant lives in one annotated file,
   and each push reads the workout back from Garmin and diffs it against what
@@ -117,25 +195,48 @@ tested code. Three consequences:
 Every workout carries a marker in its description: `[gpp:<plan>:<hash>]`.
 
 - same hash → left alone, reported as `unchanged`
-- different hash → replaced
+- different hash → updated in place (Garmin keeps the ID)
 - **no marker → never touched**, so anything you built by hand in Garmin
   Connect is safe
+- `gpp unpush plan.json` removes exactly the workouts a plan created
 
 ## Command line
 
-The browser app is the front door; everything is also a command.
+The browser app is the front door; everything is also a command. `--profile`
+picks a profile file; several athletes can share one install.
+
+**Plans**
 
 | Command | |
 |---|---|
 | `gpp web` | the graphical app |
-| `gpp init` | set up your profile in the terminal instead |
-| `gpp doctor` | check profile, AI keys and Garmin setup (`--ping` calls each AI) |
-| `gpp zones` | show your resolved pace and HR zones |
-| `gpp generate "..."` | write a plan |
-| `gpp show plan.json` | render a plan as text |
-| `gpp push plan.json` | upload and schedule (`--dry-run` to preview) |
-| `gpp compile plan.json` | emit the raw Garmin workout JSON |
+| `gpp init` / `gpp doctor` | set up in the terminal / check profile, AI keys and Garmin (`--ping`, `--bundle`) |
+| `gpp zones` / `gpp providers` | your resolved zones / configured AI providers and local-model verdicts |
+| `gpp generate "..."` | write a plan (`--attempts`, `--provider`) |
 | `gpp prompt` | print the prompt, to use in any chat window |
+| `gpp check` / `gpp report` / `gpp show` | validate / sanity report and weekly dashboard / render as text |
+| `gpp oneline "20m wu, 6x3m @ T w/ 2m jog, 10m cd"` | a workout from a sentence |
+| `gpp library list\|save\|use` / `gpp template` | saved sessions and plan templates, re-based to any start date or race date |
+| `gpp diff a.json b.json` | what changed between two plan files |
+| `gpp export` / `gpp import` | intervals.icu text, ZWO, MRC/ERG, share bundles |
+| `gpp transpile` | pace targets to running power, or back |
+| `gpp predict` / `gpp cs` | race-time predictions with ranges / critical speed from two trials |
+| `gpp weather` | heat-adjusted pace for a day, typed or from a forecast |
+| `gpp watch plan.json` | re-check (or `--push`) whenever the file changes |
+| `gpp mcp` | run as an MCP server |
+
+**Garmin**
+
+| Command | |
+|---|---|
+| `gpp push plan.json` | upload and schedule (`--dry-run`, `--device` to send to the watch now) |
+| `gpp unpush plan.json` | remove a plan's workouts |
+| `gpp compile plan.json` | emit the raw Garmin workout JSON |
+| `gpp devices` / `gpp exercises` | your devices / search the strength exercise catalog |
+| `gpp sync` | pull runs and daily metrics into local history |
+| `gpp history` / `gpp compliance` / `gpp reestimate` / `gpp shape` / `gpp today` / `gpp advice` | see *After the plan* |
+| `gpp garmin-predict` / `gpp suggestion` | Garmin's race predictor and HR zones vs your profile / its Daily Suggested Workout |
+| `gpp pause` / `gpp missed` / `gpp layoff` / `gpp log` / `gpp pain` | adaptation and the logs |
 
 ## AI providers
 
@@ -170,7 +271,7 @@ model = "llama3.3"
 ```
 
 Only the SDK you actually use needs installing (`--extra anthropic`,
-`--extra openai`).
+`--extra openai`, `--extra mcp` for the MCP server).
 
 ## Development
 
@@ -184,24 +285,48 @@ uv run gpp web
 ```
 
 ```
-gpp/constants.py   Garmin's magic IDs, with provenance notes. The only file
-                   that should need editing if Garmin renumbers something.
-gpp/units.py       Duration/distance/pace parsing. SI internally.
-gpp/estimate.py    Race time -> threshold pace (inverted Riegel).
-gpp/profile.py     Your threshold -> concrete zones; config read/write.
-gpp/plan.py        The DSL, its JSON Schema, and the semantic validator.
-gpp/compile.py     DSL -> Garmin JSON. Pure, no network, heavily tested.
-gpp/timeline.py    Flattens a workout into drawable blocks.
-gpp/render.py      The text preview.
-gpp/providers.py   Pluggable AI backends.
-gpp/generate.py    Ask -> validate -> compile -> feed errors back -> repeat.
-gpp/client.py      Garmin Connect: login, upload, schedule, verify.
-gpp/web/           Local server, background jobs, and the browser UI.
+gpp/constants.py    Garmin's magic IDs, with provenance notes. The only file
+                    that should need editing if Garmin renumbers something.
+gpp/units.py        Duration/distance/pace parsing. SI internally.
+gpp/estimate.py     Race time -> threshold pace (inverted Riegel).
+gpp/models.py       VDOT, critical speed, grade-adjusted pace, pace<->power,
+                    race predictions.
+gpp/profile.py      Your threshold -> concrete zones; goal race, availability,
+                    injuries; config read/write.
+gpp/plan.py         The DSL, its JSON Schema, and the semantic validator.
+gpp/compile.py      DSL -> Garmin JSON. Pure, no network, heavily tested.
+gpp/checks.py       The sanity rules (the evidence-backed ones only).
+gpp/load.py         Session load, weekly stats, monotony, the dashboard.
+gpp/adapt.py        Pause, missed-session replan, layoff tiers.
+gpp/analysis.py     Compliance, threshold re-estimation, marathon shape,
+                    the daily nudge.
+gpp/environment.py  Dew point, sWBGT, forecasts, daylight.
+gpp/library.py      Saved sessions, plan templates, return-to-run ramps.
+gpp/oneline.py      A sentence -> a workout.
+gpp/formats.py      intervals.icu, ZWO, MRC/ERG, share bundles.
+gpp/diff.py         What changed between two plans.
+gpp/transpile.py    Pace <-> power.
+gpp/timeline.py     Flattens a workout into drawable blocks.
+gpp/render.py       The text preview.
+gpp/providers.py    Pluggable AI backends, streaming, usage and cost.
+gpp/generate.py     Ask -> validate -> compile -> check -> feed errors back.
+gpp/client.py       Garmin Connect: login, upload, update, schedule, device
+                    push, verify, unpush.
+gpp/sync.py         Activities and daily metrics from Garmin.
+gpp/history.py      The local SQLite history.
+gpp/mcp_server.py   The MCP server.
+gpp/watch.py        File watching.
+gpp/web/            Local server, background jobs, and the browser UI
+                    (no build step: index.html, app.js, review.js, two CSS files).
 ```
 
-112 tests cover units, zones, race estimation, the compiler (step ordering,
-repeat groups, target units), the validator, the timeline, config round-trips,
-and the job registry's input handshake. None touch the network.
+338 tests cover units, zones, the models, the compiler (step ordering, repeat
+groups, target units), the validator, the sanity rules, adaptation, the
+formats, the library, the history store, the web endpoints and the HTTP layer,
+the MCP tools, and the job registry's input handshake. None touch the network.
+CI runs them on Linux, macOS and Windows on Python 3.12 and 3.14, lints, and
+checks that the web assets shipped in the wheel. Actions are pinned to commit
+SHAs; Dependabot keeps them fresh.
 
 ## Security notes
 
@@ -213,6 +338,10 @@ The local server handles your Garmin password, so it:
 - checks the `Host` header, which is what actually stops DNS rebinding;
 - uses the password for one login and never writes it to disk. Garmin's own
   OAuth token cache is the only thing that persists.
+
+`gpp doctor --bundle` writes a diagnostics file for bug reports with versions
+and the shape of your profile — no credentials, no plan contents — and never
+uploads it.
 
 ## Caveats, honestly
 
@@ -240,12 +369,20 @@ which requires partner approval.
 **The Garmin network layer has not been run against a live account.** It is
 written against the documented endpoints, and the transport probe exists
 because that surface has shifted before. Everything upstream of the network —
-parsing, zones, estimation, compiling, validating, rendering, the retry loop,
-the job handshake — is covered by tests and verified end to end.
+parsing, zones, estimation, compiling, validating, the checks, adaptation,
+rendering, the retry loop, the web endpoints, the job handshake — is covered
+by tests and verified end to end. Sync, compliance, re-estimation and the
+readiness nudge need a real account to prove.
+
+**What is not built**, and why, is listed at the top of
+[ROADMAP.md](ROADMAP.md): signed installers (paid certificates), the Courses
+and training-plan APIs (schemas unverified), altitude adjustment (no formula
+with evidence), FIT export, and lap-alert text (a watch setting, not a
+workout field).
 
 ## Alternative
 
 [Intervals.icu](https://intervals.icu) is free, is an approved Garmin partner,
 and pushes planned workouts through the official API. If you'd rather not run
-any of this, generate plans in its text syntax and paste them in — you lose the
-automation and gain a supported integration.
+any of this, `gpp export plan.json --format icu` writes plans in its text syntax — you
+lose the automation and gain a supported integration.
