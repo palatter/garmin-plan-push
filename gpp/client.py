@@ -15,12 +15,17 @@ instead of an AttributeError from three frames deep.
 The endpoints themselves have been stable for years:
 
     POST   /workout-service/workout              create
+    PUT    /workout-service/workout/{id}         update in place
     GET    /workout-service/workout/{id}         read back
     DELETE /workout-service/workout/{id}         delete
     POST   /workout-service/schedule/{id}        put on the calendar
     GET    /calendar-service/year/{y}/month/{m}  what is already scheduled
 
 Gotcha encoded below: the calendar endpoint's month is ZERO-indexed.
+
+Anything beyond those -- push to a device, the exercise catalog, HR zones --
+goes through the library's own methods by name, looked up with getattr so a
+version that lacks one says so instead of crashing.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .compile import CompiledWorkout
@@ -50,9 +55,25 @@ class PushError(RuntimeError):
 class PushResult:
     name: str
     date: str
-    action: str  # created | replaced | unchanged | failed
+    action: str  # created | replaced | updated | unchanged | removed | failed
     workout_id: int | None = None
     detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "date": self.date,
+            "action": self.action,
+            "workout_id": self.workout_id,
+            "detail": self.detail,
+        }
+
+
+@dataclass
+class Device:
+    id: str
+    name: str
+    raw: dict = field(default_factory=dict, repr=False)
 
 
 def parse_tag(description: str | None) -> tuple[str, str] | None:
@@ -100,6 +121,13 @@ class GarminClient:
 
         self._request = self._resolve_transport()
 
+    @property
+    def api(self) -> Any:
+        """The underlying library client, for the read-side (sync.py)."""
+        if self._api is None:
+            raise PushError("not connected; call connect() first")
+        return self._api
+
     def _resolve_transport(self) -> Callable[..., Any]:
         """Find a way to issue an authenticated request against connectapi."""
         api = self._api
@@ -139,6 +167,18 @@ class GarminClient:
         except Exception as exc:
             raise PushError(f"{method} {path} failed: {exc}") from exc
 
+    def _library(self, name: str, *args: Any) -> Any:
+        """Call a python-garminconnect method by name, or explain it is missing."""
+        fn = getattr(self.api, name, None)
+        if not callable(fn):
+            raise PushError(
+                f"this version of python-garminconnect has no {name}(); upgrade it (uv lock --upgrade)"
+            )
+        try:
+            return fn(*args)
+        except Exception as exc:
+            raise PushError(f"{name} failed: {exc}") from exc
+
     # --- reads ---
 
     def scheduled_between(self, start: dt.date, end: dt.date) -> list[dict]:
@@ -148,8 +188,7 @@ class GarminClient:
         cursor = dt.date(start.year, start.month, 1)
         while cursor <= end:
             payload = self._call(
-                "GET",
-                CALENDAR_MONTH.format(year=cursor.year, month=cursor.month - 1),
+                "GET", CALENDAR_MONTH.format(year=cursor.year, month=cursor.month - 1)
             )
             for item in (payload or {}).get("calendarItems", []) or []:
                 key = (item.get("id"), item.get("date"))
@@ -171,6 +210,54 @@ class GarminClient:
     def get_workout(self, workout_id: int) -> dict:
         return self._call("GET", WORKOUT_ITEM.format(workout_id=workout_id))
 
+    def devices(self) -> list[Device]:
+        raw = self._library("get_devices") or []
+        out = []
+        for d in raw:
+            if isinstance(d, dict):
+                out.append(
+                    Device(
+                        id=str(d.get("deviceId") or d.get("unitId") or ""),
+                        name=str(d.get("displayName") or d.get("productDisplayName") or "device"),
+                        raw=d,
+                    )
+                )
+        return out
+
+    def search_exercises(self, query: str) -> list[dict]:
+        """Garmin's strength exercise catalog, for validating exercise names (#80)."""
+        if hasattr(self.api, "search_exercises"):
+            raw = self._library("search_exercises", query)
+        else:
+            raw = self._library("get_exercise_catalog")
+        if isinstance(raw, list):
+            entries = raw
+        elif isinstance(raw, dict):
+            entries = raw.get("exercises", [])
+        else:
+            entries = []
+        q = query.replace(" ", "_").upper()
+        out = []
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            name = str(e.get("name") or e.get("exerciseName") or "")
+            if q in name.upper():
+                out.append({"name": name, "category": e.get("category") or e.get("categoryKey")})
+        return out
+
+    def daily_suggestion(self, day: dt.date) -> dict | None:
+        """Garmin's Daily Suggested Workout for a day, if the library exposes it (#83)."""
+        fn = getattr(self.api, "get_daily_suggested_workout", None) or getattr(
+            self.api, "get_workout_suggestion", None
+        )
+        if not callable(fn):
+            return None
+        try:
+            return fn(day.isoformat())
+        except Exception:  # purely advisory
+            return None
+
     # --- writes ---
 
     def create_workout(self, payload: dict) -> int:
@@ -180,31 +267,42 @@ class GarminClient:
             raise PushError(f"Garmin did not return a workoutId (got {result!r})")
         return int(workout_id)
 
+    def update_workout(self, workout_id: int, payload: dict) -> None:
+        """Edit in place (#78): keeps Garmin's id and anything attached to it."""
+        body = dict(payload, workoutId=workout_id)
+        self._call("PUT", WORKOUT_ITEM.format(workout_id=workout_id), json=body)
+
     def delete_workout(self, workout_id: int) -> None:
         self._call("DELETE", WORKOUT_ITEM.format(workout_id=workout_id))
 
     def schedule_workout(self, workout_id: int, date: str) -> None:
-        self._call(
-            "POST",
-            WORKOUT_SCHEDULE.format(workout_id=workout_id),
-            json={"date": date},
-        )
+        self._call("POST", WORKOUT_SCHEDULE.format(workout_id=workout_id), json={"date": date})
 
-    # --- the useful one ---
+    def push_to_device(self, workout_id: int, device_id: str) -> None:
+        """Send a workout to a device now rather than at the next sync (#79)."""
+        self._library("push_workout_to_device", workout_id, device_id)
+
+    # --- the useful ones ---
 
     def push(
         self,
         compiled: list[CompiledWorkout],
         replace: bool = True,
         verify: bool = True,
+        update_in_place: bool = True,
+        device_id: str | None = None,
         log: Callable[[str], None] = lambda _: None,
     ) -> list[PushResult]:
         """Upload and schedule, skipping anything already on the calendar unchanged.
 
-        Only workouts carrying our tag are ever deleted. Anything you built by
-        hand in Garmin Connect is left strictly alone.
+        A tagged workout whose content changed is updated in place when the
+        library allows it, else replaced. Only workouts carrying our tag are
+        ever touched. Anything you built by hand in Garmin Connect is left
+        strictly alone.
         """
         results: list[PushResult] = []
+        if not compiled:
+            return results
         dates = [dt.date.fromisoformat(c.date) for c in compiled]
         existing = self.scheduled_between(min(dates), max(dates))
         by_date = _index_by_date(existing)
@@ -212,19 +310,14 @@ class GarminClient:
         for item in compiled:
             try:
                 results.append(
-                    self._push_one(item, by_date, replace=replace, verify=verify, log=log)
+                    self._push_one(item, by_date, replace, verify, update_in_place, device_id, log)
                 )
             except PushError as exc:
                 results.append(PushResult(item.name, item.date, "failed", detail=str(exc)))
         return results
 
     def _push_one(
-        self,
-        item: CompiledWorkout,
-        by_date: dict[str, list[dict]],
-        replace: bool,
-        verify: bool,
-        log: Callable[[str], None],
+        self, item, by_date, replace, verify, update_in_place, device_id, log
     ) -> PushResult:
         _, _, want_hash = item.tag.strip("[]").split(":")
         stale: list[int] = []
@@ -246,17 +339,28 @@ class GarminClient:
                 item.name,
                 item.date,
                 "failed",
-                detail=f"{len(stale)} tagged workout(s) already on {item.date}; "
-                "re-run with --replace to overwrite",
+                detail=f"{len(stale)} tagged workout(s) already on {item.date}; re-run with --replace to overwrite",
             )
 
-        workout_id = self.create_workout(item.payload)
-        self.schedule_workout(workout_id, item.date)
+        detail = ""
+        if stale and update_in_place:
+            workout_id = stale[0]
+            try:
+                self.update_workout(workout_id, item.payload)
+                action = "updated"
+                stale = stale[1:]
+            except PushError as exc:
+                log(f"  in-place update failed ({exc}); replacing instead")
+                workout_id = self.create_workout(item.payload)
+                self.schedule_workout(workout_id, item.date)
+                action = "replaced"
+        else:
+            workout_id = self.create_workout(item.payload)
+            self.schedule_workout(workout_id, item.date)
+            action = "replaced" if stale else "created"
 
         if verify:
             detail = self._verify(workout_id, item)
-        else:
-            detail = ""
 
         for old_id in stale:
             try:
@@ -264,9 +368,46 @@ class GarminClient:
             except PushError as exc:
                 detail = (detail + f" (could not delete old {old_id}: {exc})").strip()
 
-        action = "replaced" if stale else "created"
+        if device_id:
+            try:
+                self.push_to_device(workout_id, device_id)
+                detail = (detail + " sent to device").strip()
+            except PushError as exc:
+                detail = (detail + f" (device push failed: {exc})").strip()
+
         log(f"  {action:<10} {item.date}  {item.name}  (id {workout_id})")
         return PushResult(item.name, item.date, action, workout_id, detail)
+
+    def unpush(
+        self, compiled: list[CompiledWorkout], log: Callable[[str], None] = lambda _: None
+    ) -> list[PushResult]:
+        """Undo a push (#2): delete this plan's tagged workouts on those dates.
+
+        The tag's plan slug is the key, so other plans' workouts on the same
+        calendar survive, and hand-made workouts are never candidates.
+        """
+        results: list[PushResult] = []
+        if not compiled:
+            return results
+        dates = [dt.date.fromisoformat(c.date) for c in compiled]
+        slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
+        wanted = {(c.date, c.name.strip()) for c in compiled}
+        for item in self.scheduled_between(min(dates), max(dates)):
+            tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
+            if tag is None or tag[0] not in slugs:
+                continue
+            date = (item.get("date") or "")[:10]
+            title = (item.get("title") or "").strip()
+            if (date, title) not in wanted:
+                continue
+            workout_id = item.get("workoutId") or item.get("id")
+            try:
+                self.delete_workout(int(workout_id))
+                log(f"  removed    {date}  {title}")
+                results.append(PushResult(title, date, "removed", int(workout_id)))
+            except (PushError, TypeError, ValueError) as exc:
+                results.append(PushResult(title, date, "failed", detail=str(exc)))
+        return results
 
     def _verify(self, workout_id: int, item: CompiledWorkout) -> str:
         """Read the workout back and check Garmin stored what we sent.
@@ -297,6 +438,10 @@ class GarminClient:
                     f"step {index}: target value changed {one} -> {two} "
                     "(Garmin may order pace bounds the other way round)"
                 )
+            if sent.get("exerciseName") and got.get("exerciseName") != sent.get("exerciseName"):
+                problems.append(
+                    f"step {index}: exercise {sent['exerciseName']} not recognised by Garmin's catalog"
+                )
         return "; ".join(problems)
 
 
@@ -325,11 +470,10 @@ def _json_or_none(response: Any) -> Any:
         return None
     if isinstance(response, (dict, list)):
         return response
-    for attr in ("json",):
-        fn = getattr(response, attr, None)
-        if callable(fn):
-            try:
-                return fn()
-            except Exception:
-                return None
+    fn = getattr(response, "json", None)
+    if callable(fn):
+        try:
+            return fn()
+        except Exception:
+            return None
     return None

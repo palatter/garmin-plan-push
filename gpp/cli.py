@@ -364,6 +364,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         compiled,
         replace=args.replace,
         verify=not args.no_verify,
+        device_id=args.device,
         log=lambda line: print(line),
     )
 
@@ -398,8 +399,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     from .cli_extra import register
+    from .cli_history import register as register_history
 
     register(sub)
+    register_history(sub)
 
     web = sub.add_parser("web", help="open the graphical app in your browser")
     web.add_argument("--port", type=int, default=8765)
@@ -474,6 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     push.add_argument("--no-verify", action="store_true", help="skip reading workouts back")
     push.add_argument("--email", help="Garmin account email")
+    push.add_argument("--device", help="device id to send to immediately (see: gpp devices)")
     push.add_argument("--token-dir", help="where to cache the auth token")
     push.set_defaults(func=cmd_push)
 
