@@ -6,6 +6,9 @@
   sent from the local page to the local server to Garmin, and never written to
   disk. Garmin's own OAuth token cache (`~/.garminconnect/`) is the only thing
   that persists — treat that directory as you would a saved login.
+  `python-garminconnect` versions up to 0.3.4 created that directory with
+  insecure permissions (a published advisory, fixed in 0.3.5); this project
+  requires 0.3.16 or newer.
 - **AI API keys**, read from environment variables, never stored by this tool.
 - **Your training profile** (`profile.toml`): name, paces, heart-rate numbers.
   Local file, git-ignored.
