@@ -26,9 +26,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .. import checks
 from ..compile import compile_plan
 from ..estimate import EstimateError, lthr_from_max, threshold_from_race
 from ..generate import generate_plan
+from ..load import plan_dashboard
 from ..plan import Plan, PlanError
 from ..profile import Profile, ProfileError, default_save_path, find_profile
 from ..providers import (
@@ -235,6 +237,8 @@ class App:
             "text": render_plan(plan, compiled, profile),
             "json": plan.to_dict(),
             "race": plan.a_race.to_dict() if plan.a_race else None,
+            "report": checks.check(plan, profile).to_dict(),
+            "dashboard": plan_dashboard(plan, profile),
         }
 
     def generate(self, body: dict) -> dict:

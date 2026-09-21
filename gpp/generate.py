@@ -2,25 +2,31 @@
 
 The loop is the point. A single-shot LLM call produces a valid-looking plan
 most of the time; "most of the time" is not good enough when the output ends
-up as beeping instructions on your wrist. So every response is validated AND
-compiled before it is accepted, and any failure is handed straight back to the
-model as a correction turn.
+up as beeping instructions on your wrist. So every response is validated,
+compiled AND sanity-checked before it is accepted, and any failure is handed
+straight back to the model as a correction turn.
 
-Compiling during validation matters: schema validation catches a malformed
-step, but only compilation catches a zone name that does not exist in your
-profile, or a pace range that resolves backwards.
+Three gates, in order of strictness:
+
+  1. schema + semantics (plan.validate)   -> always sent back
+  2. compilation (zones, paces, sports)   -> always sent back
+  3. the sanity report (checks.check)     -> "block" findings always sent
+     back; "warn" findings sent back once, then the athlete decides. A plan
+     that is merely warned about is still a valid plan; refusing it forever
+     would just make the model thrash.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from . import checks
 from .compile import CompileError, compile_plan
-from .plan import PLAN_SCHEMA, Plan, PlanError
+from .plan import PLAN_SCHEMA, WORKOUT_SCHEMA, Plan, PlanError, Workout
 from .profile import Profile, ProfileError
-from .prompt import build_prompt
+from .prompt import build_prompt, build_rewrite_prompt
 from .providers import Provider, ProviderError, extract_json
 
 MAX_ATTEMPTS = 3
@@ -34,6 +40,15 @@ Fix only that problem and return the complete corrected JSON object. Same
 format as before: one JSON object, no prose, no markdown fence.
 """
 
+REPORT_TEMPLATE = """\
+That plan is valid but the coaching checks flagged it:
+
+{feedback}
+
+Revise the plan to address these and return the complete corrected JSON
+object. Same format as before: one JSON object, no prose, no markdown fence.
+"""
+
 
 @dataclass
 class GenerationResult:
@@ -41,6 +56,7 @@ class GenerationResult:
     plan: Plan
     attempts: int
     corrections: list[str]
+    report: checks.Report = field(default_factory=checks.Report)
 
 
 def generate_plan(
@@ -54,6 +70,8 @@ def generate_plan(
     user = request
     corrections: list[str] = []
     last_error: Exception | None = None
+    warned_once = False
+    best: GenerationResult | None = None
 
     for attempt in range(1, attempts + 1):
         log(f"asking {provider.name} (attempt {attempt}/{attempts})...")
@@ -72,19 +90,94 @@ def generate_plan(
             user = _correction_turn(request, raw, exc)
             continue
 
-        log(f"  accepted: {len(plan.workouts)} workout(s)")
-        return GenerationResult(data, plan, attempt, corrections)
+        report = checks.check(plan, profile)
+        result = GenerationResult(data, plan, attempt, list(corrections), report)
+        if report.blocks or (report.warns and not warned_once):
+            kind = "blocked" if report.blocks else "warned"
+            summary = "; ".join(f.code for f in report.blocks + report.warns)
+            log(f"  {kind} by sanity checks: {summary}")
+            corrections.append(report.feedback(include_warns=True))
+            if not report.blocks:
+                warned_once = True
+                best = result  # acceptable if the model cannot do better
+            if attempt == attempts:
+                if best is not None:
+                    log("  accepting the best warned plan; the report is attached")
+                    return best
+                break
+            user = _report_turn(request, raw, report)
+            continue
 
+        log(f"  accepted: {len(plan.workouts)} workout(s)")
+        return result
+
+    if best is not None:
+        log("  accepting the best warned plan; the report is attached")
+        return best
     raise ProviderError(
-        f"{provider.name} could not produce a valid plan in {attempts} attempts. "
-        f"Last error: {last_error}"
+        f"{provider.name} could not produce an acceptable plan in {attempts} attempts. "
+        f"Last problem: {last_error or 'sanity checks not satisfied'}"
     )
+
+
+def regenerate_workout(
+    provider: Provider,
+    profile: Profile,
+    plan: Plan,
+    date: str,
+    instruction: str,
+    attempts: int = 2,
+    log: Callable[[str], None] = lambda _: None,
+) -> Plan:
+    """Rewrite one workout in place ("rewrite just Thursday")."""
+    current = [w for w in plan.workouts if w.date.isoformat() == date]
+    if not current:
+        raise PlanError(f"no workout on {date}")
+    target = current[0]
+    others = [w.to_dict() for w in plan.workouts if w is not target]
+    system = build_prompt(profile)
+    user = build_rewrite_prompt(target.to_dict(), others, instruction)
+
+    for attempt in range(1, attempts + 1):
+        log(f"asking {provider.name} to rewrite {date} (attempt {attempt}/{attempts})...")
+        raw = provider.complete(system, user, WORKOUT_SCHEMA)
+        try:
+            data = extract_json(raw)
+            if "workouts" in data and len(data["workouts"]) == 1:
+                data = data["workouts"][0]
+            data.setdefault("date", date)
+            candidate = Plan.from_dict({"plan": plan.plan, "workouts": [data]})
+            compile_plan(candidate, profile)
+        except (ProviderError, PlanError, CompileError, ProfileError) as exc:
+            log(f"  rejected: {exc}")
+            if attempt == attempts:
+                raise
+            user = _correction_turn(instruction, raw, exc)
+            continue
+        new_workout: Workout = candidate.workouts[0]
+        new_workout.date = target.date
+        replaced = [new_workout if w is target else w for w in plan.workouts]
+        return Plan(
+            plan=plan.plan,
+            workouts=replaced,
+            race_date=plan.race_date,
+            races=plan.races,
+            weeks=plan.weeks,
+        )
+    raise ProviderError("could not rewrite the workout")
 
 
 def _correction_turn(original_request: str, raw: str, error: Exception) -> str:
     return (
         f"{original_request}\n\nYour previous answer was:\n{raw.strip()[:4000]}\n\n"
         + RETRY_TEMPLATE.format(error=error)
+    )
+
+
+def _report_turn(original_request: str, raw: str, report: checks.Report) -> str:
+    return (
+        f"{original_request}\n\nYour previous answer was:\n{raw.strip()[:4000]}\n\n"
+        + REPORT_TEMPLATE.format(feedback=report.feedback(include_warns=True))
     )
 
 

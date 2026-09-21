@@ -128,5 +128,5 @@ def test_catches_bad_zone_via_compilation():
 
 def test_gives_up_after_the_attempt_budget():
     provider = ScriptedProvider(["nonsense", "still nonsense"])
-    with pytest.raises(ProviderError, match="could not produce a valid plan"):
+    with pytest.raises(ProviderError, match="could not produce"):
         generate_plan(provider, PROFILE, "go", attempts=2)

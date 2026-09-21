@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import checks
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
 from .plan import Plan, PlanError
@@ -299,14 +300,18 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    _, plan, compiled = _load(args)
+    profile, plan, compiled = _load(args)
     print(f"OK: {plan.plan} - {len(compiled)} workout(s) valid")
-    return 0
+    report = checks.check(plan, profile)
+    print(report.text())
+    return 0 if report.ok else 1
 
 
 def cmd_show(args: argparse.Namespace) -> int:
     profile, plan, compiled = _load(args)
     print(render_plan(plan, compiled, profile), end="")
+    print()
+    print(checks.check(plan, profile).text())
     return 0
 
 
