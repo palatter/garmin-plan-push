@@ -431,7 +431,7 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     we = sub.add_parser("weather", help="heat-adjusted pace for a day (typed or forecast)")
     we.add_argument("--temp", type=float, help="C")
-    we.add_argument("--humidity", type=float, help="%")
+    we.add_argument("--humidity", type=float, help="relative humidity, percent")
     we.add_argument("--pace", help="target pace to adjust, e.g. 5:00/km")
     we.add_argument("--date")
     we.add_argument("--hour", type=int, default=7)

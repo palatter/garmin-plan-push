@@ -89,7 +89,7 @@ class ScriptedProvider:
         self.responses = list(responses)
         self.prompts = []
 
-    def complete(self, system, user, schema):
+    def complete(self, system, user, schema, on_delta=None):
         self.prompts.append(user)
         if not self.responses:
             raise AssertionError("called more times than scripted")

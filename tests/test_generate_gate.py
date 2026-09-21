@@ -53,7 +53,7 @@ class Scripted:
         self.replies = list(replies)
         self.prompts = []
 
-    def complete(self, system, user, schema):
+    def complete(self, system, user, schema, on_delta=None):
         self.prompts.append(user)
         return self.replies.pop(0)
 

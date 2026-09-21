@@ -58,11 +58,93 @@ class ProviderConfig:
     options: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class Usage:
+    """Tokens spent on one call, and an estimated cost where the price is known."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+
+    def describe(self) -> str:
+        text = f"{self.input_tokens:,} in / {self.output_tokens:,} out tokens"
+        if self.cost_usd is not None:
+            text += f" (~${self.cost_usd:.3f})"
+        return text
+
+
+# USD per million tokens (input, output). Anthropic's published first-party
+# rates; other vendors are left out rather than guessed, so their calls
+# report tokens only.
+PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def estimate_cost(model: str | None, input_tokens: int, output_tokens: int) -> float | None:
+    if not model:
+        return None
+    for prefix, (cin, cout) in sorted(PRICES_PER_MTOK.items(), key=lambda kv: -len(kv[0])):
+        if model.startswith(prefix):
+            return (input_tokens * cin + output_tokens * cout) / 1_000_000
+    return None
+
+
+# Local models known to produce usable plans, and ones that do not. Shown by
+# `gpp providers` so nobody spends an evening on an 8B model that cannot
+# hold the schema (#50).
+LOCAL_MODEL_PRESETS: list[dict] = [
+    {
+        "model": "llama3.3",
+        "size": "70B",
+        "verdict": "good",
+        "note": "holds the schema and the coaching rules; slow on CPU",
+    },
+    {
+        "model": "qwen2.5:32b",
+        "size": "32B",
+        "verdict": "good",
+        "note": "reliable JSON; best size/quality trade-off on a 24 GB GPU",
+    },
+    {
+        "model": "qwen2.5:14b",
+        "size": "14B",
+        "verdict": "usable",
+        "note": "needs the retry loop; expect one correction turn",
+    },
+    {
+        "model": "llama3.1:8b",
+        "size": "8B",
+        "verdict": "weak",
+        "note": "drops fields and invents zones; use paste instead",
+    },
+    {
+        "model": "phi4",
+        "size": "14B",
+        "verdict": "usable",
+        "note": "fine for single workouts, flaky on multi-week plans",
+    },
+]
+
+OnDelta = Callable[[str], None] | None
+
+
 class Provider(Protocol):
     name: str
+    last_usage: Usage | None
 
-    def complete(self, system: str, user: str, schema: dict | None) -> str:
-        """Return the model's raw text response."""
+    def complete(
+        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+    ) -> str:
+        """Return the model's raw text response, streaming chunks to on_delta if given."""
 
 
 # --- Anthropic --------------------------------------------------------------
@@ -79,8 +161,11 @@ class AnthropicProvider:
         self.name = config.name
         self.config = config
         self.model = config.model or "claude-opus-5"
+        self.last_usage: Usage | None = None
 
-    def complete(self, system: str, user: str, schema: dict | None) -> str:
+    def complete(
+        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+    ) -> str:
         try:
             import anthropic
         except ImportError as exc:
@@ -100,15 +185,25 @@ class AnthropicProvider:
         if schema and self.config.strict_schema:
             request["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
 
+        def call(req: dict[str, Any]):
+            if on_delta is None:
+                return client.messages.create(**req)
+            # Streaming: the plan appears as it is written, and long outputs
+            # cannot hit a request timeout.
+            with client.messages.stream(**req) as stream:
+                for text in stream.text_stream:
+                    on_delta(text)
+                return stream.get_final_message()
+
         try:
-            response = client.messages.create(**request)
+            response = call(request)
         except Exception as exc:
             # A schema the API will not accept (ours uses $ref/oneOf) should
             # degrade to prompt-only JSON rather than kill the run.
             if "output_config" in request and _is_bad_request(exc):
                 request.pop("output_config")
                 try:
-                    response = client.messages.create(**request)
+                    response = call(request)
                 except Exception as inner:
                     raise ProviderError(
                         describe_failure(self.name, self.model, inner, ANTHROPIC_MODELS_URL)
@@ -118,6 +213,7 @@ class AnthropicProvider:
                     describe_failure(self.name, self.model, exc, ANTHROPIC_MODELS_URL)
                 ) from exc
 
+        self.last_usage = usage_from_anthropic(response, self.model)
         if getattr(response, "stop_reason", None) == "refusal":
             raise ProviderError("Claude declined this request")
 
@@ -125,6 +221,23 @@ class AnthropicProvider:
         if not parts:
             raise ProviderError("Claude returned no text content")
         return "\n".join(parts)
+
+
+def usage_from_anthropic(response: Any, model: str | None) -> Usage | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    inp = int(getattr(usage, "input_tokens", 0) or 0)
+    out = int(getattr(usage, "output_tokens", 0) or 0)
+    return Usage(inp, out, estimate_cost(model, inp, out))
+
+
+def usage_from_openai(usage: Any, model: str | None) -> Usage | None:
+    if usage is None:
+        return None
+    inp = int(getattr(usage, "prompt_tokens", 0) or 0)
+    out = int(getattr(usage, "completion_tokens", 0) or 0)
+    return Usage(inp, out, estimate_cost(model, inp, out))
 
 
 # --- OpenAI and anything speaking its dialect -------------------------------
@@ -138,8 +251,11 @@ class OpenAICompatibleProvider:
         self.config = config
         self.model = config.model or KIND_DEFAULTS["openai"]["model"]
         self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get("docs", OPENAI_MODELS_URL)
+        self.last_usage: Usage | None = None
 
-    def complete(self, system: str, user: str, schema: dict | None) -> str:
+    def complete(
+        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+    ) -> str:
         try:
             from openai import OpenAI
         except ImportError as exc:
@@ -175,13 +291,24 @@ class OpenAICompatibleProvider:
             # rest.
             request["response_format"] = {"type": "json_object"}
 
+        def call(req: dict[str, Any]) -> tuple[str, Any]:
+            if on_delta is None:
+                response = client.chat.completions.create(**req)
+                return (response.choices[0].message.content or ""), getattr(response, "usage", None)
+            return collect_openai_stream(
+                client.chat.completions.create(
+                    **req, stream=True, stream_options={"include_usage": True}
+                ),
+                on_delta,
+            )
+
         try:
-            response = client.chat.completions.create(**request)
+            content, usage = call(request)
         except Exception as exc:
             if "response_format" in request and _is_bad_request(exc):
                 request.pop("response_format")
                 try:
-                    response = client.chat.completions.create(**request)
+                    content, usage = call(request)
                 except Exception as inner:
                     raise ProviderError(
                         describe_failure(self.name, self.model, inner, self.docs_url)
@@ -191,10 +318,27 @@ class OpenAICompatibleProvider:
                     describe_failure(self.name, self.model, exc, self.docs_url)
                 ) from exc
 
-        content = response.choices[0].message.content
+        self.last_usage = usage_from_openai(usage, self.model)
         if not content:
             raise ProviderError(f"{self.name} returned an empty response")
         return content
+
+
+def collect_openai_stream(chunks: Any, on_delta: Callable[[str], None]) -> tuple[str, Any]:
+    """Drain a chat-completions stream: text to on_delta, usage from the tail."""
+    parts: list[str] = []
+    usage = None
+    for chunk in chunks:
+        choices = getattr(chunk, "choices", None) or []
+        if choices:
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta is not None else None
+            if text:
+                parts.append(text)
+                on_delta(text)
+        if getattr(chunk, "usage", None) is not None:
+            usage = chunk.usage
+    return "".join(parts), usage
 
 
 # --- Manual / paste ---------------------------------------------------------
@@ -216,10 +360,13 @@ class ManualProvider:
         self.name = config.name
         self.config = config
         self.ask = ask
+        self.last_usage: Usage | None = None
         self.prompt_path = Path(config.options.get("prompt_file", "plan-prompt.txt"))
         self.response_path = Path(config.options.get("response_file", "plan-response.json"))
 
-    def complete(self, system: str, user: str, schema: dict | None) -> str:
+    def complete(
+        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+    ) -> str:
         full_prompt = f"{system}\n\nREQUEST\n{user}\n"
 
         if self.ask is not None:

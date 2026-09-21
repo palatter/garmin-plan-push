@@ -139,6 +139,55 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    from .mcp_server import describe_tools, serve
+
+    if args.list:
+        for tool in describe_tools():
+            print(f"  {tool['name']:<20} {tool['description']}")
+        return 0
+    serve()
+    return 0
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    from .watch import watch
+
+    def on_change(path: Path) -> None:
+        print(f"\n--- {path} changed ---")
+        try:
+            profile = _load_profile(args.profile)
+            plan = Plan.load(path)
+            compiled = compile_plan(plan, profile)
+            print(render_plan(plan, compiled, profile), end="")
+            print(checks.check(plan, profile).text())
+            if args.push:
+                from .client import GarminClient, PushError
+
+                email = args.email or os.environ.get("GARMIN_EMAIL")
+                password = os.environ.get("GARMIN_PASSWORD")
+                if not email:
+                    print(
+                        "set GARMIN_EMAIL (and GARMIN_PASSWORD or a cached login) to push from watch"
+                    )
+                    return
+                client = GarminClient(email, password or None)
+                try:
+                    client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+                    client.push(compiled, device_id=args.device, log=print)
+                except PushError as exc:
+                    print(f"push failed: {exc}")
+        except (PlanError, ProfileError, CompileError) as exc:
+            print(f"error: {exc}")
+
+    print(f"watching {args.plan} -- Ctrl+C to stop")
+    try:
+        watch(args.plan, on_change)
+    except KeyboardInterrupt:
+        print("stopped")
+    return 0
+
+
 def cmd_zones(args: argparse.Namespace) -> int:
     print(_load_profile(args.profile).describe())
     return 0
@@ -168,6 +217,13 @@ def cmd_providers(args: argparse.Namespace) -> int:
             target += f" @ {config.base_url}"
         print(f" {marker} {name:<12} {config.kind:<18} {target:<48} {_key_status(config)}")
     print("\n* = will be used by default. Configure more under [ai.providers] in your profile.")
+    from .providers import LOCAL_MODEL_PRESETS
+
+    print("\nlocal models (kind = ollama), from experience:")
+    for preset in LOCAL_MODEL_PRESETS:
+        print(
+            f"  {preset['model']:<14} {preset['size']:<5} {preset['verdict']:<7} {preset['note']}"
+        )
     return 0
 
 
@@ -250,7 +306,45 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print()
     print("Everything looks ready." if ok else "Fix the lines marked !! and run again.")
+    if getattr(args, "bundle", None):
+        write_bundle(Path(args.bundle), profile, configs)
     return 0 if ok else 1
+
+
+def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
+    """A local diagnostics file for bug reports (#100). Never uploaded."""
+    import json
+    import platform
+    import sys as _sys
+    from importlib import metadata
+
+    def version(name: str) -> str:
+        try:
+            return metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return "not installed"
+
+    bundle = {
+        "gpp": version("garmin-plan-push"),
+        "python": _sys.version.split()[0],
+        "platform": platform.platform(),
+        "packages": {
+            n: version(n) for n in ("garminconnect", "jsonschema", "anthropic", "openai", "mcp")
+        },
+        "profile": {
+            "zone_model": profile.zone_model,
+            "has_lthr": profile.lthr is not None,
+            "has_power": profile.power_cp is not None,
+            "availability": bool(profile.availability),
+            "goal_race": bool(profile.goal_race),
+        },
+        "providers": {
+            name: {"kind": cfg.kind, "model": cfg.model, "key_env": cfg.api_key_env}
+            for name, cfg in configs.items()
+        },
+    }
+    path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
+    print(f"diagnostics written to {path} (no credentials, no plan contents)")
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -412,6 +506,17 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init", help="set up your profile in the terminal")
     init.set_defaults(func=cmd_init)
 
+    mcp = sub.add_parser("mcp", help="run as an MCP server so any assistant can drive the tool")
+    mcp.add_argument("--list", action="store_true", help="print the tools and exit")
+    mcp.set_defaults(func=cmd_mcp)
+
+    wa = sub.add_parser("watch", help="re-check (or re-push) a plan file whenever it changes")
+    wa.add_argument("plan")
+    wa.add_argument("--push", action="store_true", help="push on change instead of just checking")
+    wa.add_argument("--email")
+    wa.add_argument("--device")
+    wa.set_defaults(func=cmd_watch)
+
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)
 
@@ -427,6 +532,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="actually call each configured AI provider (costs a few tokens)",
     )
+    doctor.add_argument("--bundle", help="write a diagnostics JSON file here for a bug report")
     doctor.set_defaults(func=cmd_doctor)
 
     generate = sub.add_parser("generate", help="have an AI write a plan")

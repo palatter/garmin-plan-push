@@ -75,7 +75,10 @@ def generate_plan(
 
     for attempt in range(1, attempts + 1):
         log(f"asking {provider.name} (attempt {attempt}/{attempts})...")
-        raw = provider.complete(system, user, PLAN_SCHEMA)
+        raw = provider.complete(system, user, PLAN_SCHEMA, on_delta=_progress(log))
+        usage = getattr(provider, "last_usage", None)
+        if usage:
+            log(f"  {usage.describe()}")
 
         try:
             data = extract_json(raw)
@@ -165,6 +168,19 @@ def regenerate_workout(
             weeks=plan.weeks,
         )
     raise ProviderError("could not rewrite the workout")
+
+
+def _progress(log: Callable[[str], None]) -> Callable[[str], None]:
+    """Turn a token stream into a few log lines, not thousands."""
+    seen = [0, 0]
+
+    def on_delta(text: str) -> None:
+        seen[0] += len(text)
+        if seen[0] - seen[1] >= 800:
+            seen[1] = seen[0]
+            log(f"  writing... {seen[0] / 1000:.1f}k characters")
+
+    return on_delta
 
 
 def _correction_turn(original_request: str, raw: str, error: Exception) -> str:
