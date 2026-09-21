@@ -71,7 +71,7 @@ def test_distance_at_power_estimates_time_through_the_power_model():
                 {
                     "kind": "run",
                     "distance": "1km",
-                    "target": {"type": "power", "low": 300, "high": 300},
+                    "target": {"type": "power", "low": 295, "high": 305},
                 }
             ]
         )
@@ -219,6 +219,7 @@ def test_role_phase_and_races_round_trip():
             {
                 "name": "Long",
                 "date": "2026-09-27",
+                "sport": "running",
                 "role": "long",
                 "phase": "build",
                 "steps": [
