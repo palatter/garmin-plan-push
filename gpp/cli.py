@@ -12,27 +12,27 @@ from pathlib import Path
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
 from .plan import Plan, PlanError
-from .profile import Profile, ProfileError
+from .profile import Profile, ProfileError, default_save_path, find_profile
 from .prompt import build_prompt
 from .providers import ProviderError, build_provider, load_providers
 from .render import render_plan
 
-PROFILE_SEARCH = [
-    Path("profile.toml"),
-    Path("examples/profile.toml"),
-    Path.home() / ".config" / "gpp" / "profile.toml",
-]
-
-
 def _load_profile(explicit: str | None) -> Profile:
+    """Resolve the profile.
+
+    Deliberately delegates to profile.find_profile() rather than keeping its
+    own search order: when the CLI and the web UI disagree about which file is
+    in effect, they silently compile workouts at different paces.
+    """
     if explicit:
         return Profile.load(explicit)
-    for candidate in PROFILE_SEARCH:
-        if candidate.exists():
-            return Profile.load(candidate)
+    found = find_profile()
+    if found is not None:
+        return Profile.load(found)
     raise ProfileError(
-        "no profile found. Copy examples/profile.toml to ./profile.toml and "
-        "set your threshold pace, or pass --profile PATH."
+        "no profile yet.\n"
+        "  Run  gpp web    for the graphical setup, or\n"
+        "  run  gpp init   to set it up here in the terminal."
     )
 
 
@@ -43,6 +43,90 @@ def _load(args: argparse.Namespace) -> tuple[Profile, Plan, list]:
 
 
 # --- commands ---------------------------------------------------------------
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    from .web import serve
+
+    serve(
+        port=args.port,
+        open_browser=not args.no_browser,
+        profile_path=Path(args.profile) if args.profile else None,
+    )
+    return 0
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """Terminal setup, for people who would rather not open a browser."""
+    from .estimate import COMMON_RACES, EstimateError, lthr_from_max, threshold_from_race
+
+    from .units import format_pace
+
+    print("\nLet's work out your training paces.\n")
+
+    name = input("Your name [runner]: ").strip() or "runner"
+    units = input("Miles or kilometres? [km]: ").strip().lower()
+    imperial = units.startswith("mi") or units.startswith("im")
+
+    print(
+        "\nEnter a recent race and we'll derive your threshold pace,\n"
+        "or press Enter to type the pace directly.\n"
+        f"Known distances: {', '.join(COMMON_RACES)}\n"
+    )
+
+    threshold: str | None = None
+    while threshold is None:
+        distance = input("Race distance (e.g. 10k) [skip]: ").strip()
+        if not distance:
+            break
+        time = input("Your finishing time (e.g. 47:30): ").strip()
+        try:
+            estimate = threshold_from_race(distance, time)
+        except EstimateError as exc:
+            print(f"  {exc}\n")
+            continue
+        threshold = format_pace(estimate.threshold_pace, imperial)
+        print(f"\n  {estimate.describe(imperial)}\n")
+
+    while threshold is None:
+        raw = input("Threshold pace (e.g. 4:30/km): ").strip()
+        if not raw:
+            print("  A threshold pace is needed to derive your zones.")
+            continue
+        threshold = raw
+
+    lthr = hr_max = None
+    hr_raw = input("Max heart rate, if you know it [skip]: ").strip()
+    if hr_raw.isdigit():
+        hr_max = int(hr_raw)
+        try:
+            lthr = lthr_from_max(hr_max)
+            print(f"  Estimated threshold HR {lthr} bpm.")
+        except EstimateError as exc:
+            print(f"  {exc}")
+            hr_max = None
+
+    data: dict = {
+        "name": name,
+        "units": "imperial" if imperial else "metric",
+        "pace": {"threshold": threshold},
+    }
+    if lthr or hr_max:
+        data["hr"] = {k: v for k, v in (("lthr", lthr), ("max", hr_max)) if v}
+
+    try:
+        profile = Profile.from_dict(data)
+    except ProfileError as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        return 2
+
+    path = Path(args.profile) if args.profile else (find_profile() or default_save_path())
+    profile.save(path)
+
+    print(f"\nSaved to {path}\n")
+    print(profile.describe())
+    print("\nNext:  gpp generate \"four weeks to a 10k\"   (or: gpp web)")
+    return 0
 
 
 def cmd_zones(args: argparse.Namespace) -> int:
@@ -211,6 +295,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--profile", help="path to profile.toml")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    web = sub.add_parser("web", help="open the graphical app in your browser")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument(
+        "--no-browser", action="store_true", help="don't open a browser window"
+    )
+    web.set_defaults(func=cmd_web)
+
+    init = sub.add_parser("init", help="set up your profile in the terminal")
+    init.set_defaults(func=cmd_init)
 
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)

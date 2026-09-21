@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="gpp-token" content="__GPP_TOKEN__">
+<title>Training Plans</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#127939;</text></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span>Training Plans</span>
+  </div>
+  <div class="topbar-actions">
+    <button class="chip" id="profile-chip" hidden></button>
+    <button class="icon-btn" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="4.5"/>
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ===================== SETUP ===================== -->
+  <section class="view" id="view-setup" hidden>
+    <div class="hero">
+      <h1>Let's get your paces right</h1>
+      <p class="lede">Every workout this tool writes is derived from one number.
+        You don't need to know it — a recent race is enough.</p>
+    </div>
+
+    <div class="setup-grid">
+      <div class="stack">
+        <div class="card">
+          <label class="field">
+            <span class="field-label">What should we call you?</span>
+            <input type="text" id="s-name" placeholder="Your name" autocomplete="name">
+          </label>
+          <fieldset class="field">
+            <legend class="field-label">Units</legend>
+            <div class="segmented" role="radiogroup" aria-label="Units">
+              <button type="button" class="seg is-active" data-units="metric" role="radio" aria-checked="true">Kilometres</button>
+              <button type="button" class="seg" data-units="imperial" role="radio" aria-checked="false">Miles</button>
+            </div>
+          </fieldset>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">Threshold pace</h2>
+          <div class="tabs" role="tablist">
+            <button class="tab is-active" data-tab="race" role="tab" aria-selected="true">From a race</button>
+            <button class="tab" data-tab="known" role="tab" aria-selected="false">I know it</button>
+          </div>
+
+          <div class="tab-panel" data-panel="race">
+            <div class="row">
+              <label class="field grow">
+                <span class="field-label">Distance</span>
+                <select id="s-race-dist">
+                  <option>5k</option><option>10k</option>
+                  <option>half marathon</option><option>marathon</option>
+                  <option>1500m</option><option>1 mile</option>
+                  <option>3k</option><option>15k</option><option>10 miles</option>
+                </select>
+              </label>
+              <label class="field grow">
+                <span class="field-label">Your time</span>
+                <input type="text" id="s-race-time" placeholder="e.g. 47:30" inputmode="numeric">
+              </label>
+            </div>
+            <p class="hint" id="s-estimate-note">Pick a race you ran hard in the last few months.</p>
+          </div>
+
+          <div class="tab-panel" data-panel="known" hidden>
+            <label class="field">
+              <span class="field-label">Threshold pace</span>
+              <input type="text" id="s-threshold" placeholder="4:30/km">
+            </label>
+            <p class="hint">Roughly what you could hold in a hard one-hour race.</p>
+          </div>
+        </div>
+
+        <details class="card as-details">
+          <summary><h2 class="card-title">Heart rate <span class="muted">— optional</span></h2></summary>
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Threshold HR</span>
+              <input type="number" id="s-lthr" placeholder="170" min="80" max="220">
+            </label>
+            <label class="field grow">
+              <span class="field-label">Max HR</span>
+              <input type="number" id="s-hrmax" placeholder="188" min="120" max="230">
+            </label>
+          </div>
+          <p class="hint">Only needed if you want heart-rate targets. Enter max
+            and we'll estimate threshold.</p>
+        </details>
+      </div>
+
+      <aside class="stack">
+        <div class="card sticky">
+          <h2 class="card-title">Your zones</h2>
+          <p class="hint" id="zone-hint">They'll appear as you type.</p>
+          <ul class="zones" id="zone-list"></ul>
+        </div>
+        <button class="btn primary lg" id="s-save" disabled>Save and continue</button>
+        <p class="error" id="setup-error" hidden></p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== COMPOSE ===================== -->
+  <section class="view" id="view-compose" hidden>
+    <div class="hero">
+      <h1>What are you training for?</h1>
+      <p class="lede">Describe it the way you'd tell a coach. Everything else is automatic.</p>
+    </div>
+
+    <div class="composer card">
+      <textarea id="c-request" rows="4"
+        placeholder="e.g. Four weeks to a 10k. Five runs a week, one long run on Sunday, one threshold session and one set of hills. Keep Mondays easy."></textarea>
+
+      <div class="chips" id="c-examples">
+        <button class="chip ghost" data-fill="Four weeks to a 10k. Five runs a week, one long run Sunday, one threshold session, one hill session.">10k block</button>
+        <button class="chip ghost" data-fill="Three weeks of easy base building, four runs a week, nothing harder than steady. Start Monday.">Base building</button>
+        <button class="chip ghost" data-fill="One week: a threshold session Tuesday, strides Thursday, and a long run Sunday with the last 20 minutes at marathon effort.">Single week</button>
+        <button class="chip ghost" data-fill="Half marathon in 8 weeks. Six runs a week including two quality sessions and a progressive long run.">Half marathon</button>
+      </div>
+
+      <div class="composer-foot">
+        <label class="field inline">
+          <span class="field-label">Written by</span>
+          <select id="c-provider"></select>
+        </label>
+        <button class="btn primary" id="c-generate">
+          <span class="btn-label">Write my plan</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="progress card" id="c-progress" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="progress-body">
+        <strong id="c-progress-title">Writing your plan…</strong>
+        <ul class="log" id="c-log"></ul>
+      </div>
+    </div>
+
+    <div class="card relay" id="c-relay" hidden>
+      <h2 class="card-title">Paste this into any assistant</h2>
+      <p class="hint">No API key needed. Copy the prompt below, paste it into
+        ChatGPT, Claude, Gemini — whatever you already use — then paste its
+        reply back here.</p>
+      <div class="relay-actions">
+        <button type="button" class="btn" id="c-relay-copy">Copy the prompt</button>
+        <span class="ok-note" id="c-relay-copied" hidden>Copied to clipboard</span>
+      </div>
+      <label class="field">
+        <span class="field-label" id="c-relay-label">Paste the reply</span>
+        <textarea id="c-relay-value" rows="6" spellcheck="false"
+          placeholder='{ "plan": "...", "workouts": [ ... ] }'></textarea>
+      </label>
+      <button type="button" class="btn primary" id="c-relay-send">Use this plan</button>
+    </div>
+
+    <p class="error" id="compose-error" hidden></p>
+  </section>
+
+  <!-- ===================== REVIEW ===================== -->
+  <section class="view" id="view-review" hidden>
+    <div class="review-head">
+      <div>
+        <h1 id="r-title">Your plan</h1>
+        <p class="lede" id="r-summary"></p>
+      </div>
+      <div class="review-actions">
+        <button class="btn ghost" id="r-back">Start over</button>
+        <button class="btn ghost" id="r-download">Download</button>
+        <button class="btn primary" id="r-push">Send to Garmin</button>
+      </div>
+    </div>
+    <div class="legend" id="r-legend"></div>
+    <div class="workouts" id="r-workouts"></div>
+  </section>
+</main>
+
+<!-- ===================== PUSH DIALOG ===================== -->
+<dialog id="push-dialog">
+  <form method="dialog" class="dialog-body" id="push-form">
+    <h2>Send to Garmin Connect</h2>
+    <p class="hint">Your password is used once to sign in and is never saved.
+      It goes from this page straight to Garmin.</p>
+
+    <label class="field">
+      <span class="field-label">Garmin Connect email</span>
+      <input type="email" id="p-email" autocomplete="username" required>
+    </label>
+    <label class="field">
+      <span class="field-label">Password</span>
+      <input type="password" id="p-password" autocomplete="current-password">
+      <span class="hint">Leave blank if you've signed in before on this machine.</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="p-replace" checked>
+      <span>Replace earlier versions of these workouts</span>
+    </label>
+
+    <div class="progress inline-progress" id="p-progress" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <ul class="log" id="p-log"></ul>
+    </div>
+
+    <div class="mfa" id="p-mfa" hidden>
+      <label class="field">
+        <span class="field-label" id="p-mfa-label">Garmin MFA code</span>
+        <input type="text" id="p-mfa-code" inputmode="numeric" autocomplete="one-time-code">
+      </label>
+      <button type="button" class="btn primary" id="p-mfa-send">Submit code</button>
+    </div>
+
+    <ul class="results" id="p-results" hidden></ul>
+    <p class="error" id="push-error" hidden></p>
+
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="p-cancel">Close</button>
+      <button type="button" class="btn primary" id="p-go">Send</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== SETTINGS DIALOG ===================== -->
+<dialog id="settings-dialog">
+  <div class="dialog-body">
+    <h2>Your profile</h2>
+    <ul class="zones" id="settings-zones"></ul>
+    <p class="hint" id="settings-path"></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="st-close">Close</button>
+      <button type="button" class="btn" id="st-edit">Edit paces</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

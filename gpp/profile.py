@@ -166,4 +166,130 @@ class Profile:
         if not path.exists():
             raise ProfileError(f"no profile at {path}")
         with path.open("rb") as handle:
-            return cls.from_dict(tomllib.load(handle))
+            try:
+                data = tomllib.load(handle)
+            except tomllib.TOMLDecodeError as exc:
+                # The file invites hand-editing, so a typo here is expected.
+                # Callers recover from ProfileError; a raw TOMLDecodeError
+                # escaping would take the whole app down instead.
+                raise ProfileError(f"{path} is not valid TOML: {exc}") from exc
+        return cls.from_dict(data)
+
+    # --- saving ---
+
+    def to_toml(self) -> str:
+        """Render this profile as a config file.
+
+        Hand-rolled rather than via a TOML writer: the output is a file a human
+        will read and edit, so it keeps comments and a stable field order that
+        a generic serialiser would throw away. Only the fields the setup flow
+        collects are written; anything else in `raw` is preserved verbatim
+        underneath.
+        """
+        lines = [
+            "# garmin-plan-push profile.",
+            "# Written by `gpp init`; safe to edit by hand.",
+            "",
+            f'name = "{_escape(self.name)}"',
+            f'units = "{"imperial" if self.imperial else "metric"}"',
+            "",
+            "[pace]",
+            "# Roughly the pace you could hold in a hard one-hour race.",
+            "# Every pace zone derives from this, so re-check it every 6-8 weeks.",
+            f'threshold = "{format_pace(self.threshold_pace, self.imperial)}"',
+        ]
+
+        custom = {
+            name: bounds
+            for name, bounds in self.pace_zones.items()
+            if DEFAULT_PACE_ZONES.get(name) != bounds
+        }
+        if custom:
+            lines += ["", "[pace.zones]", "# First number is the SLOWER bound."]
+            lines += [f"{name} = [{lo}, {hi}]" for name, (lo, hi) in custom.items()]
+
+        if self.lthr or self.hr_max:
+            lines += ["", "[hr]"]
+            if self.lthr:
+                lines.append(f"lthr = {self.lthr}")
+            if self.hr_max:
+                lines.append(f"max = {self.hr_max}")
+
+        ai_block = _render_ai(self.raw.get("ai"))
+        if ai_block:
+            lines += ["", ai_block]
+
+        return "\n".join(lines).rstrip() + "\n"
+
+    def save(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.to_toml(), encoding="utf-8")
+        return path
+
+
+_TOML_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+    "\b": "\\b",
+    "\f": "\\f",
+}
+
+
+def _escape(value: str) -> str:
+    """Escape a string for a TOML basic string.
+
+    Newlines and control characters are the ones that matter: a pasted name
+    with a trailing newline would otherwise split the line and produce a file
+    that can never be parsed again, locking the user out of their own config.
+    """
+    out = []
+    for char in value:
+        if char in _TOML_ESCAPES:
+            out.append(_TOML_ESCAPES[char])
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            out.append(f"\\u{ord(char):04X}")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def _render_ai(ai: dict | None) -> str:
+    """Re-emit the [ai] block so saving a profile does not drop provider config."""
+    if not ai:
+        return ""
+    lines = ["[ai]"]
+    if ai.get("default"):
+        lines.append(f'default = "{_escape(str(ai["default"]))}"')
+    for name, entry in (ai.get("providers") or {}).items():
+        lines += ["", f"[ai.providers.{name}]"]
+        for key, value in entry.items():
+            if isinstance(value, bool):
+                lines.append(f"{key} = {str(value).lower()}")
+            elif isinstance(value, (int, float)):
+                lines.append(f"{key} = {value}")
+            else:
+                lines.append(f'{key} = "{_escape(str(value))}"')
+    return "\n".join(lines)
+
+
+DEFAULT_PROFILE_PATHS = (
+    Path("profile.toml"),
+    Path.home() / ".config" / "gpp" / "profile.toml",
+)
+
+
+def find_profile() -> Path | None:
+    """The profile this machine should use, if one exists yet."""
+    for candidate in DEFAULT_PROFILE_PATHS:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def default_save_path() -> Path:
+    """Where a new profile goes: beside the project if writable, else XDG config."""
+    return DEFAULT_PROFILE_PATHS[0]

@@ -238,9 +238,18 @@ def _compile_repeat(
         "workoutSteps": children,
         "description": step.note,
     }
-    if parent_child_id is not None:
-        # A nested group is itself a child of the outer group.
-        group["childStepId"] = group_child_id
+    # NOTE on nesting. `childStepId` on a group is the id its own children
+    # carry, so it must stay `group_child_id` even when this group is itself
+    # inside another repeat -- overwriting it with the parent's id would
+    # orphan this group's children. Membership of the outer group is expressed
+    # by position in the parent's `workoutSteps`, not by this field.
+    #
+    # That leaves `parent_child_id` unused here, deliberately: it is threaded
+    # through so executable steps can carry it, and a nested group does not.
+    # Observed Connect payloads only ever show one level of nesting, so if a
+    # two-level workout renders oddly on the watch this is the first place to
+    # look -- `gpp push --verify` will report what Garmin actually stored.
+    del parent_child_id
     return group
 
 

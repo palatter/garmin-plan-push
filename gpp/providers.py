@@ -23,13 +23,18 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 DEFAULT_MAX_TOKENS = 16000
 
 
 class ProviderError(RuntimeError):
     """The provider could not be built, or the call failed."""
+
+
+# Collects a long text answer from the user: given a prompt to relay, returns
+# whatever they paste back. The web UI supplies one; the CLI does not.
+AskFn = Callable[[str], str]
 
 
 @dataclass
@@ -178,23 +183,36 @@ class OpenAICompatibleProvider:
 
 
 class ManualProvider:
-    """No API. Writes the prompt out, waits for you to paste the answer back.
+    """No API key, no SDK: you relay the prompt to any chat window yourself.
 
-    This is the zero-dependency escape hatch, and it is genuinely useful: it
-    works with any chat interface you already have open, including a Claude
-    Code session, a browser tab, or a model with no API at all.
+    This is the zero-cost path, and it is the one that makes the tool
+    shareable — a friend with no API budget can still use every other part of
+    it by pasting into whatever assistant they already have open.
+
+    Two ways to collect the answer. With an `ask` callback (the web UI passes
+    one), the prompt and the reply box appear on screen. Without one, it falls
+    back to files and the terminal, which is what the CLI wants.
     """
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig, ask: AskFn | None = None):
         self.name = config.name
         self.config = config
+        self.ask = ask
         self.prompt_path = Path(config.options.get("prompt_file", "plan-prompt.txt"))
         self.response_path = Path(
             config.options.get("response_file", "plan-response.json")
         )
 
     def complete(self, system: str, user: str, schema: dict | None) -> str:
-        self.prompt_path.write_text(f"{system}\n\nREQUEST\n{user}\n", encoding="utf-8")
+        full_prompt = f"{system}\n\nREQUEST\n{user}\n"
+
+        if self.ask is not None:
+            reply = self.ask(full_prompt)
+            if not reply.strip():
+                raise ProviderError("no plan was pasted back")
+            return reply
+
+        self.prompt_path.write_text(full_prompt, encoding="utf-8")
         print(f"\nPrompt written to {self.prompt_path}")
         print(f"Paste the model's JSON reply into {self.response_path}, then press Enter.")
         input()
@@ -221,7 +239,8 @@ KIND_DEFAULT_BASE_URL = {
 }
 
 
-def build_provider(config: ProviderConfig) -> Provider:
+def build_provider(config: ProviderConfig, ask: AskFn | None = None) -> Provider:
+    """`ask` is only meaningful for manual providers; others ignore it."""
     kind = config.kind.strip().lower()
     cls = KINDS.get(kind)
     if cls is None:
@@ -231,7 +250,13 @@ def build_provider(config: ProviderConfig) -> Provider:
         )
     if config.base_url is None and kind in KIND_DEFAULT_BASE_URL:
         config.base_url = KIND_DEFAULT_BASE_URL[kind]
+    if cls is ManualProvider:
+        return cls(config, ask=ask)
     return cls(config)
+
+
+def is_manual(config: ProviderConfig) -> bool:
+    return config.kind.strip().lower() in ("manual", "paste")
 
 
 def load_providers(data: dict) -> tuple[dict[str, ProviderConfig], str | None]:

@@ -1,100 +1,143 @@
 # garmin-plan-push
 
-Turn an AI-written running plan into real structured workouts on your Garmin
-watch — validated, previewed, and scheduled on your Garmin Connect calendar.
+Describe the training you want in plain English. Get real structured workouts
+on your Garmin watch.
 
 ```
-describe what you want  ->  model writes a plan  ->  validator rejects bad ones
-                                                           |
-                            watch  <-  Garmin Connect  <-  compiler
+"four weeks to a 10k, five runs a week"
+        ↓
+   an AI writes it  →  validator rejects bad plans  →  you review the chart
+        ↓
+   Garmin Connect  →  your watch
 ```
 
-Tested against a Fenix 7s. Any watch with structured-workout support (Fenix 6+,
-Epix, Forerunner 255/265/955/965, Edge 530+) will work; older models like the
-FR235 or Vivoactive 3 won't accept structured workouts at all.
-
-## Why it is built this way
-
-The Garmin half is easy. The hard part is that a language model writing Garmin's
-workout JSON directly will produce plausible-looking output that is subtly
-wrong — a recovery jog targeted at 5k pace, a repeat group whose children have
-mismatched IDs — and you won't find out until the watch is beeping at you at
-6am.
-
-So the model never writes Garmin JSON. It writes a small DSL with human units
-and named zones, which is validated hard, compiled by deterministic code, and
-shown to you as text before anything is uploaded. Three properties fall out:
-
-- **Ambiguity is designed out.** Pace bounds are `slow`/`fast`, never
-  `low`/`high`, because "low pace" is genuinely ambiguous and a model gets it
-  wrong about half the time. A step takes exactly one of duration/distance/lap.
-  Zone names are a closed set resolved from *your* profile, so the model cannot
-  invent paces.
-- **Errors are fed back.** Anything the validator or compiler rejects goes
-  straight back to the model as a correction turn, up to `--attempts` times.
-- **Nothing is trusted blindly.** Garmin's workout API is undocumented outside
-  their partner program, so every magic constant lives in one file and the
-  push step reads each workout back and diffs it against what was sent.
+Runs as a local app in your browser. Nothing is hosted, no account to make,
+and your Garmin password never leaves your machine.
 
 ## Install
 
-```bash
-cd garmin-plan-push && uv sync --extra dev --extra anthropic
-```
-
-Then copy the example profile and set your threshold pace:
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (one
+command on any OS — the link has it). Then:
 
 ```bash
-cp examples/profile.toml profile.toml
+uv tool install git+https://github.com/palatter/garmin-plan-push
 ```
-
-`threshold` is roughly what you could hold for a hard hour — 10k pace plus
-10–15 s/km is a decent estimate. Every pace zone derives from it, so it is
-worth re-checking every 6–8 weeks. Check what you got:
 
 ```bash
-uv run gpp zones
+gpp web
 ```
 
-## Use
+That opens the app. It asks for a recent race time, works out your training
+paces, and you're ready. There is nothing else to configure.
+
+To update later: `uv tool upgrade garmin-plan-push`
+
+## Using it
+
+**Setup** happens once. You don't need to know your threshold pace — give it a
+race you ran hard ("10k, 47:30") and it derives everything, showing your zones
+live as you type.
+
+**Write a plan** by describing it the way you'd tell a coach: *"Four weeks to a
+10k. Five runs a week, one long run Sunday, one threshold session and one set
+of hills. Keep Mondays easy."*
+
+**Review** before anything is sent. Each session is drawn as a profile — you
+can see the shape of the intervals at a glance, colour-coded by effort, with
+every step listed underneath.
+
+**Send to Garmin**, enter your Connect login, and sync your watch.
+
+### If you don't have an AI API key
+
+Pick **paste** as the provider. The app hands you the prompt, you paste it into
+ChatGPT, Claude, Gemini — anything you already use — and paste the reply back.
+Same validation, same charts, same push to Garmin. Costs nothing.
+
+With a key, set it once and generation is automatic:
 
 ```bash
-# have an AI write a plan
-uv run gpp generate "4 weeks to a 10k, 5 runs a week, long run Sunday" -o week.json
-
-# read it before it goes anywhere near your watch
-uv run gpp show week.json
-
-# upload and schedule
-uv run gpp push week.json
+setx ANTHROPIC_API_KEY sk-ant-...      # Windows
+export ANTHROPIC_API_KEY=sk-ant-...    # macOS / Linux
 ```
 
-`push` renders the plan, asks for confirmation, uploads, schedules each workout
-on its date, and reads each one back to verify. Then sync your watch.
+## Sharing it with someone
 
-| Command | What it does |
+They need the same two commands above, plus access to this repo (it's private
+— add them as a collaborator, or make the repo public). Everything else is
+self-contained: no server to run, no account, no API key required if they use
+the paste option.
+
+Their profile is their own — paces, zones and plans live on their machine.
+
+## Which watches work
+
+Anything that supports structured workouts: **Fenix 6/7/8**, **Epix**,
+**Forerunner 255/265/955/965**, **Edge 530+**. Developed against a Fenix 7s.
+
+Older models like the Forerunner 235 or Vivoactive 3 don't accept structured
+workouts at all, so this won't help there.
+
+## Why it's built this way
+
+The Garmin half is easy. The hard part is that a language model writing
+Garmin's workout JSON directly produces plausible-looking output that is subtly
+wrong — a recovery jog targeted at 5k pace, a repeat group with mismatched
+child IDs — and you find out at 6am when the watch starts beeping.
+
+So the model never writes Garmin JSON. It writes a small DSL with human units
+and named zones, which is validated hard and then compiled by deterministic,
+tested code. Three consequences:
+
+- **Ambiguity is designed out.** Pace bounds are `slow`/`fast`, never
+  `low`/`high`, because "low pace" is genuinely ambiguous and models get it
+  wrong about half the time. Each step takes exactly one of
+  duration/distance/lap. Zone names are a closed set resolved from *your*
+  threshold, so a model cannot invent paces.
+- **Errors are fed back.** Anything the validator or compiler rejects goes
+  straight back to the model as a correction turn, and only a plan that
+  survives is shown to you.
+- **Nothing is trusted blindly.** Garmin's workout API is undocumented outside
+  their partner program, so every magic constant lives in one annotated file,
+  and each push reads the workout back from Garmin and diffs it against what
+  was sent.
+
+## Re-running is safe
+
+Every workout carries a marker in its description: `[gpp:<plan>:<hash>]`.
+
+- same hash → left alone, reported as `unchanged`
+- different hash → replaced
+- **no marker → never touched**, so anything you built by hand in Garmin
+  Connect is safe
+
+## Command line
+
+The browser app is the front door; everything is also a command.
+
+| Command | |
 |---|---|
-| `gpp zones` | Show your resolved pace and HR zones |
-| `gpp providers` | List configured AI providers |
-| `gpp generate` | Have a model write a plan, with validation retries |
-| `gpp prompt` | Print the prompt, to paste into any chat window yourself |
-| `gpp check` | Validate a plan file |
-| `gpp show` | Render a plan as text (no network) |
-| `gpp compile` | Emit the raw Garmin workout JSON |
-| `gpp push` | Upload and schedule (`--dry-run` to preview) |
+| `gpp web` | the graphical app |
+| `gpp init` | set up your profile in the terminal instead |
+| `gpp zones` | show your resolved pace and HR zones |
+| `gpp generate "..."` | write a plan |
+| `gpp show plan.json` | render a plan as text |
+| `gpp push plan.json` | upload and schedule (`--dry-run` to preview) |
+| `gpp compile plan.json` | emit the raw Garmin workout JSON |
+| `gpp prompt` | print the prompt, to use in any chat window |
 
 ## AI providers
 
-Plan generation is provider-neutral — the DSL is the contract, so switching
-models is a one-word change. Configure under `[ai.providers]` in your profile:
+Provider-neutral by design — the DSL is the contract, so switching models is a
+one-word change. Configured under `[ai.providers]` in `profile.toml`:
 
-| `kind` | Uses | For |
-|---|---|---|
-| `anthropic` | `anthropic` SDK | Claude |
-| `openai` | `openai` SDK | OpenAI |
-| `openai-compatible` | `openai` SDK + your `base_url` | OpenRouter, Groq, Together, vLLM, LM Studio |
-| `ollama` | same, `localhost:11434/v1` | local models |
-| `manual` | nothing | writes the prompt to a file, you paste the reply back |
+| `kind` | for |
+|---|---|
+| `anthropic` | Claude |
+| `openai` | OpenAI |
+| `openai-compatible` | OpenRouter, Groq, Together, vLLM, LM Studio — any `base_url` |
+| `ollama` | local models |
+| `manual` | no key at all: copy the prompt out, paste the reply back |
 
 ```toml
 [ai]
@@ -110,69 +153,49 @@ kind = "ollama"
 model = "llama3.3"
 ```
 
-Then `gpp generate --provider local "..."`. The `manual` provider needs no API
-key or SDK at all — useful with a chat window you already have open. Only the
-SDK you actually use needs installing (`--extra anthropic`, `--extra openai`).
+Only the SDK you actually use needs installing (`--extra anthropic`,
+`--extra openai`).
 
-## The plan format
+## Development
 
-```json
-{
-  "plan": "Autumn 10k block",
-  "workouts": [{
-    "name": "Threshold 5x1k",
-    "date": "2026-09-24",
-    "notes": "Comfortably hard, not a race.",
-    "steps": [
-      {"kind": "warmup", "duration": "15m", "target": {"type": "pace", "zone": "easy"}},
-      {"kind": "repeat", "reps": 5, "steps": [
-        {"kind": "run", "distance": "1km", "target": {"type": "pace", "zone": "threshold"}},
-        {"kind": "recover", "duration": "90s", "target": {"type": "pace", "zone": "recovery"}}
-      ]},
-      {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}}
-    ]
-  }]
-}
+```bash
+git clone https://github.com/palatter/garmin-plan-push
+cd garmin-plan-push
+uv sync --extra dev
+uv run pytest
+uv run gpp web
 ```
-
-Step kinds: `warmup`, `run`, `recover`, `rest`, `cooldown`, `repeat`.
-Each non-repeat step takes exactly one of `duration`, `distance`, or
-`"until": "lap"`. Targets are `pace` (zone or slow/fast range), `hr` (zone or
-low/high bpm), `cadence`, or `none`.
-
-## Re-pushing is safe
-
-Every workout carries a marker in its description: `[gpp:<plan>:<hash>]`. On
-push, workouts already on that date are matched against it:
-
-- same hash → left alone, reported as `unchanged`
-- different hash → replaced
-- **no marker → never touched**, so anything you built by hand in Garmin
-  Connect is safe
-
-## Layout
 
 ```
 gpp/constants.py   Garmin's magic IDs, with provenance notes. The only file
                    that should need editing if Garmin renumbers something.
 gpp/units.py       Duration/distance/pace parsing. SI internally.
-gpp/profile.py     Your threshold pace -> concrete zones.
+gpp/estimate.py    Race time -> threshold pace (inverted Riegel).
+gpp/profile.py     Your threshold -> concrete zones; config read/write.
 gpp/plan.py        The DSL, its JSON Schema, and the semantic validator.
 gpp/compile.py     DSL -> Garmin JSON. Pure, no network, heavily tested.
-gpp/render.py      The text preview you approve before pushing.
+gpp/timeline.py    Flattens a workout into drawable blocks.
+gpp/render.py      The text preview.
 gpp/providers.py   Pluggable AI backends.
 gpp/generate.py    Ask -> validate -> compile -> feed errors back -> repeat.
 gpp/client.py      Garmin Connect: login, upload, schedule, verify.
-gpp/cli.py         Commands.
+gpp/web/           Local server, background jobs, and the browser UI.
 ```
 
-```bash
-uv run pytest
-```
+112 tests cover units, zones, race estimation, the compiler (step ordering,
+repeat groups, target units), the validator, the timeline, config round-trips,
+and the job registry's input handshake. None touch the network.
 
-67 tests cover units, zones, the compiler (step ordering, repeat groups, target
-units), the validator, and the generation retry loop. None of them touch the
-network.
+## Security notes
+
+The local server handles your Garmin password, so it:
+
+- binds `127.0.0.1` only, never `0.0.0.0`;
+- requires a per-run token on every API call, injected into the page at load,
+  so another site in your browser cannot drive it;
+- checks the `Host` header, which is what actually stops DNS rebinding;
+- uses the password for one login and never writes it to disk. Garmin's own
+  OAuth token cache is the only thing that persists.
 
 ## Caveats, honestly
 
@@ -181,27 +204,31 @@ from the Connect web app. It has been stable for years, but Garmin can change
 it without notice. If that happens, `_resolve_transport()` in
 [gpp/client.py](gpp/client.py) is the one place to fix.
 
-**The constants are empirical.** Garmin publishes workout API documentation only
-to Connect Developer Program partners. The IDs in
+**The constants are empirical.** Garmin publishes workout API documentation
+only to Connect Developer Program partners. The IDs in
 [gpp/constants.py](gpp/constants.py) come from community reverse-engineering
-and are annotated with confidence levels. This is exactly why `push` verifies:
-if an ID is wrong, or Garmin stores pace bounds the other way round, the
-verifier says so instead of letting you find out mid-interval.
+and carry confidence annotations. This is why every push verifies: if an ID is
+wrong, or Garmin stores pace bounds the other way round, you find out then
+rather than mid-interval.
+
+**Two-level nested repeats are the least-tested path** — Connect payloads in
+the wild only show one level. The verifier will tell you if the watch got
+something different from what was sent.
 
 **Automating your own account is a grey area** in Garmin's terms of service.
 Fine for personal use in practice; don't build a service on it. The supported
 route is the [Training API](https://developer.garmin.com/gc-developer-program/training-api/),
 which requires partner approval.
 
-**The network layer has not been run against a live account** — it is written
-against the documented endpoints and the library's API surface, and the
-transport probe exists precisely because that surface has shifted before.
-Everything upstream of the network (parsing, zones, compiling, validating,
-rendering, the retry loop) is covered by tests and verified end-to-end.
+**The Garmin network layer has not been run against a live account.** It is
+written against the documented endpoints, and the transport probe exists
+because that surface has shifted before. Everything upstream of the network —
+parsing, zones, estimation, compiling, validating, rendering, the retry loop,
+the job handshake — is covered by tests and verified end to end.
 
 ## Alternative
 
 [Intervals.icu](https://intervals.icu) is free, is an approved Garmin partner,
-and pushes planned workouts to Connect through the official API. If you'd
-rather not run any of this, generate plans in its text syntax and paste them
-in — you lose the automation, and gain a supported integration.
+and pushes planned workouts through the official API. If you'd rather not run
+any of this, generate plans in its text syntax and paste them in — you lose the
+automation and gain a supported integration.
