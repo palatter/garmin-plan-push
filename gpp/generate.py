@@ -28,7 +28,14 @@ from .compile import CompileError, compile_plan
 from .plan import PLAN_SCHEMA, WORKOUT_SCHEMA, Plan, PlanError, Workout
 from .profile import Profile, ProfileError
 from .prompt import build_prompt, build_rewrite_prompt
-from .providers import MAX_TOKENS_CEILING, Provider, ProviderError, extract_json, was_truncated
+from .providers import (
+    MAX_TOKENS_CEILING,
+    Provider,
+    ProviderError,
+    Usage,
+    extract_json,
+    was_truncated,
+)
 
 MAX_ATTEMPTS = 3
 
@@ -60,6 +67,7 @@ class GenerationResult:
     attempts: int
     corrections: list[str]
     report: checks.Report = field(default_factory=checks.Report)
+    usage: Usage | None = None  # summed over every attempt
 
 
 def generate_plan(
@@ -69,15 +77,24 @@ def generate_plan(
     attempts: int = MAX_ATTEMPTS,
     log: Callable[[str], None] = lambda _: None,
     today: dt.date | None = None,
+    previous: Plan | None = None,
+    chunk_weeks: int | None = None,
 ) -> GenerationResult:
+    if chunk_weeks:
+        from .chunked import generate_plan_chunked
+
+        return generate_plan_chunked(
+            provider, profile, request, attempts=attempts, log=log, today=today, previous=previous
+        )
     today = today or dt.date.today()
-    system = build_prompt(profile, today=today)
+    system = build_prompt(profile, today=today, previous=previous)
     user = request
     history: list[dict[str, str]] = []
     corrections: list[str] = []
     last_error: Exception | None = None
     warned_once = False
     best: GenerationResult | None = None
+    total: Usage | None = None
 
     for attempt in range(1, attempts + 1):
         log(f"asking {provider.name} (attempt {attempt}/{attempts})...")
@@ -87,6 +104,7 @@ def generate_plan(
         usage = getattr(provider, "last_usage", None)
         if usage:
             log(f"  {usage.describe()}")
+            total = usage if total is None else total + usage
 
         try:
             if was_truncated(provider):
@@ -109,7 +127,7 @@ def generate_plan(
             continue
 
         report = checks.check(plan, profile, today=today)
-        result = GenerationResult(data, plan, attempt, list(corrections), report)
+        result = GenerationResult(data, plan, attempt, list(corrections), report, total)
         if report.blocks or (report.warns and not warned_once):
             kind = "blocked" if report.blocks else "warned"
             summary = "; ".join(f.code for f in report.blocks + report.warns)
@@ -128,6 +146,8 @@ def generate_plan(
             continue
 
         log(f"  accepted: {len(plan.workouts)} workout(s)")
+        if total is not None and attempt > 1:
+            log(f"  total over {attempt} attempts: {total.describe()}")
         return result
 
     if best is not None:

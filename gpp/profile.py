@@ -60,6 +60,7 @@ DEFAULT_HR_ZONES: dict[int, tuple[float, float]] = {
 }
 
 ZONE_MODELS = ("threshold", "cs", "vdot")
+INTENSITY_DISTRIBUTIONS = ("pyramidal", "polarized", "singles")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 # Zone used to estimate the duration of a distance-based step that has no
@@ -147,6 +148,9 @@ class Profile:
     longest_recent_run_km: float | None = None
     recent_weekly_km: float | None = None
     language: str | None = None
+    # pyramidal (default: better in recreational runners), polarized, or
+    # singles (sub-threshold sessions, no intervals)
+    intensity_distribution: str = "pyramidal"
     latitude: float | None = None
     longitude: float | None = None
     # The parsed config file, kept so the [ai] block can be read from the same
@@ -236,6 +240,8 @@ class Profile:
             lines.append(f"  longest recent run  {self.longest_recent_run_km:g} km")
         if self.recent_weekly_km:
             lines.append(f"  recent weekly volume {self.recent_weekly_km:g} km")
+        if self.intensity_distribution != "pyramidal":
+            lines.append(f"  intensity model {self.intensity_distribution}")
         if self.instructions:
             lines.append(f"  instructions    {self.instructions}")
         return "\n".join(lines)
@@ -352,6 +358,11 @@ class Profile:
                 raise ProfileError(f"[goal_race] date: {exc}") from exc
 
         location = data.get("location") or {}
+        tid = str(athlete.get("intensity_distribution", "pyramidal")).lower()
+        if tid not in INTENSITY_DISTRIBUTIONS:
+            raise ProfileError(
+                f"[athlete] intensity_distribution must be one of {INTENSITY_DISTRIBUTIONS}, got {tid!r}"
+            )
 
         return cls(
             name=data.get("name", "athlete"),
@@ -374,6 +385,7 @@ class Profile:
             longest_recent_run_km=athlete.get("longest_recent_run_km"),
             recent_weekly_km=athlete.get("recent_weekly_km"),
             language=athlete.get("language"),
+            intensity_distribution=tid,
             latitude=location.get("latitude"),
             longitude=location.get("longitude"),
             raw=data,
@@ -476,6 +488,8 @@ class Profile:
             athlete_lines.append(f"recent_weekly_km = {self.recent_weekly_km}")
         if self.language:
             athlete_lines.append(f'language = "{_escape(self.language)}"')
+        if self.intensity_distribution != "pyramidal":
+            athlete_lines.append(f'intensity_distribution = "{self.intensity_distribution}"')
         if athlete_lines:
             lines += [
                 "",

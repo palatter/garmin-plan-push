@@ -187,6 +187,7 @@ PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "plan": {"type": "string", "minLength": 1, "maxLength": 80},
+        "summary": {"type": "string", "maxLength": 2000},
         "race_date": _DATE,
         "races": {"type": "array", "maxItems": 12, "items": RACE_SCHEMA},
         "weeks": {"type": "array", "maxItems": 60, "items": WEEK_SCHEMA},
@@ -390,12 +391,15 @@ class Plan:
     race_date: dt.date | None = None
     races: list[Race] = field(default_factory=list)
     weeks: list[Week] = field(default_factory=list)
+    # The block's logic in the model's words: phases, volumes, the key sessions.
+    summary: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> Plan:
         validate(data)
         return cls(
             plan=data["plan"],
+            summary=data.get("summary"),
             workouts=[Workout.from_dict(w) for w in data["workouts"]],
             race_date=dt.date.fromisoformat(data["race_date"]) if data.get("race_date") else None,
             races=[Race.from_dict(r) for r in data.get("races", [])],
@@ -413,6 +417,8 @@ class Plan:
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {"plan": self.plan}
+        if self.summary:
+            out["summary"] = self.summary
         if self.race_date:
             out["race_date"] = self.race_date.isoformat()
         if self.races:

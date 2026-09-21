@@ -68,12 +68,28 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
     def describe(self) -> str:
         text = f"{self.input_tokens:,} in / {self.output_tokens:,} out tokens"
+        if self.cache_read_tokens:
+            text += f" ({self.cache_read_tokens:,} from cache)"
         if self.cost_usd is not None:
             text += f" (~${self.cost_usd:.3f})"
         return text
+
+    def __add__(self, other: Usage) -> Usage:
+        cost = None
+        if self.cost_usd is not None or other.cost_usd is not None:
+            cost = (self.cost_usd or 0.0) + (other.cost_usd or 0.0)
+        return Usage(
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+            cost,
+            self.cache_read_tokens + other.cache_read_tokens,
+            self.cache_write_tokens + other.cache_write_tokens,
+        )
 
 
 # USD per million tokens (input, output). Anthropic's published first-party
@@ -92,12 +108,24 @@ PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
 }
 
 
-def estimate_cost(model: str | None, input_tokens: int, output_tokens: int) -> float | None:
+def estimate_cost(
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read: int = 0,
+    cache_write: int = 0,
+) -> float | None:
+    """Cache reads are billed at a tenth of input, cache writes at 1.25x."""
     if not model:
         return None
     for prefix, (cin, cout) in sorted(PRICES_PER_MTOK.items(), key=lambda kv: -len(kv[0])):
         if model.startswith(prefix):
-            return (input_tokens * cin + output_tokens * cout) / 1_000_000
+            return (
+                input_tokens * cin
+                + output_tokens * cout
+                + cache_read * cin * 0.1
+                + cache_write * cin * 1.25
+            ) / 1_000_000
     return None
 
 
@@ -186,6 +214,7 @@ class AnthropicProvider:
         self.model = config.model or "claude-opus-5"
         self.last_usage: Usage | None = None
         self.last_stop: str | None = None
+        self.last_mode: str | None = None  # schema | schema-beta | plain
 
     def complete(
         self,
@@ -208,11 +237,10 @@ class AnthropicProvider:
         request: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.config.max_tokens,
-            "system": system,
+            # The system prompt is large and constant across attempts: cache it.
+            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": _messages(history, user),
         }
-        if schema and self.config.strict_schema:
-            request["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
 
         def call(req: dict[str, Any]):
             if on_delta is None:
@@ -224,20 +252,33 @@ class AnthropicProvider:
                     on_delta(text)
                 return stream.get_final_message()
 
-        try:
-            response = call(request)
-        except Exception as exc:
-            # A schema the API will not accept (ours uses $ref/oneOf) should
-            # degrade to prompt-only JSON rather than kill the run.
-            if "output_config" in request and _is_bad_request(exc):
-                request.pop("output_config")
-                try:
-                    response = call(request)
-                except Exception as inner:
-                    raise ProviderError(
-                        describe_failure(self.name, self.model, inner, ANTHROPIC_MODELS_URL)
-                    ) from inner
-            else:
+        # Structured outputs, then the older beta spelling, then prompt-only
+        # JSON. Each step is only taken when the API rejects the request
+        # shape; anything else is a real failure and is reported as such.
+        variants: list[tuple[str, dict[str, Any]]] = []
+        if schema and self.config.strict_schema:
+            variants.append(
+                ("schema", {"output_config": {"format": {"type": "json_schema", "schema": schema}}})
+            )
+            variants.append(
+                (
+                    "schema-beta",
+                    {
+                        "output_format": {"type": "json_schema", "schema": schema},
+                        "extra_headers": {"anthropic-beta": "structured-outputs-2025-11-13"},
+                    },
+                )
+            )
+        variants.append(("plain", {}))
+        response = None
+        for mode, extra in variants:
+            try:
+                response = call({**request, **extra})
+                self.last_mode = mode
+                break
+            except Exception as exc:  # a TypeError here is the SDK rejecting a kwarg
+                if mode != "plain" and (_is_bad_request(exc) or isinstance(exc, TypeError)):
+                    continue
                 raise ProviderError(
                     describe_failure(self.name, self.model, exc, ANTHROPIC_MODELS_URL)
                 ) from exc
@@ -259,7 +300,9 @@ def usage_from_anthropic(response: Any, model: str | None) -> Usage | None:
         return None
     inp = int(getattr(usage, "input_tokens", 0) or 0)
     out = int(getattr(usage, "output_tokens", 0) or 0)
-    return Usage(inp, out, estimate_cost(model, inp, out))
+    read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+    write = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    return Usage(inp, out, estimate_cost(model, inp, out, read, write), read, write)
 
 
 def usage_from_openai(usage: Any, model: str | None) -> Usage | None:
@@ -283,6 +326,7 @@ class OpenAICompatibleProvider:
         self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get("docs", OPENAI_MODELS_URL)
         self.last_usage: Usage | None = None
         self.last_stop: str | None = None
+        self.last_mode: str | None = None  # json_schema | json_object | plain
 
     def complete(
         self,
@@ -318,11 +362,24 @@ class OpenAICompatibleProvider:
             "max_tokens": self.config.max_tokens,
             "messages": [{"role": "system", "content": system}, *_messages(history, user)],
         }
+        # Schema-constrained decoding where the server supports it (OpenAI,
+        # Gemini's endpoint, Ollama), json_object where it does not, and the
+        # validator catches whatever is left. The retry ladder below steps
+        # down one rung per 400.
+        formats: list[dict[str, Any] | None] = []
         if self.config.strict_schema:
-            # json_object is far more widely supported across compatible
-            # servers than full json_schema, and the validator catches the
-            # rest.
-            request["response_format"] = {"type": "json_object"}
+            if schema:
+                formats.append(
+                    {
+                        "type": "json_schema",
+                        "json_schema": {"name": "gpp_plan", "schema": schema, "strict": False},
+                    }
+                )
+            formats.append({"type": "json_object"})
+        formats.append(None)
+        request["response_format"] = formats[0]
+        if formats[0] is None:
+            request.pop("response_format")
 
         def call(req: dict[str, Any], streaming: bool) -> tuple[str, Any, str | None]:
             if not streaming:
@@ -340,33 +397,35 @@ class OpenAICompatibleProvider:
                 on_delta,
             )
 
-        # Degrade in two steps: some compatible servers reject streaming
-        # options, some reject the response format. Each retry drops one.
+        # Degrade one rung at a time on a 400: streaming off first (some
+        # compatible servers reject stream_options), then each response
+        # format down to none. Anything that is not a 400 is a real failure.
         streaming = on_delta is not None
-        try:
-            content, usage, finish = call(request, streaming)
-        except Exception as exc:
-            if not _is_bad_request(exc):
-                raise ProviderError(
-                    describe_failure(self.name, self.model, exc, self.docs_url)
-                ) from exc
+        ladder: list[tuple[bool, dict[str, Any] | None]] = []
+        for fmt in formats:
+            if streaming:
+                ladder.append((True, fmt))
+            ladder.append((False, fmt))
+        last_exc: Exception | None = None
+        content = usage = finish = None
+        for stream_now, fmt in ladder:
+            req = dict(request)
+            req.pop("response_format", None)
+            if fmt is not None:
+                req["response_format"] = fmt
             try:
-                if streaming:
-                    content, usage, finish = call(request, False)
-                else:
-                    raise exc
-            except Exception:
-                if "response_format" not in request:
-                    raise ProviderError(
-                        describe_failure(self.name, self.model, exc, self.docs_url)
-                    ) from exc
-                request.pop("response_format")
-                try:
-                    content, usage, finish = call(request, False)
-                except Exception as inner:
-                    raise ProviderError(
-                        describe_failure(self.name, self.model, inner, self.docs_url)
-                    ) from inner
+                content, usage, finish = call(req, stream_now)
+                self.last_mode = (fmt or {}).get("type", "plain")
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+                if not _is_bad_request(exc):
+                    break
+        if last_exc is not None:
+            raise ProviderError(
+                describe_failure(self.name, self.model, last_exc, self.docs_url)
+            ) from last_exc
 
         self.last_usage = usage_from_openai(usage, self.model)
         self.last_stop = finish

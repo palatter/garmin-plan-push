@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 
-from .plan import PLAN_SCHEMA
+from .plan import PLAN_SCHEMA, Plan
 from .profile import Profile
 from .units import format_pace
 
@@ -31,7 +31,8 @@ ATHLETE
 {profile}
 {coach_context}
 {dates}
-FORMAT RULES
+{envelope}
+{continuation}FORMAT RULES
 1. Every step needs exactly one of: "duration", "distance", or "until": "lap".
    Never two, never zero. (A strength "exercise" step uses "count" instead.)
 2. Prefer zone names over explicit paces. Known pace zones: {zones}.
@@ -55,14 +56,16 @@ FORMAT RULES
 9. Other targets: {{"type": "hr", "zone": 1-5}}, {{"type": "power", "zone": 1-7}}
    or {{"type": "power", "low": W, "high": W}}, {{"type": "rpe", "value": 1-10}},
    {{"type": "cadence", "low": spm, "high": spm}}, {{"type": "none"}}.
+10. Add a top-level "summary": three to five sentences on the block's logic --
+   the phases, how weekly volume moves, which sessions are the key ones and
+   why. The athlete reads it; write it for them.
 
 COACHING RULES (the plan is checked against these; violations come back to you)
 A. Progress gently. No single run longer than about 110% of the athlete's
    longest recent run. Weekly volume should not jump; build for 2-3 weeks,
    then a lighter week (a "deload" at roughly 60-70% volume).
-B. Mostly easy. Around 80% of running time easy or recovery, and keep some
-   steady/moderate running -- a plan that is only very easy or very hard is
-   wrong. Never schedule two quality sessions on consecutive days.
+B. {intensity_rule}
+   Never schedule two quality sessions on consecutive days.
 C. Structure the week: a recovery or easy day after each quality session;
    strides in base weeks; in marathon blocks, a medium-long run midweek.
 D. Taper toward the A race: over the final ~2 weeks reduce volume 41-60%,
@@ -72,6 +75,13 @@ E. Respect availability and constraints exactly. Never schedule on a day the
    athlete said they cannot run, and never exceed their session limits.
 F. If the athlete has an injury or constraint listed, honour it in every
    session -- for example no hill repeats with an Achilles note.
+G. Long runs of 90 minutes or more carry a fuelling line in "notes": practise
+   race-day fuelling, starting near 30 g/h of carbohydrate and building toward
+   60-90 g/h over the block. In a marathon block, alternate long runs finish
+   with 20-30 minutes at marathon pace (durability on tired legs).
+H. Strength, if asked for: two sessions a week on easy days, at least 48 hours
+   apart, never the day before a quality session or the long run, none in the
+   taper.
 {language_rule}
 SCHEMA
 {schema}
@@ -82,6 +92,11 @@ EXAMPLE OUTPUT
 
 EXAMPLE = {
     "plan": "Autumn 10k block",
+    "summary": (
+        "Two build weeks around one threshold session and one long run each, a lighter "
+        "third week, then a short taper into the 10k. Volume moves 42 -> 46 -> 36 -> 28 km; "
+        "the key sessions are the Thursday threshold reps and the Sunday long run."
+    ),
     "race_date": "2026-10-25",
     "races": [{"name": "City 10k", "date": "2026-10-25", "priority": "A", "distance": "10k"}],
     "workouts": [
@@ -179,7 +194,103 @@ def dates_block(today: dt.date | None) -> str:
     )
 
 
-def build_prompt(profile: Profile, today: dt.date | None = None) -> str:
+LONG_RUN_CAP_KM = {"5k": 16, "10k": 20, "half": 26, "marathon": 35}
+INTENSITY_RULES = {
+    "pyramidal": (
+        "Pyramidal distribution: about 80% of running time easy or recovery, 10-15% "
+        "steady or marathon pace, 5-10% at threshold or harder. Keep the moderate "
+        "band -- a plan that is only very easy or very hard is wrong."
+    ),
+    "polarized": (
+        "Polarized distribution: about 80% of running time easy or recovery and 15-20% "
+        "at threshold or harder, with little in between. The athlete chose this; keep "
+        "the easy days genuinely easy."
+    ),
+    "singles": (
+        "Sub-threshold singles: two or three sessions a week of controlled work at "
+        "steady to marathon pace (below threshold, never intervals), every other run "
+        "easy, no repetition work. Volume of sub-threshold work builds slowly."
+    ),
+}
+
+
+def intensity_rule(profile: Profile) -> str:
+    return INTENSITY_RULES.get(profile.intensity_distribution, INTENSITY_RULES["pyramidal"])
+
+
+def level_envelope(profile: Profile, horizon_weeks: int | None = None) -> str:
+    """Numbers, not adjectives: the volume the athlete can absorb.
+
+    The one clear failure in the study of AI-written marathon plans was that
+    plans did not differentiate athletes by level; a numeric envelope from
+    what the athlete actually did last month is the cheapest fix.
+    """
+    recent = profile.recent_weekly_km
+    longest = profile.longest_recent_run_km
+    weeks = horizon_weeks or 8
+    lines = ["LEVEL ENVELOPE (numbers, not adjectives)"]
+    if recent:
+        peak = recent * (1.5 if weeks >= 8 else 1.3)
+        lines.append(
+            f"Weekly volume: start at {recent * 0.9:.0f}-{recent * 1.1:.0f} km, never rise more "
+            f"than 25% in a week, and peak no higher than about {peak:.0f} km before the taper."
+        )
+    else:
+        lines.append(
+            "Weekly volume: unknown -- start conservatively (under 35 km) and build; do not "
+            "assume an experienced runner."
+        )
+    distance = (profile.goal_race.distance or "").lower() if profile.goal_race else ""
+    cap = next((km for key, km in LONG_RUN_CAP_KM.items() if key in distance), None)
+    if longest:
+        cap_text = f", and never past {cap} km for this race" if cap else ""
+        lines.append(
+            f"Long run: start no longer than {longest * 1.1:.0f} km, grow by at most 10% per "
+            f"run{cap_text}; it should stay under a third of the week's volume."
+        )
+    else:
+        lines.append(
+            "Long run: unknown history -- start near 10-12 km and grow by at most 10% per run"
+            + (f", never past {cap} km" if cap else "")
+            + "."
+        )
+    if profile.availability and profile.availability.sessions_per_week:
+        lines.append(
+            f"Sessions per week: {profile.availability.sessions_per_week}, as the athlete asked."
+        )
+    else:
+        lines.append("Sessions per week: what the request says; default to four or five.")
+    return "\n".join(lines) + "\n"
+
+
+def continuation_block(previous: Plan, profile: Profile) -> str:
+    """Where the last block left off, so the new one carries on rather than resets."""
+    from .load import weekly_stats
+
+    weeks = weekly_stats(previous, profile)
+    if not weeks:
+        return ""
+    tail = weeks[-3:]
+    volumes = ", ".join(f"{w.km:.0f} km" for w in tail)
+    longest = max(w.longest_run_metres for w in tail) / 1000
+    sessions = round(sum(w.sessions for w in tail) / len(tail))
+    phase = next((w.phase for w in reversed(previous.sorted_workouts()) if w.phase), None)
+    return (
+        "PREVIOUS BLOCK\n"
+        f'The athlete just finished "{previous.plan}" on {previous.sorted_workouts()[-1].date.isoformat()}: '
+        f"final weeks {volumes}, longest run {longest:.0f} km, about {sessions} sessions a week"
+        + (f", last phase {phase}" if phase else "")
+        + ". Continue from that fitness -- do not reset to a beginner volume, and give the "
+        "first week a little recovery if the block ended with a race.\n\n"
+    )
+
+
+def build_prompt(
+    profile: Profile,
+    today: dt.date | None = None,
+    previous: Plan | None = None,
+    horizon_weeks: int | None = None,
+) -> str:
     zones_line = ", ".join(
         f"{name} ({format_pace(slow, profile.imperial)}-{format_pace(fast, profile.imperial)})"
         for name, (slow, fast) in profile.zone_table().items()
@@ -187,13 +298,16 @@ def build_prompt(profile: Profile, today: dt.date | None = None) -> str:
     language_rule = ""
     if profile.language and profile.language.lower() not in ("en", "english"):
         language_rule = (
-            f'G. Write every "notes" and "note" value in {profile.language}. '
+            f'L. Write every "notes" and "note" value in {profile.language}. '
             "Keep all JSON keys, zone names and kinds in English.\n"
         )
     return TEMPLATE.format(
         profile=profile.describe(),
         coach_context=coach_context(profile),
         dates=dates_block(today),
+        envelope=level_envelope(profile, horizon_weeks),
+        continuation=continuation_block(previous, profile) if previous else "",
+        intensity_rule=intensity_rule(profile),
         zones=zones_line,
         language_rule=language_rule,
         schema=json.dumps(PLAN_SCHEMA, indent=2),

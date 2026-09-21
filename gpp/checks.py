@@ -619,11 +619,19 @@ def _check_intensity(
     if total <= 0:
         return
     share = hard / total
-    if share > HARD_SHARE_LIMIT:
+    model = profile.intensity_distribution
+    limit = 0.35 if model == "polarized" else HARD_SHARE_LIMIT
+    if share > limit:
         report.add(
             "hard-share",
             "warn",
-            f"{share:.0%} of running time is at threshold or harder; mostly-easy is the well-supported pattern (aim under ~30%)",
+            f"{share:.0%} of running time is at threshold or harder; mostly-easy is the well-supported pattern (aim under ~{limit:.0%})",
+        )
+    if model == "singles" and share > 0.10:
+        report.add(
+            "singles-too-hard",
+            "warn",
+            f"The athlete trains sub-threshold singles, but {share:.0%} of running is at threshold or harder; keep the work at steady to marathon pace",
         )
     # Middle gear: any steady/marathon-intensity time at all?
     from .timeline import ZONE_INTENSITY, workout_timeline
@@ -633,7 +641,7 @@ def _check_intensity(
         for b in workout_timeline(w, profile):
             if ZONE_INTENSITY["steady"] - 0.05 <= b["intensity"] < ZONE_INTENSITY["threshold"]:
                 moderate += b["seconds"]
-    if len(weeks) >= 2 and share >= MIDDLE_GEAR_MIN_HARD and moderate == 0:
+    if model != "polarized" and len(weeks) >= 2 and share >= MIDDLE_GEAR_MIN_HARD and moderate == 0:
         report.add(
             "no-middle-gear",
             "warn",

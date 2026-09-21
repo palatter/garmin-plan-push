@@ -85,7 +85,16 @@ def list_workouts(root: Path | None = None) -> list[dict]:
         seen.add(path.stem)
     for slug, seed in SEED_WORKOUTS.items():
         if slug not in seen:
-            out.append({"slug": slug, "name": seed["name"], "source": "built-in"})
+            meta = SEED_META.get(slug, {})
+            out.append(
+                {
+                    "slug": slug,
+                    "name": seed["name"],
+                    "source": "built-in",
+                    "race": meta.get("race", "any"),
+                    "origin": meta.get("source", ""),
+                }
+            )
     return out
 
 
@@ -201,9 +210,227 @@ def return_to_run(start: dt.date, tier: str, base: Workout | None = None) -> Pla
     return Plan(plan=f"Return to running ({tier})", workouts=workouts)
 
 
+# --- post-race recovery ----------------------------------------------------
+
+
+def post_race_recovery(race_date: dt.date, distance: str = "marathon") -> Plan:
+    """Pfitzinger's five weeks after a marathon (three after a half or shorter).
+
+    Week 1: two short easy runs late in the week. Week 2: three easy runs.
+    Week 3: four easy runs with a longer one. Week 4: strides return. Week 5:
+    one light quality session. Every session is easy-zone running.
+    """
+    long = "marathon" in distance.lower() and "half" not in distance.lower()
+    weeks = (
+        [
+            ((3, 25), (5, 30)),
+            ((1, 35), (3, 40), (5, 40)),
+            ((1, 40), (3, 45), (5, 40), (6, 60)),
+            ((1, 45), (3, 40), (5, 45), (6, 70)),
+            ((1, 45), (3, 40), (5, 45), (6, 80)),
+        ]
+        if long
+        else [((3, 25), (5, 30)), ((1, 35), (3, 40), (5, 45)), ((1, 40), (3, 40), (5, 45), (6, 60))]
+    )
+    monday = race_date - dt.timedelta(days=race_date.weekday()) + dt.timedelta(days=7)
+    workouts = []
+    for index, sessions in enumerate(weeks):
+        for offset, minutes in sessions:
+            day = monday + dt.timedelta(days=7 * index + offset)
+            steps = [
+                {
+                    "kind": "run",
+                    "duration": f"{minutes}m",
+                    "target": {"type": "pace", "zone": "easy"},
+                }
+            ]
+            name = "Easy"
+            notes = "Recovery: easy means easy; the race is still in your legs."
+            if index == 3:
+                steps.append(
+                    {
+                        "kind": "repeat",
+                        "reps": 4,
+                        "steps": [
+                            {"kind": "stride", "duration": "20s", "target": {"type": "none"}},
+                            {
+                                "kind": "recover",
+                                "duration": "60s",
+                                "target": {"type": "pace", "zone": "recovery"},
+                            },
+                        ],
+                    }
+                )
+                name = "Easy + strides"
+            if index == len(weeks) - 1 and offset == 3:
+                steps = [
+                    {
+                        "kind": "warmup",
+                        "duration": "15m",
+                        "target": {"type": "pace", "zone": "easy"},
+                    },
+                    {
+                        "kind": "run",
+                        "duration": "15m",
+                        "target": {"type": "pace", "zone": "steady"},
+                    },
+                    {
+                        "kind": "cooldown",
+                        "duration": "10m",
+                        "target": {"type": "pace", "zone": "easy"},
+                    },
+                ]
+                name, notes = "Light steady", "First touch of pace since the race; controlled."
+            workouts.append(
+                {
+                    "name": name,
+                    "date": day.isoformat(),
+                    "role": "easy" if index < len(weeks) - 1 or offset != 3 else "quality",
+                    "phase": "recovery",
+                    "notes": notes,
+                    "steps": steps,
+                }
+            )
+    return Plan.from_dict({"plan": f"Recovery after {distance}", "workouts": workouts})
+
+
 # --- seeds ------------------------------------------------------------------
 
+# Where each seed comes from, and which race it serves (#127).
+SEED_META: dict[str, dict[str, str]] = {
+    "threshold-5x1k": {
+        "race": "10k",
+        "source": "Daniels, Running Formula: T-pace cruise intervals",
+    },
+    "long-run-with-threshold": {
+        "race": "half",
+        "source": "Pfitzinger, Advanced Marathoning: LT long run",
+    },
+    "medium-long": {"race": "marathon", "source": "Pfitzinger: midweek medium-long run"},
+    "easy-with-strides": {"race": "any", "source": "Daniels: strides after easy runs"},
+    "hill-repeats": {"race": "5k", "source": "Lydiard-style hill sessions"},
+    "marathon-pace-finish": {"race": "marathon", "source": "Pfitzinger: long run with MP finish"},
+    "runner-strength": {
+        "race": "any",
+        "source": "Llanos-Lagos 2024 meta-analysis: heavy + plyometric",
+    },
+    "5k-12x400": {"race": "5k", "source": "Daniels: R-pace 400s, full recovery"},
+    "10k-6x800": {"race": "10k", "source": "Daniels: I-pace 800s, equal jog"},
+    "10k-tempo-20": {"race": "10k", "source": "Daniels: 20-minute T-pace tempo"},
+    "half-2x3k": {"race": "half", "source": "Daniels: long T-pace intervals"},
+    "half-hmp-finish": {"race": "half", "source": "Pfitzinger: long run with race-pace finish"},
+    "marathon-mp-long": {
+        "race": "marathon",
+        "source": "Pfitzinger / Canova: MP within the long run",
+    },
+}
+
 SEED_WORKOUTS: dict[str, dict] = {
+    "5k-12x400": {
+        "name": "12 x 400m",
+        "role": "quality",
+        "notes": "Repetition pace, relaxed and quick; walk or jog the recovery fully.",
+        "steps": [
+            {"kind": "warmup", "duration": "15m", "target": {"type": "pace", "zone": "easy"}},
+            {
+                "kind": "repeat",
+                "reps": 12,
+                "steps": [
+                    {
+                        "kind": "run",
+                        "distance": "400m",
+                        "target": {"type": "pace", "zone": "repetition"},
+                    },
+                    {
+                        "kind": "recover",
+                        "duration": "90s",
+                        "target": {"type": "pace", "zone": "recovery"},
+                    },
+                ],
+            },
+            {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
+    "10k-6x800": {
+        "name": "6 x 800m",
+        "role": "quality",
+        "notes": "Interval pace; the jog is as long as the rep.",
+        "steps": [
+            {"kind": "warmup", "duration": "15m", "target": {"type": "pace", "zone": "easy"}},
+            {
+                "kind": "repeat",
+                "reps": 6,
+                "steps": [
+                    {
+                        "kind": "run",
+                        "distance": "800m",
+                        "target": {"type": "pace", "zone": "interval"},
+                    },
+                    {
+                        "kind": "recover",
+                        "duration": "3m",
+                        "target": {"type": "pace", "zone": "recovery"},
+                    },
+                ],
+            },
+            {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
+    "10k-tempo-20": {
+        "name": "Tempo 20",
+        "role": "quality",
+        "notes": "Twenty continuous minutes at threshold; comfortably hard, not a race.",
+        "steps": [
+            {"kind": "warmup", "duration": "15m", "target": {"type": "pace", "zone": "easy"}},
+            {"kind": "run", "duration": "20m", "target": {"type": "pace", "zone": "threshold"}},
+            {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
+    "half-2x3k": {
+        "name": "2 x 3km",
+        "role": "quality",
+        "notes": "Long threshold intervals close to half-marathon pace.",
+        "steps": [
+            {"kind": "warmup", "duration": "15m", "target": {"type": "pace", "zone": "easy"}},
+            {
+                "kind": "repeat",
+                "reps": 2,
+                "steps": [
+                    {
+                        "kind": "run",
+                        "distance": "3km",
+                        "target": {"type": "pace", "zone": "threshold"},
+                    },
+                    {
+                        "kind": "recover",
+                        "duration": "3m",
+                        "target": {"type": "pace", "zone": "recovery"},
+                    },
+                ],
+            },
+            {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
+    "half-hmp-finish": {
+        "name": "Long run, HMP finish",
+        "role": "long",
+        "notes": "Easy for most of it, then race pace on tired legs.",
+        "steps": [
+            {"kind": "run", "duration": "70m", "target": {"type": "pace", "zone": "easy"}},
+            {"kind": "run", "duration": "20m", "target": {"type": "pace", "zone": "threshold"}},
+            {"kind": "cooldown", "duration": "10m", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
+    "marathon-mp-long": {
+        "name": "MP long run",
+        "role": "long",
+        "notes": "The marathon rehearsal: fuel as on race day, hold marathon pace in the middle.",
+        "steps": [
+            {"kind": "run", "distance": "8km", "target": {"type": "pace", "zone": "easy"}},
+            {"kind": "run", "distance": "12km", "target": {"type": "pace", "zone": "marathon"}},
+            {"kind": "run", "distance": "3km", "target": {"type": "pace", "zone": "easy"}},
+        ],
+    },
     "threshold-5x1k": {
         "name": "Threshold 5x1k",
         "role": "quality",

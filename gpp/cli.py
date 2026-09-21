@@ -188,6 +188,89 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_enrich(args: argparse.Namespace) -> int:
+    import datetime as dt
+
+    from .enrich import enrich
+
+    profile = _load_profile(args.profile)
+    plan = Plan.load(args.plan)
+    heat = dt.date.fromisoformat(args.heat) if args.heat else None
+    result = enrich(
+        plan,
+        profile,
+        fuelling=not args.no_fuelling,
+        heat_race=heat,
+        strength_per_week=args.strength,
+        durability=not args.no_durability,
+        cadence=not args.no_cadence,
+    )
+    for reason in result.reasons:
+        print(f"  {reason}")
+    out = result.plan.save(args.output or args.plan)
+    print(f"written to {out}")
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    import json
+
+    from .evaluate import evaluate, load_cases, table, to_dict
+
+    profile = _load_profile(args.profile)
+    configs, default = load_providers(profile.raw)
+    chosen = args.provider or pick_default(configs, default)
+    if chosen not in configs:
+        raise ProviderError(
+            f"unknown provider {chosen!r}; configured: " + ", ".join(sorted(configs))
+        )
+    cases = load_cases(args.cases)
+    results = evaluate(
+        lambda: build_provider(configs[chosen]), cases, attempts=args.attempts, log=print
+    )
+    if args.json:
+        print(json.dumps(to_dict(results), indent=2))
+    else:
+        print()
+        print(table(results))
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(to_dict(results), indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"results written to {args.output}")
+    return 0 if all(r.ok for r in results) else 1
+
+
+def _bench(args: argparse.Namespace, configs: dict, default: str | None) -> int:
+    from .evaluate import BENCH_CASES, evaluate, table, verdict
+
+    chosen = args.provider or pick_default(configs, default)
+    if chosen not in configs:
+        raise ProviderError(
+            f"unknown provider {chosen!r}; configured: " + ", ".join(sorted(configs))
+        )
+    print(f"benching {chosen} on {len(BENCH_CASES)} short plans (costs a few thousand tokens)...")
+    results = evaluate(lambda: build_provider(configs[chosen]), BENCH_CASES, attempts=3, log=print)
+    print()
+    print(table(results))
+    print(f"verdict for {chosen}: {verdict(results)}")
+    return 0
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    import datetime as dt
+
+    from .library import post_race_recovery
+
+    profile = _load_profile(args.profile)
+    plan = post_race_recovery(dt.date.fromisoformat(args.race), args.distance)
+    compiled = compile_plan(plan, profile)
+    print(render_plan(plan, compiled, profile), end="")
+    if args.output:
+        print(f"written to {plan.save(args.output)}")
+    return 0
+
+
 def cmd_zones(args: argparse.Namespace) -> int:
     print(_load_profile(args.profile).describe())
     return 0
@@ -208,6 +291,8 @@ def _key_status(config) -> str:
 def cmd_providers(args: argparse.Namespace) -> int:
     profile = _load_profile(args.profile)
     configs, default = load_providers(profile.raw)
+    if getattr(args, "bench", None):
+        return _bench(args, configs, default)
     chosen = pick_default(configs, default)
     for name, config in configs.items():
         resolve(config)
@@ -375,8 +460,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print("error: no request given", file=sys.stderr)
         return 2
 
+    previous = Plan.load(args.continue_from) if getattr(args, "continue_from", None) else None
     result = generate_plan(
-        provider, profile, request, attempts=args.attempts, log=lambda m: print(m)
+        provider,
+        profile,
+        request,
+        attempts=args.attempts,
+        log=lambda m: print(m),
+        previous=previous,
+        chunk_weeks=getattr(args, "chunk_weeks", None),
     )
 
     text = dump_plan(result.data)
@@ -517,6 +609,36 @@ def build_parser() -> argparse.ArgumentParser:
     wa.add_argument("--device")
     wa.set_defaults(func=cmd_watch)
 
+    en = sub.add_parser(
+        "enrich", help="add fuelling, heat, strength, durability and cadence cues by rule"
+    )
+    en.add_argument("plan")
+    en.add_argument("--heat", metavar="RACE_DATE", help="add a heat block before this race date")
+    en.add_argument(
+        "--strength", type=int, default=0, metavar="N", help="add N strength sessions a week"
+    )
+    en.add_argument("--no-fuelling", action="store_true")
+    en.add_argument("--no-durability", action="store_true")
+    en.add_argument("--no-cadence", action="store_true")
+    en.add_argument("-o", "--output", help="write the enriched plan here (default: overwrite)")
+    en.set_defaults(func=cmd_enrich)
+
+    ev = sub.add_parser("eval", help="measure plan quality across athlete cases (costs tokens)")
+    ev.add_argument("--provider", help="provider name from your profile")
+    ev.add_argument("--cases", help="a JSON file of cases; default: three built-in athletes")
+    ev.add_argument("--attempts", type=int, default=3)
+    ev.add_argument("--json", action="store_true", help="print JSON instead of a table")
+    ev.add_argument("-o", "--output", help="write the results JSON here")
+    ev.set_defaults(func=cmd_eval)
+
+    rc = sub.add_parser(
+        "recover", help="a post-race recovery block (Pfitzinger's weeks after a race)"
+    )
+    rc.add_argument("--race", required=True, metavar="DATE", help="the race date")
+    rc.add_argument("--distance", default="marathon")
+    rc.add_argument("-o", "--output", help="write the plan JSON here")
+    rc.set_defaults(func=cmd_recover)
+
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)
 
@@ -524,6 +646,14 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.set_defaults(func=cmd_prompt)
 
     providers = sub.add_parser("providers", help="list configured AI providers")
+
+    providers.add_argument(
+        "--bench", action="store_true", help="measure a provider on two short plans"
+    )
+
+    providers.add_argument(
+        "--provider", help="which provider to bench (default: the preselected one)"
+    )
     providers.set_defaults(func=cmd_providers)
 
     doctor = sub.add_parser("doctor", help="check profile, AI keys and Garmin setup")
@@ -543,6 +673,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     generate.add_argument("--provider", help="provider name from your profile")
     generate.add_argument("-o", "--output", help="write the plan JSON here")
+    generate.add_argument(
+        "--continue-from",
+        metavar="PLAN",
+        help="a previous plan file: the new block carries on from where it ended",
+    )
+    generate.add_argument(
+        "--chunk-weeks",
+        type=int,
+        help="generate long plans one phase at a time (an outline first); use for 12+ weeks",
+    )
     generate.add_argument(
         "--attempts",
         type=int,
