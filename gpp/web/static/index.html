@@ -139,12 +139,13 @@
       <div class="composer-foot">
         <label class="field inline">
           <span class="field-label">Written by</span>
-          <select id="c-provider"></select>
+          <select id="c-provider" aria-describedby="c-provider-hint"></select>
         </label>
         <button class="btn primary" id="c-generate">
           <span class="btn-label">Write my plan</span>
         </button>
       </div>
+      <p class="hint" id="c-provider-hint" aria-live="polite" hidden></p>
     </div>
 
     <div class="progress card" id="c-progress" hidden>

@@ -14,7 +14,16 @@ from .generate import dump_plan, generate_plan
 from .plan import Plan, PlanError
 from .profile import Profile, ProfileError, default_save_path, find_profile
 from .prompt import build_prompt
-from .providers import ProviderError, build_provider, load_providers
+from .providers import (
+    ProviderError,
+    build_provider,
+    is_manual,
+    key_present,
+    load_providers,
+    pick_default,
+    probe,
+    resolve,
+)
 from .render import render_plan
 
 def _load_profile(explicit: str | None) -> Profile:
@@ -139,24 +148,114 @@ def cmd_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _key_status(config) -> str:
+    present = key_present(config)
+    if present is None:
+        return "no key needed"
+    return f"{config.api_key_env} set" if present else f"{config.api_key_env} NOT set"
+
+
 def cmd_providers(args: argparse.Namespace) -> int:
     profile = _load_profile(args.profile)
     configs, default = load_providers(profile.raw)
-    for name, config in sorted(configs.items()):
-        marker = "*" if name == (default or next(iter(configs))) else " "
-        target = config.model or "(default model)"
+    chosen = pick_default(configs, default)
+    for name, config in configs.items():
+        resolve(config)
+        marker = "*" if name == chosen else " "
+        target = config.model or "(any model)"
         if config.base_url:
             target += f" @ {config.base_url}"
-        print(f" {marker} {name:<12} {config.kind:<18} {target}")
-    print("\n* = default. Configure more under [ai.providers] in your profile.")
+        print(f" {marker} {name:<12} {config.kind:<18} {target:<48} {_key_status(config)}")
+    print("\n* = will be used by default. Configure more under [ai.providers] in your profile.")
     return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Answer the support questions before they are asked."""
+    ok = True
+
+    def line(good: bool | None, label: str, detail: str = "") -> None:
+        nonlocal ok
+        mark = {True: "ok ", False: "!! ", None: "-- "}[good]
+        if good is False:
+            ok = False
+        print(f"  {mark} {label:<26} {detail}")
+
+    print("\nProfile")
+    try:
+        profile = _load_profile(args.profile)
+    except ProfileError as exc:
+        line(False, "profile", str(exc).splitlines()[0])
+        print("\nRun  gpp init  or  gpp web  to create one.")
+        return 1
+    from .units import format_pace
+
+    line(True, "loaded", str(args.profile or find_profile()))
+    line(True, "threshold pace", format_pace(profile.threshold_pace, profile.imperial))
+    line(
+        True if profile.lthr else None,
+        "heart-rate zones",
+        f"LTHR {profile.lthr} bpm" if profile.lthr else "not set (pace targets only)",
+    )
+
+    print("\nAI providers")
+    configs, default = load_providers(profile.raw)
+    chosen = pick_default(configs, default)
+    for name, config in configs.items():
+        resolve(config)
+        present = key_present(config)
+        label = f"{name} ({config.kind})" + ("  <- default" if name == chosen else "")
+        if is_manual(config):
+            line(True, label, "paste: always works, no key")
+            continue
+        if present is False:
+            # Only the provider that will actually be used is a failure;
+            # the others are simply not in play.
+            if name == chosen:
+                line(False, label, f"{config.api_key_env} not set - set it, or use paste")
+            else:
+                line(None, label, f"{config.api_key_env} not set (won't be used)")
+            continue
+        if not args.ping:
+            line(True, label, f"{_key_status(config)}; model {config.model}")
+            continue
+        try:
+            reply = probe(config)
+        except ProviderError as exc:
+            line(False, label, str(exc))
+        else:
+            line(True, label, f"replied {reply[:20]!r} with model {config.model}")
+
+    print("\nGarmin")
+    try:
+        import garminconnect  # noqa: F401
+
+        line(True, "python-garminconnect", "installed")
+    except ImportError:
+        line(False, "python-garminconnect", "missing - run: uv sync")
+    token_dir = Path.home() / ".garminconnect"
+    line(
+        True if token_dir.exists() else None,
+        "saved login",
+        "found - push won't ask for a password" if token_dir.exists()
+        else "none yet - first push will ask for your Garmin password",
+    )
+    line(
+        None,
+        "watch support",
+        "needs structured workouts: Fenix 6+, Epix, FR 255/265/955/965, Edge 530+",
+    )
+
+    print()
+    print("Everything looks ready." if ok else "Fix the lines marked !! and run again.")
+    return 0 if ok else 1
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
     profile = _load_profile(args.profile)
     configs, default = load_providers(profile.raw)
 
-    chosen = args.provider or default or next(iter(configs))
+    chosen = args.provider or pick_default(configs, default)
     if chosen not in configs:
         raise ProviderError(
             f"unknown provider {chosen!r}; configured: " + ", ".join(sorted(configs))
@@ -314,6 +413,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     providers = sub.add_parser("providers", help="list configured AI providers")
     providers.set_defaults(func=cmd_providers)
+
+    doctor = sub.add_parser("doctor", help="check profile, AI keys and Garmin setup")
+    doctor.add_argument(
+        "--ping", action="store_true",
+        help="actually call each configured AI provider (costs a few tokens)",
+    )
+    doctor.set_defaults(func=cmd_doctor)
 
     generate = sub.add_parser("generate", help="have an AI write a plan")
     generate.add_argument(

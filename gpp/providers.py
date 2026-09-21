@@ -4,23 +4,30 @@ Deliberately provider-neutral: the plan DSL is the contract, and any model that
 can emit JSON can fill it. Each provider lazily imports its own vendor SDK, so
 you only install what you actually use.
 
-    kind = "anthropic"          official anthropic SDK
-    kind = "openai"             official openai SDK (api.openai.com)
-    kind = "openai-compatible"  same SDK, your own base_url -- covers
-                                OpenRouter, Groq, Together, Fireworks,
-                                Ollama (/v1), LM Studio, vLLM, anything else
-                                speaking the chat-completions shape
-    kind = "manual"             no API at all: writes the prompt to a file,
-                                you paste the answer back. Works with any chat
-                                UI, including one you are already talking to.
+    kind = "anthropic" / "claude"   official anthropic SDK
+    kind = "openai" / "chatgpt"     official openai SDK (api.openai.com)
+    kind = "gemini"                 Google's OpenAI-compatible endpoint, so the
+                                    openai SDK again -- only the address, key
+                                    variable and model names differ
+    kind = "openai-compatible"      same SDK, your own base_url -- covers
+                                    OpenRouter, Groq, Together, Fireworks,
+                                    LM Studio, vLLM, anything speaking the
+                                    chat-completions shape
+    kind = "ollama"                 local models on localhost:11434
+    kind = "manual" / "paste"       no API at all: you relay the prompt to any
+                                    chat window and paste the answer back
 
-Adding a provider is one class with one method.
+With no [ai] block at all you get claude, chatgpt, gemini and paste, and the
+first one with a key set is preselected. Adding a kind is one row in
+KIND_DEFAULTS if the vendor speaks an existing dialect; a class with one
+method if not.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -104,9 +111,13 @@ class AnthropicProvider:
                 try:
                     response = client.messages.create(**request)
                 except Exception as inner:
-                    raise ProviderError(f"Anthropic call failed: {inner}") from inner
+                    raise ProviderError(
+                        describe_failure(self.name, self.model, inner, ANTHROPIC_MODELS_URL)
+                    ) from inner
             else:
-                raise ProviderError(f"Anthropic call failed: {exc}") from exc
+                raise ProviderError(
+                    describe_failure(self.name, self.model, exc, ANTHROPIC_MODELS_URL)
+                ) from exc
 
         if getattr(response, "stop_reason", None) == "refusal":
             raise ProviderError("Claude declined this request")
@@ -126,7 +137,10 @@ class OpenAICompatibleProvider:
     def __init__(self, config: ProviderConfig):
         self.name = config.name
         self.config = config
-        self.model = config.model or "gpt-4o"
+        self.model = config.model or KIND_DEFAULTS["openai"]["model"]
+        self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get(
+            "docs", OPENAI_MODELS_URL
+        )
 
     def complete(self, system: str, user: str, schema: dict | None) -> str:
         try:
@@ -137,13 +151,16 @@ class OpenAICompatibleProvider:
             ) from exc
 
         key = _api_key(self.config, "OPENAI_API_KEY")
-        if not key and self.config.base_url:
-            # Local servers (Ollama, LM Studio, vLLM) want a placeholder.
+        if not key and (self.config.api_key_env is None or self.config.base_url):
+            # Local servers (Ollama, LM Studio, vLLM) take any non-empty
+            # string; the SDK insists on one. A hosted base_url with a missing
+            # key gets a 401 that describe_failure explains.
             key = "not-needed"
         if not key:
             raise ProviderError(
-                f"no API key for provider {self.name!r}; set "
-                f"{self.config.api_key_env or 'OPENAI_API_KEY'}"
+                f"no API key for provider {self.name!r}; set the "
+                f"{self.config.api_key_env or 'OPENAI_API_KEY'} environment "
+                f"variable, or choose the paste provider, which needs none"
             )
 
         client = OpenAI(api_key=key, base_url=self.config.base_url or None)
@@ -169,9 +186,13 @@ class OpenAICompatibleProvider:
                 try:
                     response = client.chat.completions.create(**request)
                 except Exception as inner:
-                    raise ProviderError(f"{self.name} call failed: {inner}") from inner
+                    raise ProviderError(
+                        describe_failure(self.name, self.model, inner, self.docs_url)
+                    ) from inner
             else:
-                raise ProviderError(f"{self.name} call failed: {exc}") from exc
+                raise ProviderError(
+                    describe_failure(self.name, self.model, exc, self.docs_url)
+                ) from exc
 
         content = response.choices[0].message.content
         if not content:
@@ -186,7 +207,7 @@ class ManualProvider:
     """No API key, no SDK: you relay the prompt to any chat window yourself.
 
     This is the zero-cost path, and it is the one that makes the tool
-    shareable — a friend with no API budget can still use every other part of
+    shareable - a friend with no API budget can still use every other part of
     it by pasting into whatever assistant they already have open.
 
     Two ways to collect the answer. With an `ask` callback (the web UI passes
@@ -228,28 +249,76 @@ KINDS = {
     "claude": AnthropicProvider,
     "openai": OpenAICompatibleProvider,
     "openai-compatible": OpenAICompatibleProvider,
+    "chatgpt": OpenAICompatibleProvider,
+    "gemini": OpenAICompatibleProvider,
     "ollama": OpenAICompatibleProvider,
     "manual": ManualProvider,
     "paste": ManualProvider,
 }
 
-# Sensible base_urls so common setups need almost no config.
-KIND_DEFAULT_BASE_URL = {
-    "ollama": "http://localhost:11434/v1",
+ANTHROPIC_MODELS_URL = "https://docs.anthropic.com/en/docs/about-claude/models"
+OPENAI_MODELS_URL = "https://platform.openai.com/docs/models"
+GEMINI_MODELS_URL = "https://ai.google.dev/gemini-api/docs/models"
+
+# What each kind needs when the user has not said. Model names are the one
+# thing here that WILL go stale -- vendors retire them -- which is why the
+# failure path (describe_failure) tells the user exactly which line to edit,
+# and why `gpp doctor --ping` exists.
+KIND_DEFAULTS: dict[str, dict[str, Any]] = {
+    "anthropic": {
+        "model": "claude-opus-5",
+        "key_env": "ANTHROPIC_API_KEY",
+        "docs": ANTHROPIC_MODELS_URL,
+    },
+    "openai": {
+        "model": "gpt-5.2",
+        "key_env": "OPENAI_API_KEY",
+        "docs": OPENAI_MODELS_URL,
+    },
+    "gemini": {
+        # Google exposes Gemini through an OpenAI-compatible endpoint, so the
+        # same client works; only the address, key and model names differ.
+        "model": "gemini-2.5-pro",
+        "key_env": "GEMINI_API_KEY",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "docs": GEMINI_MODELS_URL,
+    },
+    "ollama": {
+        "model": "llama3.3",
+        "key_env": None,
+        "base_url": "http://localhost:11434/v1",
+        "docs": "https://ollama.com/library",
+    },
+    "openai-compatible": {"model": None, "key_env": "OPENAI_API_KEY", "docs": OPENAI_MODELS_URL},
+    "manual": {"model": None, "key_env": None, "docs": None},
 }
+KIND_DEFAULTS["claude"] = KIND_DEFAULTS["anthropic"]
+KIND_DEFAULTS["chatgpt"] = KIND_DEFAULTS["openai"]
+KIND_DEFAULTS["paste"] = KIND_DEFAULTS["manual"]
 
 
-def build_provider(config: ProviderConfig, ask: AskFn | None = None) -> Provider:
-    """`ask` is only meaningful for manual providers; others ignore it."""
+def resolve(config: ProviderConfig) -> ProviderConfig:
+    """Fill in whatever the user left out, in place, from KIND_DEFAULTS."""
     kind = config.kind.strip().lower()
-    cls = KINDS.get(kind)
-    if cls is None:
+    defaults = KIND_DEFAULTS.get(kind)
+    if defaults is None:
         raise ProviderError(
             f"unknown provider kind {config.kind!r}; known: "
             + ", ".join(sorted(KINDS))
         )
-    if config.base_url is None and kind in KIND_DEFAULT_BASE_URL:
-        config.base_url = KIND_DEFAULT_BASE_URL[kind]
+    if config.model is None:
+        config.model = defaults.get("model")
+    if config.base_url is None:
+        config.base_url = defaults.get("base_url")
+    if config.api_key_env is None:
+        config.api_key_env = defaults.get("key_env")
+    return config
+
+
+def build_provider(config: ProviderConfig, ask: AskFn | None = None) -> Provider:
+    """`ask` is only meaningful for manual providers; others ignore it."""
+    resolve(config)
+    cls = KINDS[config.kind.strip().lower()]
     if cls is ManualProvider:
         return cls(config, ask=ask)
     return cls(config)
@@ -257,6 +326,93 @@ def build_provider(config: ProviderConfig, ask: AskFn | None = None) -> Provider
 
 def is_manual(config: ProviderConfig) -> bool:
     return config.kind.strip().lower() in ("manual", "paste")
+
+
+def key_present(config: ProviderConfig) -> bool | None:
+    """True/False for kinds that need a key; None for kinds that don't."""
+    resolve(config)
+    if config.api_key_env is None:
+        return None
+    return bool(os.environ.get(config.api_key_env))
+
+
+def pick_default(configs: dict[str, ProviderConfig], explicit: str | None) -> str:
+    """The provider to preselect.
+
+    An explicit `default` in the profile wins. Otherwise the first provider
+    whose key is actually set -- so a friend with only a GEMINI_API_KEY lands
+    on Gemini, not on a Claude entry that will fail -- and failing that, the
+    paste provider, which always works.
+    """
+    if explicit in configs:
+        return explicit
+    for name, config in configs.items():
+        if key_present(config):
+            return name
+    for name, config in configs.items():
+        if is_manual(config):
+            return name
+    return next(iter(configs))
+
+
+def describe_failure(name: str, model: str | None, exc: Exception, docs_url: str | None) -> str:
+    """Turn an SDK exception into something a runner can act on.
+
+    The two failures a non-developer will actually hit are a retired model
+    name and a bad key. Both deserve a sentence that names the fix, not an
+    HTTP status.
+    """
+    text = str(exc)
+    status = getattr(exc, "status_code", None)
+    lowered = text.lower()
+
+    looks_like_model = status == 404 or re.search(
+        r"(model|engine)[^.]{0,60}(not found|does not exist|not exist|unknown|"
+        r"not supported|deprecated|decommissioned|invalid)|"
+        r"(not found|does not exist)[^.]{0,40}model",
+        lowered,
+    )
+    if looks_like_model:
+        hint = f" Current names: {docs_url}" if docs_url else ""
+        return (
+            f"{name} does not recognise the model {model!r}. Model names change "
+            f"as vendors retire them - set  model = \"...\"  under "
+            f"[ai.providers.{name}] in profile.toml.{hint}"
+        )
+
+    if status in (401, 403) or any(
+        s in lowered for s in ("authentication", "api key", "api_key", "unauthorized", "permission denied")
+    ):
+        return (
+            f"{name} rejected the API key. Check the environment variable is set "
+            f"in the shell that launched gpp, and that the key is current. ({text})"
+        )
+
+    if status == 429 or "rate limit" in lowered or "quota" in lowered:
+        return f"{name} is rate-limiting or out of quota - wait a minute and retry. ({text})"
+
+    return f"{name} call failed: {text}"
+
+
+def probe(config: ProviderConfig) -> str:
+    """A one-line completion, to prove the key and model work.
+
+    Used by `gpp doctor --ping`. Costs a few tokens.
+    """
+    trial = ProviderConfig(
+        name=config.name,
+        kind=config.kind,
+        model=config.model,
+        base_url=config.base_url,
+        api_key_env=config.api_key_env,
+        max_tokens=16,
+        strict_schema=False,
+        options=dict(config.options),
+    )
+    provider = build_provider(trial)
+    return provider.complete(
+        "Reply with the single word OK and nothing else.", "Ready?", None
+    ).strip()
 
 
 def load_providers(data: dict) -> tuple[dict[str, ProviderConfig], str | None]:
@@ -289,10 +445,19 @@ def load_providers(data: dict) -> tuple[dict[str, ProviderConfig], str | None]:
             },
         )
     if not configs:
-        # Usable with no config at all.
-        configs["claude"] = ProviderConfig(name="claude", kind="anthropic")
-        configs["paste"] = ProviderConfig(name="paste", kind="manual")
+        configs = default_configs()
     return configs, ai.get("default")
+
+
+def default_configs() -> dict[str, ProviderConfig]:
+    """What you get with no [ai] block at all: the three big assistants plus
+    paste, which needs no key and therefore always works."""
+    return {
+        "claude": ProviderConfig(name="claude", kind="anthropic"),
+        "chatgpt": ProviderConfig(name="chatgpt", kind="openai"),
+        "gemini": ProviderConfig(name="gemini", kind="gemini"),
+        "paste": ProviderConfig(name="paste", kind="manual"),
+    }
 
 
 # --- helpers ----------------------------------------------------------------

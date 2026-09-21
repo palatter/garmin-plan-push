@@ -31,7 +31,15 @@ from ..estimate import EstimateError, lthr_from_max, threshold_from_race
 from ..generate import generate_plan
 from ..plan import Plan, PlanError
 from ..profile import Profile, ProfileError, default_save_path, find_profile
-from ..providers import ProviderError, build_provider, is_manual, load_providers
+from ..providers import (
+    ProviderError,
+    build_provider,
+    is_manual,
+    key_present,
+    load_providers,
+    pick_default,
+    resolve,
+)
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
 from ..units import format_duration, format_pace
@@ -104,12 +112,15 @@ class App:
                 {
                     "name": name,
                     "kind": config.kind,
-                    "model": config.model,
-                    "needs_key": config.kind not in ("manual", "paste"),
+                    "model": resolve(config).model,
+                    "key_env": config.api_key_env,
+                    # True/False when a key is needed, None when it is not --
+                    # the UI uses this to warn before a doomed generate.
+                    "key_present": key_present(config),
                 }
-                for name, config in sorted(configs.items())
+                for name, config in configs.items()
             ],
-            "default_provider": default or next(iter(configs), None),
+            "default_provider": pick_default(configs, default),
         }
 
     def zones_preview(self, body: dict) -> dict:
@@ -234,7 +245,7 @@ class App:
     def generate(self, body: dict) -> dict:
         profile = self.profile()
         configs, default = load_providers(profile.raw)
-        name = body.get("provider") or default or next(iter(configs), None)
+        name = body.get("provider") or pick_default(configs, default)
         if name not in configs:
             raise AppError(f"unknown provider {name!r}")
         request = (body.get("request") or "").strip()

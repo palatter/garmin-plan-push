@@ -22,13 +22,13 @@ High value, low effort, no new subsystems.
 |---|---|---|---|
 | 1 | **Power targets** (`power.zone`, id 2) | S | Constants already verified; Fenix 7s supports running power. One `TARGET_TYPES` entry plus a DSL target kind. Unlocks Stryd users entirely. |
 | 2 | **Undo the last push** | S | We already tag every workout and can list them. "Remove the plan I just sent" is one call over the tag; today the only way back is Garmin's UI. |
-| 3 | **`gpp doctor`** | S | One command that checks: profile valid, provider reachable, Garmin login works, watch model supports structured workouts. Every support question a friend will ask, answered before they ask it. |
+| 3 | ~~**`gpp doctor`**~~ **done** | S | One command that checks: profile valid, provider reachable, Garmin login works, watch model supports structured workouts. Every support question a friend will ask, answered before they ask it. |
 | 4 | **Edit a workout before pushing** | M | The review screen is read-only. Letting someone drag a session to another day, or bump reps 5→4, removes the "regenerate the whole block because Thursday is wrong" loop. |
 | 5 | **Plan templates saved locally** | M | Final Surge treats plans as first-class objects separate from the calendar, reapplicable to any date ([support.finalsurge.com](https://support.finalsurge.com/hc/en-us/articles/4408535325207-Creating-and-Editing-Training-Plans)). We regenerate from scratch every time. |
 | 6 | **Workout library** | M | Save "my 5×1k" and reuse it. Pairs with #5 and is the unit people actually think in. |
 | 7 | **Race-date anchoring** | M | Today you say "four weeks to a 10k" in prose and hope. A real race date field lets the generator count backwards and lets #12 (taper) exist at all. |
 | 8 | **Lazy-import `jsonschema`** | S | Measured: 136 ms of our 210 ms CLI import. The schema *dict* is needed at import (we feed it to the LLM); the *validator* is not. Nearly halves `gpp --help`. |
-| 9 | **A `LICENSE`** | S | Currently absent. Nobody can legally use or fork this, which matters the moment you share it. |
+| 9 | ~~**A `LICENSE`**~~ **done (MIT)** | S | Currently absent. Nobody can legally use or fork this, which matters the moment you share it. |
 | 10 | **Long-run spike guardrail** | S | See #17. Strongest evidence of any safety rule here, and it's a pure function of the plan — no history needed if the user enters their recent longest run. |
 
 ---

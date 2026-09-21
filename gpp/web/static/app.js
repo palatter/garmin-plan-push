@@ -237,6 +237,28 @@ function initCompose() {
   $('#c-request').addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') generate();
   });
+  $('#c-provider').addEventListener('change', updateProviderHint);
+}
+
+/* Warn BEFORE a doomed generate: a provider that needs a key it can't find
+   would otherwise fail after the spinner. Paste is always offered as the way
+   out because it needs nothing. */
+function updateProviderHint() {
+  const name = $('#c-provider').value;
+  const p = state.providers.find(x => x.name === name);
+  const hint = $('#c-provider-hint');
+  if (!p) { hint.hidden = true; return; }
+  if (p.key_present === false) {
+    hint.textContent =
+      `${p.key_env} isn't set in the shell that launched this app, so ${name} can't be called. ` +
+      `Set it and restart, or choose "paste" — no key needed.`;
+    hint.hidden = false;
+  } else if (p.kind === 'manual' || p.kind === 'paste') {
+    hint.textContent = 'You’ll copy the prompt into any assistant you already use and paste its reply back.';
+    hint.hidden = false;
+  } else {
+    hint.hidden = true;
+  }
 }
 
 async function generate() {
@@ -646,10 +668,12 @@ async function boot() {
   for (const p of s.providers) {
     const opt = document.createElement('option');
     opt.value = p.name;
-    opt.textContent = p.model ? `${p.name} — ${p.model}` : p.name;
+    const suffix = p.key_present === false ? ' (no key set)' : '';
+    opt.textContent = (p.model ? `${p.name} — ${p.model}` : p.name) + suffix;
     if (p.name === s.default_provider) opt.selected = true;
     select.append(opt);
   }
+  updateProviderHint();
 
   // Pre-fill setup so "Edit paces" is an edit, not a re-entry.
   $('#s-name').value = s.profile.name;

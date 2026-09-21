@@ -48,18 +48,28 @@ every step listed underneath.
 
 **Send to Garmin**, enter your Connect login, and sync your watch.
 
-### If you don't have an AI API key
+### Which AI writes the plan
 
-Pick **paste** as the provider. The app hands you the prompt, you paste it into
-ChatGPT, Claude, Gemini — anything you already use — and paste the reply back.
-Same validation, same charts, same push to Garmin. Costs nothing.
+Any of them. Out of the box the app offers **Claude**, **ChatGPT**, **Gemini**
+and **paste**, and preselects whichever one you have a key for.
 
-With a key, set it once and generation is automatic:
+**No API key?** Pick **paste**. The app hands you the prompt, you drop it into
+whatever assistant you already use — ChatGPT, Claude, Gemini, Copilot, a local
+model, anything — and paste the reply back. Same validation, same charts, same
+push to Garmin. Costs nothing, and the app tells you it's the way out whenever
+a key is missing.
+
+**With a key**, set it once and generation is automatic. Only the one you use
+is needed:
 
 ```bash
-setx ANTHROPIC_API_KEY sk-ant-...      # Windows
-export ANTHROPIC_API_KEY=sk-ant-...    # macOS / Linux
+setx ANTHROPIC_API_KEY sk-ant-...     # Claude      (Windows; use export on macOS/Linux)
+setx OPENAI_API_KEY sk-...            # ChatGPT
+setx GEMINI_API_KEY AIza...           # Gemini
 ```
+
+Then restart the app. `gpp doctor --ping` proves each key and model actually
+work before you rely on them.
 
 ## Sharing it with someone
 
@@ -119,6 +129,7 @@ The browser app is the front door; everything is also a command.
 |---|---|
 | `gpp web` | the graphical app |
 | `gpp init` | set up your profile in the terminal instead |
+| `gpp doctor` | check profile, AI keys and Garmin setup (`--ping` calls each AI) |
 | `gpp zones` | show your resolved pace and HR zones |
 | `gpp generate "..."` | write a plan |
 | `gpp show plan.json` | render a plan as text |
@@ -131,13 +142,18 @@ The browser app is the front door; everything is also a command.
 Provider-neutral by design — the DSL is the contract, so switching models is a
 one-word change. Configured under `[ai.providers]` in `profile.toml`:
 
-| `kind` | for |
-|---|---|
-| `anthropic` | Claude |
-| `openai` | OpenAI |
-| `openai-compatible` | OpenRouter, Groq, Together, vLLM, LM Studio — any `base_url` |
-| `ollama` | local models |
-| `manual` | no key at all: copy the prompt out, paste the reply back |
+| `kind` | for | key |
+|---|---|---|
+| `anthropic` (or `claude`) | Claude | `ANTHROPIC_API_KEY` |
+| `openai` (or `chatgpt`) | ChatGPT | `OPENAI_API_KEY` |
+| `gemini` | Gemini, via Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
+| `openai-compatible` | OpenRouter, Groq, Together, vLLM, LM Studio — any `base_url` | `OPENAI_API_KEY` or `api_key_env` |
+| `ollama` | local models | none |
+| `manual` (or `paste`) | no key at all: copy the prompt out, paste the reply back | none |
+
+Model names go stale as vendors retire them. If a provider ever says it
+doesn't recognise its model, the error tells you the exact line to change —
+`model = "..."` under that provider — and links to the vendor's current list.
 
 ```toml
 [ai]
