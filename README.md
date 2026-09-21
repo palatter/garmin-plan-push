@@ -74,10 +74,9 @@ work before you rely on them.
 
 ## Sharing it with someone
 
-They need the same two commands above, plus access to this repo (it's private
-— add them as a collaborator, or make the repo public). Everything else is
-self-contained: no server to run, no account, no API key required if they use
-the paste option.
+Send them the link. The repo is public, so the same two commands above are
+all they need. Everything else is self-contained: no server to run, no
+account, no API key required if they use the paste option.
 
 Their profile is their own — paces, zones and plans live on their machine.
 
