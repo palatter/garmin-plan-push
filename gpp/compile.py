@@ -55,6 +55,8 @@ WEIGHT_UNIT_KG = {"unitId": 8, "unitKey": "kilogram", "factor": 1000.0}
 
 # Longest a "why this session" note can be on the watch's first step.
 CUE_LIMIT = 200
+# Garmin Connect keeps 212 characters of a step note; the rest is cut.
+STEP_NOTE_LIMIT = 212
 
 
 class CompileError(ValueError):
@@ -166,7 +168,8 @@ def step_note(step: Step) -> str | None:
         parts.append(f"RPE {step.target.value}/10")
     if step.note:
         parts.append(step.note)
-    return " - ".join(parts) or None
+    text = " - ".join(parts)
+    return text[:STEP_NOTE_LIMIT] or None
 
 
 # --- end conditions ---------------------------------------------------------
@@ -299,7 +302,7 @@ def _compile_repeat(
         "endCondition": END_CONDITIONS["iterations"],
         "endConditionValue": float(step.reps or 1),
         "workoutSteps": children,
-        "description": step.note,
+        "description": (step.note or "")[:STEP_NOTE_LIMIT] or None,
     }
     # NOTE on nesting. `childStepId` on a group is the id its own children
     # carry, so it must stay `group_child_id` even when this group is itself
@@ -326,7 +329,9 @@ def content_tag(plan_name: str, payload: dict[str, Any]) -> str:
     """
     skeleton = json.dumps(payload.get("workoutSegments", []), sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(skeleton.encode("utf-8")).hexdigest()[:8]
-    slug = "".join(c for c in plan_name.lower() if c.isalnum())[:16] or "plan"
+    # ASCII only: the tag regex accepts [a-z0-9], so a plan called "Höst 10k"
+    # must not produce a slug that its own reader cannot match.
+    slug = "".join(c for c in plan_name.lower() if c.isascii() and c.isalnum())[:16] or "plan"
     return f"[{TAG_PREFIX}:{slug}:{digest}]"
 
 

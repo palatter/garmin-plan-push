@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,6 +46,10 @@ WORKOUT_SCHEDULE = "/workout-service/schedule/{workout_id}"
 CALENDAR_MONTH = "/calendar-service/year/{year}/month/{month}"
 
 TAG_RE = re.compile(rf"\[{TAG_PREFIX}:([a-z0-9]+):([0-9a-f]{{8}})\]")
+
+# HTTP statuses worth one more try on a read; writes are never retried blind.
+TRANSIENT = ("429", "502", "503", "504", "timed out", "timeout")
+RETRY_DELAYS = (1.0, 2.0, 4.0)
 
 
 class PushError(RuntimeError):
@@ -109,15 +114,30 @@ class GarminClient:
         if prompt_mfa is not None:
             kwargs["prompt_mfa"] = prompt_mfa
 
+        # Library versions differ in which keyword arguments the constructor
+        # takes. They are dropped one at a time, the MFA prompt last, so an
+        # MFA account is never silently downgraded to a login that cannot ask.
+        api = None
+        for attempt in (kwargs, {k: v for k, v in kwargs.items() if k == "prompt_mfa"}, {}):
+            try:
+                api = Garmin(self.email, self._password, **attempt)
+                break
+            except TypeError:
+                continue
+            except Exception as exc:
+                raise PushError(f"could not set up the Garmin client: {exc}") from exc
+        if api is None:
+            raise PushError("could not construct the Garmin client; check `pip show garminconnect`")
+        self._api = api
         try:
-            self._api = Garmin(self.email, self._password, **kwargs)
-            self._api.login()
-        except TypeError:
-            # Older/newer signatures differ in which kwargs they accept.
-            self._api = Garmin(self.email, self._password)
             self._api.login()
         except Exception as exc:
-            raise PushError(f"Garmin login failed: {exc}") from exc
+            where = self._token_dir or "~/.garminconnect"
+            raise PushError(
+                f"Garmin login failed: {exc}. If you signed in before, the cached token in "
+                f"{where} may be stale -- Garmin expires them without warning -- so delete "
+                "that folder and sign in again."
+            ) from exc
 
         self._request = self._resolve_transport()
 
@@ -162,10 +182,18 @@ class GarminClient:
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
         if self._request is None:
             raise PushError("not connected; call connect() first")
-        try:
-            return self._request(method, path, **kwargs)
-        except Exception as exc:
-            raise PushError(f"{method} {path} failed: {exc}") from exc
+        delays = RETRY_DELAYS if method == "GET" else ()
+        for delay in (*delays, None):
+            try:
+                return self._request(method, path, **kwargs)
+            except Exception as exc:
+                transient = any(code in str(exc).lower() for code in TRANSIENT)
+                if delay is None or not transient:
+                    raise PushError(f"{method} {path} failed: {exc}") from exc
+                self._sleep(delay)
+        return None  # pragma: no cover - the loop always returns or raises
+
+    _sleep = staticmethod(time.sleep)
 
     def _library(self, name: str, *args: Any) -> Any:
         """Call a python-garminconnect method by name, or explain it is missing."""
@@ -191,7 +219,7 @@ class GarminClient:
                 "GET", CALENDAR_MONTH.format(year=cursor.year, month=cursor.month - 1)
             )
             for item in (payload or {}).get("calendarItems", []) or []:
-                key = (item.get("id"), item.get("date"))
+                key = (item.get("id") or item.get("workoutId"), item.get("date"), item.get("title"))
                 if key in seen:
                     continue
                 seen.add(key)
@@ -308,31 +336,50 @@ class GarminClient:
         by_date = _index_by_date(existing)
 
         for item in compiled:
+            names_today = {c.name.strip() for c in compiled if c.date == item.date}
             try:
                 results.append(
-                    self._push_one(item, by_date, replace, verify, update_in_place, device_id, log)
+                    self._push_one(
+                        item, by_date, names_today, replace, verify, update_in_place, device_id, log
+                    )
                 )
             except PushError as exc:
                 results.append(PushResult(item.name, item.date, "failed", detail=str(exc)))
         return results
 
     def _push_one(
-        self, item, by_date, replace, verify, update_in_place, device_id, log
+        self, item, by_date, names_today, replace, verify, update_in_place, device_id, log
     ) -> PushResult:
-        _, _, want_hash = item.tag.strip("[]").split(":")
-        stale: list[int] = []
+        _, want_slug, want_hash = item.tag.strip("[]").split(":")
+        title_wanted = item.name.strip()
+        candidates = by_date.get(item.date, [])
 
-        for candidate in by_date.get(item.date, []):
-            existing_id = candidate.get("workoutId") or candidate.get("id")
-            title = candidate.get("title") or ""
+        # Only this plan's own sessions on this date are ever candidates. A
+        # hand-made workout has no tag; another plan's has another slug.
+        own: list[tuple[dict, str, str]] = []
+        for candidate in candidates:
+            title = (candidate.get("title") or "").strip()
             tag = parse_tag(candidate.get("description")) or parse_tag(title)
-            if tag is None:
-                continue  # hand-made workout: never touch
-            if tag[1] == want_hash and title.strip() == item.name.strip():
+            if tag is None or tag[0] != want_slug:
+                continue
+            own.append((candidate, title, tag[1]))
+
+        for candidate, title, digest in own:
+            if digest == want_hash and title == title_wanted:
+                # Claimed: a second session on the same day cannot take it too.
+                candidates.remove(candidate)
                 log(f"  unchanged  {item.date}  {item.name}")
-                return PushResult(item.name, item.date, "unchanged", existing_id)
-            if existing_id:
-                stale.append(int(existing_id))
+                return PushResult(item.name, item.date, "unchanged", _id_of(candidate))
+
+        # Stale versions on this date. One with our title is ours to update in
+        # place; one titled like ANOTHER session being pushed today belongs to
+        # that session and is left for it to claim.
+        mine = [c for c, title, _ in own if title == title_wanted]
+        loose = [c for c, title, _ in own if title != title_wanted and title not in names_today]
+        stale_items = mine + loose
+        for c in stale_items:
+            candidates.remove(c)
+        stale = [int(i) for i in (_id_of(c) for c in stale_items) if i]
 
         if stale and not replace:
             return PushResult(
@@ -422,6 +469,11 @@ class GarminClient:
             return f"could not verify: {exc}"
 
         problems: list[str] = []
+        sent_sport = (item.payload.get("sportType") or {}).get("sportTypeKey")
+        got_sport = (stored.get("sportType") or {}).get("sportTypeKey")
+        if sent_sport and got_sport and sent_sport != got_sport:
+            problems.append(f"sport sent {sent_sport}, stored {got_sport}")
+
         sent_steps = _flatten(item.payload["workoutSegments"][0]["workoutSteps"])
         got_steps = _flatten((stored.get("workoutSegments") or [{}])[0].get("workoutSteps", []))
         if len(sent_steps) != len(got_steps):
@@ -432,17 +484,43 @@ class GarminClient:
             got_key = (got.get("stepType") or {}).get("stepTypeKey")
             if sent_key != got_key:
                 problems.append(f"step {index}: sent {sent_key}, stored {got_key}")
-            one, two = sent.get("targetValueOne"), got.get("targetValueOne")
-            if one is not None and two is not None and abs(one - two) > 0.05:
+            sent_end = (sent.get("endCondition") or {}).get("conditionTypeKey")
+            got_end = (got.get("endCondition") or {}).get("conditionTypeKey")
+            if sent_end and got_end and sent_end != got_end:
+                problems.append(f"step {index}: end condition sent {sent_end}, stored {got_end}")
+            a, b = sent.get("endConditionValue"), got.get("endConditionValue")
+            if a is not None and b is not None and abs(float(a) - float(b)) > 0.5:
+                problems.append(f"step {index}: end value changed {a} -> {b}")
+            for key, label in (
+                ("targetValueOne", "target value"),
+                ("targetValueTwo", "second target value"),
+            ):
+                one, two = sent.get(key), got.get(key)
+                if one is not None and two is not None and abs(one - two) > 0.05:
+                    problems.append(
+                        f"step {index}: {label} changed {one} -> {two} "
+                        "(Garmin may order pace bounds the other way round)"
+                    )
+            if sent.get("type") == "RepeatGroupDTO" and sent.get("numberOfIterations") != got.get(
+                "numberOfIterations"
+            ):
                 problems.append(
-                    f"step {index}: target value changed {one} -> {two} "
-                    "(Garmin may order pace bounds the other way round)"
+                    f"step {index}: repeat count sent {sent.get('numberOfIterations')}, "
+                    f"stored {got.get('numberOfIterations')}"
                 )
             if sent.get("exerciseName") and got.get("exerciseName") != sent.get("exerciseName"):
                 problems.append(
                     f"step {index}: exercise {sent['exerciseName']} not recognised by Garmin's catalog"
                 )
         return "; ".join(problems)
+
+
+def _id_of(item: dict) -> int | None:
+    raw = item.get("workoutId") or item.get("id")
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _flatten(steps: list[dict]) -> list[dict]:

@@ -20,11 +20,17 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from .load import infer_role
+from .load import roles_for
 from .plan import Plan, Step, Workout
 from .profile import Profile
 from .timeline import workout_summary
-from .units import format_distance, format_duration, parse_distance, parse_duration
+from .units import (
+    UnitError,
+    format_distance,
+    format_duration,
+    parse_distance,
+    parse_duration,
+)
 
 LAYOFF_TIERS = (
     (7, "resume", "Skip what was missed and carry on; a week off costs little."),
@@ -82,7 +88,13 @@ def _scale_extent(value: str | float | None, factor: float) -> str | float | Non
         return round(float(value) * factor)
     m = _NUM.match(value)
     if not m:
-        return value  # "1:05:00" style -- leave it
+        # "1:05:00" / "1h05m" style: scale through seconds and re-format.
+        if ":" in value or "h" in value.lower():
+            try:
+                return format_duration(parse_duration(value) * factor)
+            except UnitError:
+                return value
+        return value
     number, unit = float(m.group(1)), m.group(2)
     scaled = number * factor
     text = (
@@ -153,12 +165,18 @@ def pause_plan(plan: Plan, start: dt.date, days: int, reason: str = "break") -> 
         reasons.append(f"First week back scaled to {scale:.0%} of planned work.")
     if race:
         reasons.append(f"A race {race.name} on {race.date.isoformat()} kept in place.")
+    weeks = []
+    for wk in plan.weeks:
+        shifted = deepcopy(wk)
+        if shifted.start >= start:
+            shifted.start += dt.timedelta(days=days)
+        weeks.append(shifted)
     new = Plan(
         plan=plan.plan,
         workouts=kept,
         race_date=plan.race_date,
         races=list(plan.races),
-        weeks=list(plan.weeks),
+        weeks=weeks,
     )
     return Adaptation(plan=new, reasons=reasons, dropped=dropped, moved=moved)
 
@@ -180,9 +198,7 @@ def replan_missed(
     today = today or (max(missed) if missed else dt.date.today())
     workouts = plan.sorted_workouts()
     summaries = {id(w): workout_summary(w, profile) for w in workouts}
-    running = sorted(summaries[id(w)]["metres"] for w in workouts if w.sport == "running")
-    median = running[len(running) // 2] if running else 0.0
-    roles = {id(w): infer_role(w, summaries[id(w)], median) for w in workouts}
+    roles = roles_for(workouts, summaries)
     by_date: dict[dt.date, list[Workout]] = {}
     for w in workouts:
         by_date.setdefault(w.date, []).append(w)
@@ -193,13 +209,26 @@ def replan_missed(
     moved: list[str] = []
     race = plan.a_race
 
-    def free_day(candidates: list[dt.date], role_needed: str) -> dt.date | None:
+    def kept_on(day: dt.date) -> list[Workout]:
+        return [w for w in by_date.get(day, []) if id(w) in kept]
+
+    def hard_on(day: dt.date, moving: Workout) -> bool:
+        return any(roles[id(o)] in ("quality", "race") for o in kept_on(day) if o is not moving)
+
+    def free_day(candidates: list[dt.date], role_needed: str, moving: Workout) -> dt.date | None:
         for day in candidates:
             if profile.availability and not profile.availability.allows(day):
                 continue
             if race and day >= race.date:
                 continue
-            existing = [w for w in by_date.get(day, []) if id(w) in kept]
+            # The hard-day rules hold for the moved session too: no quality
+            # next to quality, no long run the day after a quality session.
+            before, after = day - dt.timedelta(days=1), day + dt.timedelta(days=1)
+            if role_needed == "quality" and (hard_on(before, moving) or hard_on(after, moving)):
+                continue
+            if role_needed == "long" and hard_on(before, moving):
+                continue
+            existing = kept_on(day)
             if not existing:
                 return day
             if (
@@ -236,7 +265,7 @@ def replan_missed(
                         f"{label}: dropped -- the next quality session is only {(soon[0].date - day).days} day(s) away."
                     )
                     continue
-                target = free_day([day + dt.timedelta(days=i) for i in range(1, 4)], "quality")
+                target = free_day([day + dt.timedelta(days=i) for i in range(1, 4)], "quality", w)
             elif role in ("long", "medium-long"):
                 target = free_day(
                     [
@@ -246,9 +275,10 @@ def replan_missed(
                     ]
                     + [day + dt.timedelta(days=i) for i in range(1, 8)],
                     "long",
+                    w,
                 )
             else:
-                target = free_day([day + dt.timedelta(days=i) for i in range(1, 4)], role)
+                target = free_day([day + dt.timedelta(days=i) for i in range(1, 4)], role, w)
 
             if target is None:
                 del kept[id(w)]

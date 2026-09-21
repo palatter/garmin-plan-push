@@ -470,7 +470,7 @@ def cmd_push(args: argparse.Namespace) -> int:
     for result in failures:
         print(f"failed:  {result.date} {result.name}: {result.detail}", file=sys.stderr)
 
-    created = sum(1 for r in results if r.action in ("created", "replaced"))
+    created = sum(1 for r in results if r.action in ("created", "replaced", "updated"))
     print(
         f"{created} pushed, "
         f"{sum(1 for r in results if r.action == 'unchanged')} unchanged, "

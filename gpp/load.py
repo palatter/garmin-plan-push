@@ -121,6 +121,13 @@ def infer_role(workout: Workout, summary: dict, median_metres: float) -> str:
     return "easy"
 
 
+def roles_for(workouts: list[Workout], summaries: dict) -> dict[int, str]:
+    """Role per workout (keyed by id), inferred the same way everywhere."""
+    running = [summaries[id(w)]["metres"] for w in workouts if w.sport == "running"]
+    median_metres = statistics.median(running) if running else 0.0
+    return {id(w): infer_role(w, summaries[id(w)], median_metres) for w in workouts}
+
+
 def weekly_stats(plan: Plan, profile: Profile) -> list[WeekStats]:
     """Aggregate a plan into ISO weeks, in order, with empty weeks filled in."""
     workouts = plan.sorted_workouts()

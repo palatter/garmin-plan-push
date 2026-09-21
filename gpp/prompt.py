@@ -15,6 +15,7 @@ report as a correction turn.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 
 from .plan import PLAN_SCHEMA
@@ -29,6 +30,7 @@ matching the schema below. No prose, no markdown fence, no commentary.
 ATHLETE
 {profile}
 {coach_context}
+{dates}
 FORMAT RULES
 1. Every step needs exactly one of: "duration", "distance", or "until": "lap".
    Never two, never zero. (A strength "exercise" step uses "count" instead.)
@@ -160,7 +162,24 @@ def coach_context(profile: Profile) -> str:
     return "\nWHAT THE ATHLETE TOLD US\n" + "\n".join(lines) + "\n"
 
 
-def build_prompt(profile: Profile) -> str:
+def dates_block(today: dt.date | None) -> str:
+    """The one thing a model cannot know: what day it is.
+
+    Without this, "four weeks to a 10k" leaves the year and the first Monday
+    to chance, and plans arrive dated in the past.
+    """
+    today = today or dt.date.today()
+    next_monday = today + dt.timedelta(days=(7 - today.weekday()) % 7 or 7)
+    return (
+        "DATES\n"
+        f"Today is {today.isoformat()} ({today.strftime('%A')}). Unless the request says\n"
+        f"otherwise, the plan starts on the next Monday, {next_monday.isoformat()}, and every\n"
+        "date is on or after today. Count the weeks from that start; if a race date is\n"
+        "given, end the plan on it.\n"
+    )
+
+
+def build_prompt(profile: Profile, today: dt.date | None = None) -> str:
     zones_line = ", ".join(
         f"{name} ({format_pace(slow, profile.imperial)}-{format_pace(fast, profile.imperial)})"
         for name, (slow, fast) in profile.zone_table().items()
@@ -174,6 +193,7 @@ def build_prompt(profile: Profile) -> str:
     return TEMPLATE.format(
         profile=profile.describe(),
         coach_context=coach_context(profile),
+        dates=dates_block(today),
         zones=zones_line,
         language_rule=language_rule,
         schema=json.dumps(PLAN_SCHEMA, indent=2),

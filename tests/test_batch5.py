@@ -49,7 +49,7 @@ def test_openai_stream_collection_feeds_deltas_and_keeps_usage():
         ),
         SimpleNamespace(choices=[], usage=SimpleNamespace(prompt_tokens=5, completion_tokens=4)),
     ]
-    text, usage = providers.collect_openai_stream(chunks, seen.append)
+    text, usage, _finish = providers.collect_openai_stream(chunks, seen.append)
     assert text == '{"a": 1}' and seen == ['{"a"', ": 1}"]
     assert usage.completion_tokens == 4
 

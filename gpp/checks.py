@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from itertools import pairwise
 
-from .load import MONOTONY_LIMIT, WeekStats, infer_role, week_start, weekly_stats
+from .load import MONOTONY_LIMIT, WeekStats, roles_for, week_start, weekly_stats
 from .plan import Plan, Workout
 from .profile import Profile
 from .timeline import workout_summary
@@ -53,6 +53,41 @@ RACE_PROTECT_DAYS = 14
 
 MARATHON_WORDS = ("marathon",)
 HALF_WORDS = ("half",)
+LONG_RUN_SHARE_MARATHON = 0.35
+LONG_RUN_SHARE_OTHER = 0.40
+PRE_RACE_QUIET_DAYS = 3
+REST_STREAK_DAYS = 10
+CADENCE_RANGE = (150, 200)
+MARATHON_LONG_RUN_METRES = 30_000
+PLAN_SPAN_LIMIT_DAYS = 366
+
+DAY_NAMES = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+# Words that name the activity rather than a thing to avoid: "no running
+# Mondays" is a day rule, not a ban on running.
+GENERIC_WORDS = {
+    "run",
+    "runs",
+    "running",
+    "session",
+    "sessions",
+    "workout",
+    "workouts",
+    "training",
+    "more",
+    "longer",
+    "harder",
+    "hard",
+    "day",
+    "days",
+    "than",
+}
+_DAY_RULE = re.compile(
+    r"\bno\s+(?:([a-z][a-z\- ]{1,30}?)\s+)?(?:on\s+)?"
+    r"(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|fri(?:day)?|"
+    r"sat(?:urday)?|sun(?:day)?)s?\b"
+)
+_KEYWORD_RULE = re.compile(r"\bno\s+([a-z][a-z\-]{2,30})")
+_FOR_WEEKS = re.compile(r"\bfor\s+(\d+)\s+weeks?\b")
 
 
 @dataclass
@@ -116,30 +151,118 @@ class Report:
         }
 
 
-def check_plan(plan: Plan, profile: Profile) -> Report:
+def check_plan(plan: Plan, profile: Profile, today: dt.date | None = None) -> Report:
     report = Report()
     workouts = plan.sorted_workouts()
     if not workouts:
         return report
     summaries = {id(w): workout_summary(w, profile) for w in workouts}
     weeks = weekly_stats(plan, profile)
-    running = [summaries[id(w)]["metres"] for w in workouts if w.sport == "running"]
-    median_metres = sorted(running)[len(running) // 2] if running else 0.0
-    roles = {id(w): infer_role(w, summaries[id(w)], median_metres) for w in workouts}
+    roles = roles_for(workouts, summaries)
+    # Race day is not training volume: a marathon in race week would make
+    # every taper look shallow and every ramp look steep.
+    training = [w for w in workouts if roles[id(w)] != "race"]
+    training_weeks = weekly_stats_for(training, profile) if training else weeks
 
+    _check_dates(report, plan, workouts, today)
     _check_availability(report, workouts, summaries, profile)
+    _check_availability_envelope(report, weeks, profile)
     _check_constraints(report, workouts, profile)
     _check_races(report, plan)
+    _check_around_races(report, plan, workouts, roles, summaries)
+    _check_targets(report, workouts, profile)
     _check_long_run_spike(report, workouts, summaries, profile)
-    _check_weekly_ramp(report, weeks, profile)
-    _check_deload(report, weeks)
+    _check_weekly_ramp(report, training_weeks, profile)
+    _check_deload(report, training_weeks)
     _check_intensity(report, workouts, summaries, weeks, profile)
     _check_hard_days(report, workouts, roles)
+    _check_strength_placement(report, workouts, roles)
+    _check_rest_streak(report, workouts)
     _check_monotony(report, weeks)
-    _check_progression(report, weeks)
-    _check_taper(report, plan, weeks)
+    _check_progression(report, training_weeks)
+    _check_long_run_share(report, training_weeks, plan, profile)
+    _check_two_long_runs(report, workouts, roles)
+    _check_taper(report, plan, training_weeks)
     _check_structure(report, plan, weeks, profile)
+    _check_goal_race(report, plan, profile, workouts, summaries, roles)
     return report
+
+
+# --- dates and targets --------------------------------------------------------
+
+
+def _check_dates(
+    report: Report, plan: Plan, workouts: list[Workout], today: dt.date | None
+) -> None:
+    first, last = workouts[0].date, workouts[-1].date
+    if today is not None:
+        past = [w for w in workouts if w.date < today]
+        if past and len(past) < len(workouts):
+            report.add(
+                "in-the-past",
+                "warn",
+                f"{len(past)} session(s) are dated before today ({today.isoformat()}); "
+                "the plan may have been written without knowing the date",
+                [w.date.isoformat() for w in past[:3]],
+            )
+    if (last - first).days > PLAN_SPAN_LIMIT_DAYS:
+        report.add(
+            "too-long",
+            "warn",
+            f"The plan spans {(last - first).days} days; blocks longer than a year are rarely followed",
+            [first.isoformat(), last.isoformat()],
+        )
+    a = plan.a_race
+    if a and a.date < first:
+        report.add(
+            "race-before-plan",
+            "warn",
+            f"The A race ({a.name}) is dated before the first session",
+            [a.date.isoformat()],
+        )
+
+
+def _check_targets(report: Report, workouts: list[Workout], profile: Profile) -> None:
+    hr_hits, cadence_hits, pace_hits = [], [], []
+    fastest = min((fast for _, (_, fast) in profile.zone_table().items()), default=None)
+    for w in workouts:
+        for step in _all_steps(w.steps):
+            t = step.target
+            label = f"{w.date.isoformat()} {w.name}"
+            if t.type == "hr" and t.high is not None and profile.hr_max and t.high > profile.hr_max:
+                hr_hits.append(f"{label} ({t.high} > max {profile.hr_max})")
+            if (
+                t.type == "cadence"
+                and t.low is not None
+                and t.high is not None
+                and (t.low < CADENCE_RANGE[0] or t.high > CADENCE_RANGE[1])
+            ):
+                cadence_hits.append(f"{label} ({t.low}-{t.high} spm)")
+            if t.type == "pace" and t.zone is None and fastest and t.fast:
+                from .units import UnitError, parse_pace
+
+                try:
+                    fast = parse_pace(t.fast, "mi" if profile.imperial else "km")
+                except UnitError:
+                    continue
+                if fast < fastest * 0.95:
+                    pace_hits.append(f"{label} ({t.fast})")
+    if hr_hits:
+        report.add("target-hr", "block", "Heart-rate targets above the athlete's max HR", hr_hits)
+    if cadence_hits:
+        report.add(
+            "target-cadence",
+            "warn",
+            f"Cadence targets outside {CADENCE_RANGE[0]}-{CADENCE_RANGE[1]} spm",
+            cadence_hits,
+        )
+    if pace_hits:
+        report.add(
+            "target-pace",
+            "warn",
+            "Explicit paces faster than the athlete's fastest zone -- probably a typo or a units mix-up",
+            pace_hits,
+        )
 
 
 # --- what the athlete said --------------------------------------------------
@@ -192,31 +315,93 @@ def weekly_stats_for(workouts: list[Workout], profile: Profile) -> list[WeekStat
     return weekly_stats(Plan(plan="_", workouts=workouts), profile)
 
 
+def parse_constraint(text: str) -> dict | None:
+    """Turn "No running Mondays", "no hills for 6 weeks" or "no long runs on
+    Sundays" into a rule the checker can apply, or None if it is not a rule.
+
+    A day rule bans the day (or a kind of session on that day); a keyword rule
+    bans a thing wherever it appears. "for N weeks" bounds either from the
+    first session. Words that merely name the activity are never keywords, so
+    "no running Mondays" cannot turn into a ban on running.
+    """
+    lowered = text.lower()
+    weeks = _FOR_WEEKS.search(lowered)
+    limit = int(weeks.group(1)) if weeks else None
+    day = _DAY_RULE.search(lowered)
+    if day:
+        words = [x for x in (day.group(1) or "").split() if x not in GENERIC_WORDS]
+        keyword = words[0].rstrip("s") if words else None
+        return {
+            "kind": "day",
+            "weekday": DAY_NAMES[day.group(2)[:3]],
+            "keyword": keyword,
+            "weeks": limit,
+            "source": text,
+        }
+    m = _KEYWORD_RULE.search(lowered)
+    if m and m.group(1) not in GENERIC_WORDS:
+        return {
+            "kind": "keyword",
+            "keyword": m.group(1).rstrip("s"),
+            "weeks": limit,
+            "source": text,
+        }
+    return None
+
+
+def _blob(w: Workout) -> str:
+    return " ".join(filter(None, [w.name, w.notes, *[s.note for s in _all_steps(w.steps)]])).lower()
+
+
+def _mentions(w: Workout, keyword: str) -> bool:
+    hilly = any((s.grade or 0) > 2 for s in _all_steps(w.steps))
+    return keyword in _blob(w) or (keyword.startswith("hill") and hilly)
+
+
 def _check_constraints(report: Report, workouts: list[Workout], profile: Profile) -> None:
-    """Literal "no X" constraints against workout names, notes and step notes."""
-    rules = []
-    for text in profile.constraints + profile.injuries:
-        m = re.search(r"\bno\s+([a-z][a-z\-]{2,30})", text.lower())
-        if m:
-            rules.append((m.group(1).rstrip("s"), text))
+    rules = [r for r in (parse_constraint(t) for t in profile.constraints + profile.injuries) if r]
     if not rules:
         return
-    for keyword, source in rules:
-        hits = []
-        for w in workouts:
-            blob = " ".join(
-                filter(None, [w.name, w.notes, *[s.note for s in _all_steps(w.steps)]])
-            ).lower()
-            hilly = any((s.grade or 0) > 2 for s in _all_steps(w.steps))
-            if keyword in blob or (keyword.startswith("hill") and hilly):
-                hits.append(f"{w.date.isoformat()} {w.name}")
+    first_day = min(w.date for w in workouts)
+    for rule in rules:
+        horizon = first_day + dt.timedelta(weeks=rule["weeks"]) if rule["weeks"] else None
+        scope = [w for w in workouts if horizon is None or w.date < horizon]
+        if rule["kind"] == "day":
+            hits = [
+                f"{w.date.isoformat()} {w.name}"
+                for w in scope
+                if w.date.weekday() == rule["weekday"]
+                and w.sport != "strength"
+                and (rule["keyword"] is None or _mentions(w, rule["keyword"]))
+            ]
+            code = "constraint-day"
+        else:
+            hits = [
+                f"{w.date.isoformat()} {w.name}" for w in scope if _mentions(w, rule["keyword"])
+            ]
+            code = "constraint"
         if hits:
             report.add(
-                "constraint",
+                code,
                 "block",
-                f'Athlete said "{source}", but these sessions include it',
+                f'Athlete said "{rule["source"]}", but these sessions break it',
                 hits,
             )
+
+
+def _check_availability_envelope(report: Report, weeks: list[WeekStats], profile: Profile) -> None:
+    avail = profile.availability
+    if not avail or not (avail.weekday_max_minutes and avail.weekend_max_minutes):
+        return
+    cap = 5 * avail.weekday_max_minutes + 2 * avail.weekend_max_minutes
+    heavy = [w for w in weeks if w.seconds / 60 > cap * 1.05]
+    if heavy:
+        report.add(
+            "availability-week",
+            "block",
+            f"Weeks need more time than the athlete has ({cap} min at most across the days they gave)",
+            [f"week of {w.start.isoformat()} (~{round(w.seconds / 60)} min)" for w in heavy],
+        )
 
 
 def _all_steps(steps):
@@ -254,6 +439,85 @@ def _check_races(report: Report, plan: Plan) -> None:
             "Sessions after the A race are not marked as recovery; the week after a race should be easy",
             [w.date.isoformat() for w in after[:3]],
         )
+
+
+def _check_around_races(
+    report: Report, plan: Plan, workouts: list[Workout], roles: dict, summaries: dict
+) -> None:
+    race_days = {r.date for r in plan.races} | {w.date for w in workouts if roles[id(w)] == "race"}
+    after = []
+    for day in sorted(race_days):
+        nxt = day + dt.timedelta(days=1)
+        after += [
+            f"{w.date.isoformat()} {w.name}"
+            for w in workouts
+            if w.date == nxt and roles[id(w)] in ("quality", "long", "medium-long")
+        ]
+    if after:
+        report.add("post-race-hard", "warn", "A hard or long session the day after a race", after)
+    a = plan.a_race
+    if a:
+        quiet = [
+            f"{w.date.isoformat()} {w.name}"
+            for w in workouts
+            if 0 < (a.date - w.date).days <= PRE_RACE_QUIET_DAYS
+            and roles[id(w)] == "quality"
+            and summaries[id(w)]["hard_seconds"] > QUALITY_MINUTES * 60
+        ]
+        if quiet:
+            report.add(
+                "pre-race-hard",
+                "warn",
+                f"A real quality session inside the last {PRE_RACE_QUIET_DAYS} days before the A race; keep race week to short sharpeners",
+                quiet,
+            )
+
+
+def _is_marathon(distance: str) -> bool:
+    lowered = (distance or "").lower()
+    return any(x in lowered for x in MARATHON_WORDS) and not any(x in lowered for x in HALF_WORDS)
+
+
+def _goal_distance(plan: Plan, profile: Profile) -> str:
+    goal = plan.a_race
+    if goal and goal.distance:
+        return goal.distance
+    return profile.goal_race.distance if profile.goal_race and profile.goal_race.distance else ""
+
+
+def _check_goal_race(
+    report: Report,
+    plan: Plan,
+    profile: Profile,
+    workouts: list[Workout],
+    summaries: dict,
+    roles: dict,
+) -> None:
+    goal_date = (
+        plan.a_race.date if plan.a_race else (profile.goal_race.date if profile.goal_race else None)
+    )
+    if goal_date is None:
+        return
+    name = plan.a_race.name if plan.a_race else profile.goal_race.name
+    if goal_date >= workouts[0].date and not any(
+        w.date == goal_date and roles[id(w)] == "race" for w in workouts
+    ):
+        report.add(
+            "no-race-day",
+            "info",
+            f"No race-day session for {name}; a race workout with pacing targets can be pushed like any other",
+            [goal_date.isoformat()],
+        )
+    if _is_marathon(_goal_distance(plan, profile)):
+        longest = max(
+            (summaries[id(w)]["metres"] for w in workouts if w.sport == "running"), default=0.0
+        )
+        if 0 < longest < MARATHON_LONG_RUN_METRES:
+            report.add(
+                "marathon-long-run",
+                "info",
+                f"Marathon goal but the longest run is {longest / 1000:.0f} km; most plans reach 30-35 km",
+            )
 
 
 # --- progression ------------------------------------------------------------
@@ -421,6 +685,79 @@ def _check_monotony(report: Report, weeks: list[WeekStats]) -> None:
         )
 
 
+def _check_long_run_share(
+    report: Report, weeks: list[WeekStats], plan: Plan, profile: Profile
+) -> None:
+    limit = (
+        LONG_RUN_SHARE_MARATHON
+        if _is_marathon(_goal_distance(plan, profile))
+        else LONG_RUN_SHARE_OTHER
+    )
+    hits = [
+        f"week of {w.start.isoformat()} ({w.longest_run_metres / w.metres:.0%})"
+        for w in weeks
+        if w.sessions >= 3 and w.metres > 0 and w.longest_run_metres / w.metres > limit
+    ]
+    if hits:
+        report.add(
+            "long-run-share",
+            "warn",
+            f"The long run is more than {limit:.0%} of the week's volume -- one huge run and little else; spread the load across the week",
+            hits,
+        )
+
+
+def _check_two_long_runs(report: Report, workouts: list[Workout], roles: dict) -> None:
+    by_week: dict[dt.date, int] = {}
+    for w in workouts:
+        if roles[id(w)] == "long":
+            by_week[week_start(w.date)] = by_week.get(week_start(w.date), 0) + 1
+    hits = [f"week of {d.isoformat()}" for d, n in sorted(by_week.items()) if n >= 2]
+    if hits:
+        report.add("two-long-runs", "warn", "Two long runs in one week", hits)
+
+
+def _check_strength_placement(report: Report, workouts: list[Workout], roles: dict) -> None:
+    by_date: dict[dt.date, list[Workout]] = {}
+    for w in workouts:
+        by_date.setdefault(w.date, []).append(w)
+    hits = []
+    for w in workouts:
+        if w.sport != "strength" and roles[id(w)] != "strength":
+            continue
+        nxt = by_date.get(w.date + dt.timedelta(days=1), [])
+        if any(roles[id(o)] in ("quality", "long", "medium-long") for o in nxt):
+            hits.append(f"{w.date.isoformat()} {w.name}")
+    if hits:
+        report.add(
+            "strength-before-hard",
+            "info",
+            "Strength the day before a quality or long session; heavy legs blunt the key run -- put it after, or on an easy day",
+            hits,
+        )
+
+
+def _check_rest_streak(report: Report, workouts: list[Workout]) -> None:
+    days = sorted({w.date for w in workouts})
+    streak, start, hits = 1, days[0], []
+    for prev, day in pairwise(days):
+        if (day - prev).days == 1:
+            streak += 1
+        else:
+            if streak >= REST_STREAK_DAYS:
+                hits.append(f"{start.isoformat()} to {prev.isoformat()} ({streak} days)")
+            streak, start = 1, day
+    if streak >= REST_STREAK_DAYS:
+        hits.append(f"{start.isoformat()} to {days[-1].isoformat()} ({streak} days)")
+    if hits:
+        report.add(
+            "no-rest-streak",
+            "warn",
+            f"{REST_STREAK_DAYS} or more consecutive days with a session and no day off",
+            hits,
+        )
+
+
 # --- taper and structure ----------------------------------------------------
 
 
@@ -480,16 +817,7 @@ def _check_structure(report: Report, plan: Plan, weeks: list[WeekStats], profile
             "Base-phase weeks without strides; a few 20-second strides keep leg speed cheaply",
             [w.start.isoformat() for w in base_weeks],
         )
-    goal = plan.a_race
-    distance = (
-        goal.distance
-        if goal and goal.distance
-        else (profile.goal_race.distance if profile.goal_race else "")
-    ) or ""
-    is_marathon = any(x in distance.lower() for x in MARATHON_WORDS) and not any(
-        x in distance.lower() for x in HALF_WORDS
-    )
-    if is_marathon:
+    if _is_marathon(_goal_distance(plan, profile)):
         build = [w for w in weeks if "build" in w.phases and not w.medium_long]
         if build:
             report.add(
@@ -498,7 +826,7 @@ def _check_structure(report: Report, plan: Plan, weeks: list[WeekStats], profile
                 "Marathon build weeks without a midweek medium-long run (Pfitzinger's ~90-120 min)",
                 [w.start.isoformat() for w in build],
             )
-    rest_free = [w for w in weeks if w.sessions >= 7]
+    rest_free = [w for w in weeks if len(w.daily_load) >= 7]
     if rest_free:
         report.add(
             "no-rest-day",
@@ -508,9 +836,9 @@ def _check_structure(report: Report, plan: Plan, weeks: list[WeekStats], profile
         )
 
 
-def check(plan: Plan, profile: Profile) -> Report:
-    """Public entry point."""
-    return check_plan(plan, profile)
+def check(plan: Plan, profile: Profile, today: dt.date | None = None) -> Report:
+    """Public entry point. Pass `today` to get the date checks (the tests do not)."""
+    return check_plan(plan, profile, today)
 
 
 def week_of(day: dt.date) -> dt.date:

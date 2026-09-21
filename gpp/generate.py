@@ -18,6 +18,7 @@ Three gates, in order of strictness:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,12 +28,12 @@ from .compile import CompileError, compile_plan
 from .plan import PLAN_SCHEMA, WORKOUT_SCHEMA, Plan, PlanError, Workout
 from .profile import Profile, ProfileError
 from .prompt import build_prompt, build_rewrite_prompt
-from .providers import Provider, ProviderError, extract_json
+from .providers import MAX_TOKENS_CEILING, Provider, ProviderError, extract_json, was_truncated
 
 MAX_ATTEMPTS = 3
 
 RETRY_TEMPLATE = """\
-That plan was rejected by the validator:
+Your previous answer was rejected by the validator:
 
     {error}
 
@@ -41,13 +42,15 @@ format as before: one JSON object, no prose, no markdown fence.
 """
 
 REPORT_TEMPLATE = """\
-That plan is valid but the coaching checks flagged it:
+Your previous plan is valid but the coaching checks flagged it:
 
 {feedback}
 
 Revise the plan to address these and return the complete corrected JSON
 object. Same format as before: one JSON object, no prose, no markdown fence.
 """
+
+TRUNCATED_TEMPLATE = "the answer was cut off at {limit} output tokens before the JSON was complete"
 
 
 @dataclass
@@ -65,9 +68,12 @@ def generate_plan(
     request: str,
     attempts: int = MAX_ATTEMPTS,
     log: Callable[[str], None] = lambda _: None,
+    today: dt.date | None = None,
 ) -> GenerationResult:
-    system = build_prompt(profile)
+    today = today or dt.date.today()
+    system = build_prompt(profile, today=today)
     user = request
+    history: list[dict[str, str]] = []
     corrections: list[str] = []
     last_error: Exception | None = None
     warned_once = False
@@ -75,12 +81,16 @@ def generate_plan(
 
     for attempt in range(1, attempts + 1):
         log(f"asking {provider.name} (attempt {attempt}/{attempts})...")
-        raw = provider.complete(system, user, PLAN_SCHEMA, on_delta=_progress(log))
+        raw = provider.complete(
+            system, user, PLAN_SCHEMA, on_delta=_progress(log), history=history or None
+        )
         usage = getattr(provider, "last_usage", None)
         if usage:
             log(f"  {usage.describe()}")
 
         try:
+            if was_truncated(provider):
+                raise ProviderError(TRUNCATED_TEMPLATE.format(limit=_max_tokens(provider)))
             data = extract_json(raw)
             plan = Plan.from_dict(data)
             compile_plan(plan, profile)  # surfaces zone + pace errors
@@ -90,10 +100,15 @@ def generate_plan(
             log(f"  rejected: {exc}")
             if attempt == attempts:
                 break
-            user = _correction_turn(request, raw, exc)
+            if was_truncated(provider):
+                _raise_max_tokens(provider, log)
+                # A cut-off answer is not worth carrying as history.
+                continue
+            history += [{"role": "user", "content": user}, {"role": "assistant", "content": raw}]
+            user = RETRY_TEMPLATE.format(error=exc)
             continue
 
-        report = checks.check(plan, profile)
+        report = checks.check(plan, profile, today=today)
         result = GenerationResult(data, plan, attempt, list(corrections), report)
         if report.blocks or (report.warns and not warned_once):
             kind = "blocked" if report.blocks else "warned"
@@ -108,7 +123,8 @@ def generate_plan(
                     log("  accepting the best warned plan; the report is attached")
                     return best
                 break
-            user = _report_turn(request, raw, report)
+            history += [{"role": "user", "content": user}, {"role": "assistant", "content": raw}]
+            user = REPORT_TEMPLATE.format(feedback=report.feedback(include_warns=True))
             continue
 
         log(f"  accepted: {len(plan.workouts)} workout(s)")
@@ -140,10 +156,11 @@ def regenerate_workout(
     others = [w.to_dict() for w in plan.workouts if w is not target]
     system = build_prompt(profile)
     user = build_rewrite_prompt(target.to_dict(), others, instruction)
+    history: list[dict[str, str]] = []
 
     for attempt in range(1, attempts + 1):
         log(f"asking {provider.name} to rewrite {date} (attempt {attempt}/{attempts})...")
-        raw = provider.complete(system, user, WORKOUT_SCHEMA)
+        raw = provider.complete(system, user, WORKOUT_SCHEMA, history=history or None)
         try:
             data = extract_json(raw)
             if "workouts" in data and len(data["workouts"]) == 1:
@@ -155,7 +172,8 @@ def regenerate_workout(
             log(f"  rejected: {exc}")
             if attempt == attempts:
                 raise
-            user = _correction_turn(instruction, raw, exc)
+            history += [{"role": "user", "content": user}, {"role": "assistant", "content": raw}]
+            user = RETRY_TEMPLATE.format(error=exc)
             continue
         new_workout: Workout = candidate.workouts[0]
         new_workout.date = target.date
@@ -170,6 +188,22 @@ def regenerate_workout(
     raise ProviderError("could not rewrite the workout")
 
 
+def _max_tokens(provider: Provider) -> int:
+    config = getattr(provider, "config", None)
+    return int(getattr(config, "max_tokens", 0) or 0)
+
+
+def _raise_max_tokens(provider: Provider, log: Callable[[str], None]) -> None:
+    """Give a cut-off answer twice the room next time, up to the ceiling."""
+    config = getattr(provider, "config", None)
+    if config is None or not getattr(config, "max_tokens", None):
+        return
+    new = min(MAX_TOKENS_CEILING, config.max_tokens * 2)
+    if new > config.max_tokens:
+        log(f"  raising the output limit {config.max_tokens} -> {new} and trying again")
+        config.max_tokens = new
+
+
 def _progress(log: Callable[[str], None]) -> Callable[[str], None]:
     """Turn a token stream into a few log lines, not thousands."""
     seen = [0, 0]
@@ -181,20 +215,6 @@ def _progress(log: Callable[[str], None]) -> Callable[[str], None]:
             log(f"  writing... {seen[0] / 1000:.1f}k characters")
 
     return on_delta
-
-
-def _correction_turn(original_request: str, raw: str, error: Exception) -> str:
-    return (
-        f"{original_request}\n\nYour previous answer was:\n{raw.strip()[:4000]}\n\n"
-        + RETRY_TEMPLATE.format(error=error)
-    )
-
-
-def _report_turn(original_request: str, raw: str, report: checks.Report) -> str:
-    return (
-        f"{original_request}\n\nYour previous answer was:\n{raw.strip()[:4000]}\n\n"
-        + REPORT_TEMPLATE.format(feedback=report.feedback(include_warns=True))
-    )
 
 
 def dump_plan(data: dict) -> str:

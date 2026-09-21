@@ -33,7 +33,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-DEFAULT_MAX_TOKENS = 16000
+DEFAULT_MAX_TOKENS = 32000
+MAX_TOKENS_CEILING = 128000
+# Stop reasons that mean the answer was cut off, by vendor.
+TRUNCATED = ("max_tokens", "length")
 
 
 class ProviderError(RuntimeError):
@@ -135,16 +138,36 @@ LOCAL_MODEL_PRESETS: list[dict] = [
 ]
 
 OnDelta = Callable[[str], None] | None
+# Earlier turns of the same conversation: {"role": "user"|"assistant", "content": str}.
+History = list[dict[str, str]] | None
 
 
 class Provider(Protocol):
     name: str
     last_usage: Usage | None
+    last_stop: str | None
 
     def complete(
-        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+        self,
+        system: str,
+        user: str,
+        schema: dict | None,
+        on_delta: OnDelta = None,
+        history: History = None,
     ) -> str:
-        """Return the model's raw text response, streaming chunks to on_delta if given."""
+        """Return the model's raw text response, streaming chunks to on_delta if given.
+
+        `history` carries the earlier turns of a correction loop so the model
+        sees its own previous answer verbatim rather than a pasted excerpt.
+        """
+
+
+def _messages(history: History, user: str) -> list[dict[str, str]]:
+    return [*(history or []), {"role": "user", "content": user}]
+
+
+def was_truncated(provider: Any) -> bool:
+    return getattr(provider, "last_stop", None) in TRUNCATED
 
 
 # --- Anthropic --------------------------------------------------------------
@@ -162,9 +185,15 @@ class AnthropicProvider:
         self.config = config
         self.model = config.model or "claude-opus-5"
         self.last_usage: Usage | None = None
+        self.last_stop: str | None = None
 
     def complete(
-        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+        self,
+        system: str,
+        user: str,
+        schema: dict | None,
+        on_delta: OnDelta = None,
+        history: History = None,
     ) -> str:
         try:
             import anthropic
@@ -180,7 +209,7 @@ class AnthropicProvider:
             "model": self.model,
             "max_tokens": self.config.max_tokens,
             "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": _messages(history, user),
         }
         if schema and self.config.strict_schema:
             request["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
@@ -214,7 +243,8 @@ class AnthropicProvider:
                 ) from exc
 
         self.last_usage = usage_from_anthropic(response, self.model)
-        if getattr(response, "stop_reason", None) == "refusal":
+        self.last_stop = getattr(response, "stop_reason", None)
+        if self.last_stop == "refusal":
             raise ProviderError("Claude declined this request")
 
         parts = [b.text for b in response.content if getattr(b, "type", "") == "text"]
@@ -252,9 +282,15 @@ class OpenAICompatibleProvider:
         self.model = config.model or KIND_DEFAULTS["openai"]["model"]
         self.docs_url = KIND_DEFAULTS.get(config.kind.lower(), {}).get("docs", OPENAI_MODELS_URL)
         self.last_usage: Usage | None = None
+        self.last_stop: str | None = None
 
     def complete(
-        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+        self,
+        system: str,
+        user: str,
+        schema: dict | None,
+        on_delta: OnDelta = None,
+        history: History = None,
     ) -> str:
         try:
             from openai import OpenAI
@@ -280,10 +316,7 @@ class OpenAICompatibleProvider:
         request: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.config.max_tokens,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": [{"role": "system", "content": system}, *_messages(history, user)],
         }
         if self.config.strict_schema:
             # json_object is far more widely supported across compatible
@@ -291,10 +324,15 @@ class OpenAICompatibleProvider:
             # rest.
             request["response_format"] = {"type": "json_object"}
 
-        def call(req: dict[str, Any]) -> tuple[str, Any]:
-            if on_delta is None:
+        def call(req: dict[str, Any], streaming: bool) -> tuple[str, Any, str | None]:
+            if not streaming:
                 response = client.chat.completions.create(**req)
-                return (response.choices[0].message.content or ""), getattr(response, "usage", None)
+                choice = response.choices[0]
+                return (
+                    (choice.message.content or ""),
+                    getattr(response, "usage", None),
+                    getattr(choice, "finish_reason", None),
+                )
             return collect_openai_stream(
                 client.chat.completions.create(
                     **req, stream=True, stream_options={"include_usage": True}
@@ -302,32 +340,49 @@ class OpenAICompatibleProvider:
                 on_delta,
             )
 
+        # Degrade in two steps: some compatible servers reject streaming
+        # options, some reject the response format. Each retry drops one.
+        streaming = on_delta is not None
         try:
-            content, usage = call(request)
+            content, usage, finish = call(request, streaming)
         except Exception as exc:
-            if "response_format" in request and _is_bad_request(exc):
+            if not _is_bad_request(exc):
+                raise ProviderError(
+                    describe_failure(self.name, self.model, exc, self.docs_url)
+                ) from exc
+            try:
+                if streaming:
+                    content, usage, finish = call(request, False)
+                else:
+                    raise exc
+            except Exception:
+                if "response_format" not in request:
+                    raise ProviderError(
+                        describe_failure(self.name, self.model, exc, self.docs_url)
+                    ) from exc
                 request.pop("response_format")
                 try:
-                    content, usage = call(request)
+                    content, usage, finish = call(request, False)
                 except Exception as inner:
                     raise ProviderError(
                         describe_failure(self.name, self.model, inner, self.docs_url)
                     ) from inner
-            else:
-                raise ProviderError(
-                    describe_failure(self.name, self.model, exc, self.docs_url)
-                ) from exc
 
         self.last_usage = usage_from_openai(usage, self.model)
+        self.last_stop = finish
         if not content:
             raise ProviderError(f"{self.name} returned an empty response")
         return content
 
 
-def collect_openai_stream(chunks: Any, on_delta: Callable[[str], None]) -> tuple[str, Any]:
-    """Drain a chat-completions stream: text to on_delta, usage from the tail."""
+def collect_openai_stream(
+    chunks: Any, on_delta: Callable[[str], None]
+) -> tuple[str, Any, str | None]:
+    """Drain a chat-completions stream: text to on_delta, usage and the finish
+    reason from the tail."""
     parts: list[str] = []
     usage = None
+    finish = None
     for chunk in chunks:
         choices = getattr(chunk, "choices", None) or []
         if choices:
@@ -336,12 +391,16 @@ def collect_openai_stream(chunks: Any, on_delta: Callable[[str], None]) -> tuple
             if text:
                 parts.append(text)
                 on_delta(text)
+            finish = getattr(choices[0], "finish_reason", None) or finish
         if getattr(chunk, "usage", None) is not None:
             usage = chunk.usage
-    return "".join(parts), usage
+    return "".join(parts), usage, finish
 
 
 # --- Manual / paste ---------------------------------------------------------
+
+# How much of a previous answer a relayed correction turn carries.
+MANUAL_HISTORY_CHARS = 60_000
 
 
 class ManualProvider:
@@ -361,13 +420,29 @@ class ManualProvider:
         self.config = config
         self.ask = ask
         self.last_usage: Usage | None = None
+        self.last_stop: str | None = None
         self.prompt_path = Path(config.options.get("prompt_file", "plan-prompt.txt"))
         self.response_path = Path(config.options.get("response_file", "plan-response.json"))
 
     def complete(
-        self, system: str, user: str, schema: dict | None, on_delta: OnDelta = None
+        self,
+        system: str,
+        user: str,
+        schema: dict | None,
+        on_delta: OnDelta = None,
+        history: History = None,
     ) -> str:
-        full_prompt = f"{system}\n\nREQUEST\n{user}\n"
+        # A chat window has no conversation state we can attach to, so earlier
+        # turns are rendered into the text the user relays.
+        earlier = ""
+        for turn in history or []:
+            label = "YOUR PREVIOUS ANSWER" if turn["role"] == "assistant" else "EARLIER REQUEST"
+            earlier += f"\n{label}\n{turn['content'][:MANUAL_HISTORY_CHARS]}\n"
+        full_prompt = (
+            f"{system}\n\nREQUEST\n{user}\n"
+            if not earlier
+            else (f"{system}\n{earlier}\nREQUEST\n{user}\n")
+        )
 
         if self.ask is not None:
             reply = self.ask(full_prompt)
