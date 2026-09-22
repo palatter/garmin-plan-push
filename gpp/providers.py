@@ -26,12 +26,15 @@ method if not.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+
+log = logging.getLogger("gpp.providers")
 
 DEFAULT_MAX_TOKENS = 32000
 MAX_TOKENS_CEILING = 128000
@@ -285,6 +288,13 @@ class AnthropicProvider:
 
         self.last_usage = usage_from_anthropic(response, self.model)
         self.last_stop = getattr(response, "stop_reason", None)
+        log.debug(
+            "anthropic %s mode=%s stop=%s usage=%s",
+            self.model,
+            self.last_mode,
+            self.last_stop,
+            self.last_usage.describe() if self.last_usage else "?",
+        )
         if self.last_stop == "refusal":
             raise ProviderError("Claude declined this request")
 
@@ -429,6 +439,14 @@ class OpenAICompatibleProvider:
 
         self.last_usage = usage_from_openai(usage, self.model)
         self.last_stop = finish
+        log.debug(
+            "%s %s mode=%s stop=%s usage=%s",
+            self.name,
+            self.model,
+            self.last_mode,
+            self.last_stop,
+            self.last_usage.describe() if self.last_usage else "?",
+        )
         if not content:
             raise ProviderError(f"{self.name} returned an empty response")
         return content

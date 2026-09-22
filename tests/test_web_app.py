@@ -54,6 +54,7 @@ def app(tmp_path):
     path = profile.save(tmp_path / "profile.toml")
     application = App(path)
     application.library_root = tmp_path / "library"
+    application.recent_root = tmp_path / "recent"
     return application
 
 

@@ -140,25 +140,57 @@ def cmd_export(args) -> int:
     if fmt == "json":
         _write_or_print(plan.dumps(), args.output)
         return 0
+    if fmt == "csv":
+        _write_or_print(formats.export_csv(plan, profile), args.output)
+        return 0
+    if fmt == "md":
+        _write_or_print(formats.export_markdown(plan, profile), args.output)
+        return 0
     out_dir = Path(args.output or ".")
     out_dir.mkdir(parents=True, exist_ok=True)
     for w in plan.workouts:
-        text = formats.export_workout(w, profile, fmt)
-        ext = {"icu": "txt", "zwo": "zwo", "mrc": "mrc", "erg": "erg"}[fmt]
+        ext = {"icu": "txt", "zwo": "zwo", "mrc": "mrc", "erg": "erg", "fit": "fit"}[fmt]
         path = out_dir / f"{w.date.isoformat()}-{library._slug(w.name)}.{ext}"
-        path.write_text(text, encoding="utf-8")
+        if fmt == "fit":
+            from .fit import encode_workout
+
+            path.write_bytes(encode_workout(w, profile))
+        else:
+            path.write_text(formats.export_workout(w, profile, fmt), encoding="utf-8")
         print(f"wrote {path}")
+    if fmt == "fit":
+        print("copy the .fit files to the watch's GARMIN/NewFiles folder over USB")
+    return 0
+
+
+def _import_fit(args) -> int:
+    from .fit import workout_from_fit
+
+    profile = _profile(args)
+    date = _date(args.start) if args.start else dt.date.today()
+    workout = workout_from_fit(Path(args.file).read_bytes(), date, profile)
+    plan = Plan(plan=workout.name, workouts=[workout])
+    _write_or_print(plan.dumps(), args.output)
     return 0
 
 
 def cmd_import(args) -> int:
+    if args.file.lower().endswith(".fit"):
+        return _import_fit(args)
     text = Path(args.file).read_text(encoding="utf-8")
     start = _date(args.start) if args.start else None
     try:
         if text.lstrip().startswith("{"):
-            bundle = formats.import_share(
-                text, start - dt.timedelta(days=start.weekday()) if start else None
-            )
+            # A shared plan lands on the recipient's next Monday unless told
+            # otherwise; the sender's dates are rarely the point (#186).
+            if start:
+                monday = start - dt.timedelta(days=start.weekday())
+            elif getattr(args, "keep_dates", False):
+                monday = None
+            else:
+                today = dt.date.today()
+                monday = today + dt.timedelta(days=7 - today.weekday())
+            bundle = formats.import_share(text, monday)
             plan = bundle.plan
             print(
                 f"shared by {bundle.shared_by} at {bundle.exported_at}"
@@ -324,10 +356,24 @@ def cmd_advice(args) -> int:
 def cmd_report(args) -> int:
     profile = _profile(args)
     plan = Plan.load(args.plan)
-    print(checks.check(plan, profile).text())
     from .load import plan_dashboard
+    from .loadfocus import describe as describe_focus
+    from .loadfocus import load_focus
 
     dash = plan_dashboard(plan, profile)
+    report = checks.check(plan, profile)
+    focus = load_focus(plan, profile)
+    if getattr(args, "json", False):
+        import json
+
+        print(
+            json.dumps(
+                {"report": report.to_dict(), "dashboard": dash, "load_focus": focus}, indent=2
+            )
+        )
+        return 0
+    print(report.text())
+    print(describe_focus(focus))
     print(
         f"\n{dash['sessions']} sessions, {dash['total_km']} km, {dash['total_minutes']} min, {dash['hard_share']:.0%} hard"
     )
@@ -382,7 +428,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     exp.add_argument("plan")
     exp.add_argument(
-        "--format", default="share", choices=["share", "json", "icu", "zwo", "mrc", "erg"]
+        "--format",
+        default="share",
+        choices=["share", "json", "icu", "zwo", "mrc", "erg", "fit", "csv", "md"],
     )
     exp.add_argument("--note", help="a line for the person you are sending it to")
     exp.add_argument("-o", "--output", help="file (share/json) or directory (per-workout formats)")
@@ -390,10 +438,11 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     imp = sub.add_parser("import", help="read a share bundle, intervals.icu text or a ZWO file")
     imp.add_argument("file")
-    imp.add_argument("--format", choices=["icu", "zwo"])
+    imp.add_argument("--format", choices=["icu", "zwo", "fit"])
     imp.add_argument(
         "--start", help="date for a single workout, or the Monday to re-base a shared plan to"
     )
+    imp.add_argument("--keep-dates", action="store_true", help="keep the sender's dates")
     imp.add_argument("-o", "--output")
     imp.set_defaults(func=cmd_import)
 

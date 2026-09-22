@@ -18,6 +18,7 @@ Security posture, because this endpoint can be handed a Garmin password:
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import re
@@ -49,6 +50,7 @@ from ..providers import (
     resolve,
 )
 from ..receipts import save_receipt
+from ..recent import list_recent, load_recent, save_recent
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
 from ..units import format_duration, format_pace
@@ -83,6 +85,7 @@ class App:
         self.jobs = JobRegistry()
         self.profile_path = profile_path
         self.library_root: Path | None = None  # tests point this somewhere disposable
+        self.recent_root: Path | None = None
         self._lock = threading.Lock()
 
     # --- profile ---
@@ -244,12 +247,16 @@ class App:
         if not isinstance(raw, dict):
             raise AppError("no plan supplied")
         try:
-            return self._describe(Plan.from_dict(raw), profile)
+            return self._describe(Plan.from_dict(raw), profile, remember="edited")
         except (PlanError, ProfileError) as exc:
             raise AppError(str(exc)) from exc
 
-    def _describe(self, plan: Plan, profile: Profile) -> dict:
+    def _describe(self, plan: Plan, profile: Profile, remember: str | None = None) -> dict:
         compiled = compile_plan(plan, profile)
+        if remember:
+            # Remembering is a convenience, never the reason a request fails.
+            with contextlib.suppress(OSError):
+                save_recent(plan.to_dict(), remember, root=self.recent_root)
         workouts = []
         for workout, item in zip(plan.workouts, compiled, strict=True):
             summary = workout_summary(workout, profile)
@@ -310,7 +317,7 @@ class App:
 
             provider = build_provider(config, ask=ask)
             result = generate_plan(provider, profile, request, attempts=attempts, log=job.say)
-            return self._describe(result.plan, profile)
+            return self._describe(result.plan, profile, remember="generated")
 
         return {"job": self.jobs.start("generate", work).id}
 
@@ -506,6 +513,20 @@ class App:
 
         return {"job": self.jobs.start("regenerate", work).id}
 
+    def recent(self, body: dict) -> dict:
+        """Recent plans (#165): list them, or open one by path."""
+        path = body.get("path")
+        if path:
+            allowed = {str(r.path) for r in list_recent(self.recent_root)}
+            if str(path) not in allowed:
+                raise AppError("not a recent plan", status=404)
+            try:
+                plan = Plan.from_dict(load_recent(path))
+            except (PlanError, OSError, ValueError) as exc:
+                raise AppError(str(exc)) from exc
+            return self._describe(plan, self.profile())
+        return {"plans": [r.to_dict() for r in list_recent(self.recent_root)]}
+
     def job(self, body: dict) -> dict:
         job = self.jobs.get(body.get("id", ""))
         if job is None:
@@ -642,6 +663,7 @@ ROUTES = {
     "/api/export": "export",
     "/api/library": "library_action",
     "/api/regenerate": "regenerate",
+    "/api/recent": "recent",
 }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -59,12 +60,41 @@ def _load(args: argparse.Namespace) -> tuple[Profile, Plan, list]:
 def cmd_web(args: argparse.Namespace) -> int:
     from .web import serve
 
+    port = args.port if args.port is not None else int(_defaults(args).get("port", 8765))
     serve(
-        port=args.port,
+        port=port,
         open_browser=not args.no_browser,
         profile_path=Path(args.profile) if args.profile else None,
     )
     return 0
+
+
+LOG_PATH = Path.home() / ".config" / "gpp" / "logs" / "gpp.log"
+
+
+def _version() -> str:
+    from importlib import metadata
+
+    try:
+        return metadata.version("garmin-plan-push")
+    except metadata.PackageNotFoundError:
+        return "dev"
+
+
+def _defaults(args: argparse.Namespace) -> dict:
+    """The optional [defaults] table of the profile (#176), or nothing."""
+    try:
+        return dict(_load_profile(args.profile).raw.get("defaults") or {})
+    except (ProfileError, FileNotFoundError):
+        return {}
+
+
+def _emit(args: argparse.Namespace, payload: dict, text: str) -> None:
+    """JSON when --json was given, the human text otherwise (#174)."""
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        print(text)
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -307,8 +337,6 @@ def cmd_fit(args: argparse.Namespace) -> int:
 
 
 def cmd_race_plan(args: argparse.Namespace) -> int:
-    import datetime as dt
-
     from .race import RaceError, race_workout, splits, table
 
     profile = _load_profile(args.profile)
@@ -340,12 +368,195 @@ def cmd_race_plan(args: argparse.Namespace) -> int:
         target = args.output or f"race-{args.workout}.json"
         plan.save(target)
         print(f"\nrace session written to {target}")
-    del dt
+    return 0
+
+
+def _plan_arg(args: argparse.Namespace) -> Plan:
+    """The plan file given, or the most recent plan this app touched."""
+    from .recent import list_recent, load_recent
+
+    if getattr(args, "plan", None):
+        return Plan.load(args.plan)
+    recent = list_recent()
+    if not recent:
+        raise PlanError("no plan given and no recent plans; pass a plan file")
+    return Plan.from_dict(load_recent(recent[0].path))
+
+
+def cmd_next(args: argparse.Namespace) -> int:
+    from .agenda import next_session, render_next
+
+    profile = _load_profile(args.profile)
+    plan = _plan_arg(args)
+    workout = next_session(plan)
+    _emit(
+        args,
+        {"next": workout.to_dict() if workout else None},
+        render_next(plan, profile),
+    )
+    return 0
+
+
+def cmd_week(args: argparse.Namespace) -> int:
+    from .agenda import render_week, week_view
+
+    profile = _load_profile(args.profile)
+    view = week_view(_plan_arg(args), profile)
+    _emit(args, view, render_week(view))
+    return 0
+
+
+def cmd_plans(args: argparse.Namespace) -> int:
+    from .recent import list_recent
+
+    recent = list_recent()
+    if not recent:
+        _emit(args, {"plans": []}, "no recent plans yet; generate, open or save one first")
+        return 0
+    lines = []
+    for r in recent:
+        span = f"{r.first} to {r.last}" if r.first else "no dates"
+        lines.append(
+            f"  {r.saved[:16].replace('T', ' ')}  {r.name:<32} {r.sessions:>3} sessions  {span}  [{r.label}]"
+        )
+        lines.append(f"      {r.path}")
+    _emit(args, {"plans": [r.to_dict() for r in recent]}, "\n".join(lines))
+    return 0
+
+
+def cmd_schema(args: argparse.Namespace) -> int:
+    from .plan import EXECUTABLE_KINDS, PHASES, PLAN_SCHEMA, ROLES, SPORTS
+
+    if not args.markdown:
+        print(json.dumps(PLAN_SCHEMA, indent=2))
+        return 0
+    lines = [
+        "# The plan DSL",
+        "",
+        "A plan is `{plan, summary?, race_date?, races?, weeks?, workouts}`. A workout is",
+        "`{name, date, sport?, role?, phase?, notes?, steps}`. Every step is one of:",
+        "",
+        f"- an executable step: `kind` in {', '.join(EXECUTABLE_KINDS)}, with exactly one of",
+        '  `duration` ("15m", "90s", "1:05:00"), `distance` ("1km", "800m", "3mi") or `until: "lap"`',
+        "  (`count` for an exercise), an optional `target`, an optional `note` (212 characters, shown on",
+        "  the watch), and for hills a `grade` in percent;",
+        "- a repeat: `{kind: repeat, reps, steps}`, nested at most two deep.",
+        "",
+        "Targets: `{type: pace, zone}` (recovery, easy, steady, marathon, threshold, interval,",
+        "repetition, or Daniels' E/M/T/I/R), `{type: pace, slow, fast}` (slow is the slower pace),",
+        "`{type: hr, zone 1-5}` or `{type: hr, low, high}`, `{type: cadence, low, high}`,",
+        "`{type: power, zone 1-7}` or `{type: power, low, high}`, `{type: rpe, value 1-10}`, `{type: none}`.",
+        "",
+        f"Sports: {', '.join(SPORTS)}. Roles: {', '.join(ROLES)}. Phases: {', '.join(PHASES)}.",
+        "",
+        "`gpp schema` prints the JSON Schema itself; `gpp check plan.json` validates a file.",
+    ]
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    from copy import deepcopy
+
+    from .profile import default_save_path, find_profile
+
+    path = Path(args.profile) if args.profile else (find_profile() or default_save_path())
+    raw = deepcopy(Profile.load(path).raw) if Path(path).exists() else {}
+    keys = args.key.split(".")
+    if args.action == "get":
+        node = raw
+        for key in keys:
+            node = node.get(key) if isinstance(node, dict) else None
+        _emit(args, {args.key: node}, json.dumps(node) if node is not None else "(not set)")
+        return 0
+    if args.value is None:
+        print("error: set needs a value", file=sys.stderr)
+        return 2
+    node = raw
+    for key in keys[:-1]:
+        node = node.setdefault(key, {})
+        if not isinstance(node, dict):
+            print(f"error: {key} is not a table", file=sys.stderr)
+            return 2
+    node[keys[-1]] = _coerce(args.value)
+    Profile.from_dict(raw).save(path)
+    print(f"{args.key} = {json.dumps(node[keys[-1]])}  ({path})")
+    return 0
+
+
+def _coerce(value: str):
+    lowered = value.strip().lower()
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    if lowered.startswith(("[", "{")):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            continue
+    return value
+
+
+def cmd_completions(args: argparse.Namespace) -> int:
+    from .completions import script
+
+    print(script(build_parser(), args.shell), end="")
+    return 0
+
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    from .backup import backup
+
+    target = backup(Path(args.output) if args.output else None, with_tokens=args.with_tokens)
+    print(
+        f"backup written to {target}"
+        + (
+            ""
+            if args.with_tokens
+            else " (Garmin login tokens left out; --with-tokens includes them)"
+        )
+    )
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    from .backup import restore
+
+    written = restore(Path(args.archive), force=args.force)
+    for path in written:
+        print(f"  {path}")
+    print(
+        f"{len(written)} file(s) restored"
+        + ("" if args.force else "; existing files were kept (use --force to overwrite)")
+    )
     return 0
 
 
 def cmd_zones(args: argparse.Namespace) -> int:
-    print(_load_profile(args.profile).describe())
+    from .units import format_pace
+
+    profile = _load_profile(args.profile)
+    payload = {
+        "name": profile.name,
+        "threshold": format_pace(profile.threshold_pace, profile.imperial),
+        "zone_model": profile.zone_model,
+        "zones": {
+            name: {
+                "slow": format_pace(slow, profile.imperial),
+                "fast": format_pace(fast, profile.imperial),
+            }
+            for name, (slow, fast) in profile.zone_table().items()
+        },
+        "lthr": profile.lthr,
+        "hr_zones": {str(z): list(profile.hr_zone(z)) for z in sorted(profile.hr_zones)}
+        if profile.lthr
+        else {},
+    }
+    _emit(args, payload, profile.describe())
     return 0
 
 
@@ -441,13 +652,34 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         else:
             line(True, label, f"replied {reply[:20]!r} with model {config.model}")
 
+    print("\nEnvironment")
+    import platform
+    import shutil
+
+    line(True, "python", f"{platform.python_version()} on {platform.system()} {platform.release()}")
+    line(bool(shutil.which("uv")), "uv", shutil.which("uv") or "not on PATH")
+    shim = shutil.which("gpp")
+    line(
+        bool(shim),
+        "gpp on PATH",
+        shim or "not found - on Windows, `uv tool update-shell` adds the tools folder to PATH",
+    )
+
     print("\nGarmin")
     try:
-        import garminconnect  # noqa: F401
+        from importlib import metadata as _metadata
 
-        line(True, "python-garminconnect", "installed")
-    except ImportError:
+        line(True, "python-garminconnect", f"installed ({_metadata.version('garminconnect')})")
+    except Exception:
         line(False, "python-garminconnect", "missing - run: uv sync")
+    if args.ping:
+        import socket
+
+        try:
+            socket.create_connection(("connect.garmin.com", 443), timeout=5).close()
+            line(True, "connect.garmin.com", "reachable")
+        except OSError as exc:
+            line(False, "connect.garmin.com", f"unreachable: {exc}")
     token_dir = Path.home() / ".garminconnect"
     line(
         True if token_dir.exists() else None,
@@ -491,6 +723,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if getattr(args, "bundle", None):
         write_bundle(Path(args.bundle), profile, configs)
     return 0 if ok else 1
+
+
+def _log_tail(lines: int = 200) -> list[str]:
+    """The end of the debug log (written by --verbose), for a bug report."""
+    try:
+        return LOG_PATH.read_text(encoding="utf-8").splitlines()[-lines:]
+    except OSError:
+        return []
 
 
 def _token_age_days(token_dir: Path) -> int | None:
@@ -537,6 +777,7 @@ def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
             name: {"kind": cfg.kind, "model": cfg.model, "key_env": cfg.api_key_env}
             for name, cfg in configs.items()
         },
+        "log_tail": _log_tail(),
     }
     path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
     print(f"diagnostics written to {path} (no credentials, no plan contents)")
@@ -571,11 +812,14 @@ def cmd_generate(args: argparse.Namespace) -> int:
         return 2
 
     previous = Plan.load(args.continue_from) if getattr(args, "continue_from", None) else None
+    attempts = (
+        args.attempts if args.attempts is not None else int(_defaults(args).get("attempts", 3))
+    )
     result = generate_plan(
         provider,
         profile,
         request,
-        attempts=args.attempts,
+        attempts=attempts,
         log=lambda m: print(m),
         previous=previous,
         chunk_weeks=getattr(args, "chunk_weeks", None),
@@ -596,10 +840,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    import datetime as dt
+
     profile, plan, compiled = _load(args)
-    print(f"OK: {plan.plan} - {len(compiled)} workout(s) valid")
-    report = checks.check(plan, profile)
-    print(report.text())
+    report = checks.check(plan, profile, today=dt.date.today())
+    _emit(
+        args,
+        {"plan": plan.plan, "workouts": len(compiled), "ok": report.ok, "report": report.to_dict()},
+        f"OK: {plan.plan} - {len(compiled)} workout(s) valid\n{report.text()}",
+    )
     return 0 if report.ok else 1
 
 
@@ -684,7 +933,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         compiled,
         replace=args.replace,
         verify=not args.no_verify,
-        device_id=args.device,
+        device_id=args.device or _defaults(args).get("device"),
         log=lambda line: print(line),
     )
     from .receipts import save_receipt
@@ -722,6 +971,18 @@ def build_parser() -> argparse.ArgumentParser:
         description="Compile AI-generated running plans into Garmin workouts.",
     )
     parser.add_argument("--profile", help="path to profile.toml")
+    parser.add_argument("--version", action="version", version=f"gpp {_version()}")
+    parser.add_argument(
+        "--json",
+        dest="json",
+        action="store_true",
+        help="machine-readable output where a command supports it",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help=f"write a debug log to {LOG_PATH} (request metadata, never secrets)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     from .cli_extra import register
@@ -731,7 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_history(sub)
 
     web = sub.add_parser("web", help="open the graphical app in your browser")
-    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--port", type=int, default=None, help="default 8765, or [defaults] port")
     web.add_argument("--no-browser", action="store_true", help="don't open a browser window")
     web.set_defaults(func=cmd_web)
 
@@ -806,6 +1067,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rp.set_defaults(func=cmd_race_plan)
 
+    nx = sub.add_parser("next", help="the next session on a plan, watch-style")
+    nx.add_argument("plan", nargs="?", help="plan file (default: the most recent plan)")
+    nx.set_defaults(func=cmd_next)
+
+    wk = sub.add_parser("week", help="this week and next: sessions, volume, phase changes")
+    wk.add_argument("plan", nargs="?", help="plan file (default: the most recent plan)")
+    wk.set_defaults(func=cmd_week)
+
+    pn = sub.add_parser("plans", help="recent plans this app has opened or written")
+    pn.set_defaults(func=cmd_plans)
+
+    sc = sub.add_parser("schema", help="the plan DSL's JSON Schema, or a one-page reference")
+    sc.add_argument(
+        "--markdown", action="store_true", help="a readable reference instead of the schema"
+    )
+    sc.set_defaults(func=cmd_schema)
+
+    pr = sub.add_parser("profile", help="read or set one profile field without opening the TOML")
+    pr.add_argument("action", choices=["get", "set"])
+    pr.add_argument(
+        "key", help="dotted key, e.g. pace.threshold, athlete.recent_weekly_km, goal_race.date"
+    )
+    pr.add_argument("value", nargs="?", help="for set: a number, true/false, JSON list, or text")
+    pr.set_defaults(func=cmd_profile)
+
+    co = sub.add_parser("completions", help="print a shell completion script")
+    co.add_argument("shell", choices=["bash", "zsh", "fish", "powershell"])
+    co.set_defaults(func=cmd_completions)
+
+    bk = sub.add_parser(
+        "backup", help="zip the profile, library, history, receipts and recent plans"
+    )
+    bk.add_argument("-o", "--output", help="zip file to write (default: gpp-backup-<date>.zip)")
+    bk.add_argument("--with-tokens", action="store_true", help="include the Garmin login tokens")
+    bk.set_defaults(func=cmd_backup)
+
+    rs = sub.add_parser(
+        "restore", help="restore a backup zip (existing files are kept unless --force)"
+    )
+    rs.add_argument("archive")
+    rs.add_argument("--force", action="store_true")
+    rs.set_defaults(func=cmd_restore)
+
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)
 
@@ -853,7 +1157,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument(
         "--attempts",
         type=int,
-        default=3,
+        default=None,
         help="how many times to hand validation errors back to the model",
     )
     generate.add_argument("--show", action="store_true", help="also render the plan as text")
@@ -904,6 +1208,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "verbose", False):
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            filename=LOG_PATH,
+            level=logging.DEBUG,
+            format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        )
+        logging.getLogger("gpp").debug("gpp %s: %s", _version(), " ".join(argv or sys.argv[1:]))
+        print(f"debug log: {LOG_PATH}", file=sys.stderr)
     try:
         return args.func(args)
     except (PlanError, ProfileError, CompileError, ProviderError) as exc:

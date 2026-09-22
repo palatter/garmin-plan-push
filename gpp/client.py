@@ -31,6 +31,7 @@ version that lacks one says so instead of crashing.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -50,6 +51,7 @@ TAG_RE = re.compile(rf"\[{TAG_PREFIX}:([a-z0-9]+):([0-9a-f]{{8}})\]")
 # HTTP statuses worth one more try on a read; writes are never retried blind.
 TRANSIENT = ("429", "502", "503", "504", "timed out", "timeout")
 RETRY_DELAYS = (1.0, 2.0, 4.0)
+log = logging.getLogger("gpp.client")
 
 
 class PushError(RuntimeError):
@@ -185,8 +187,11 @@ class GarminClient:
         delays = RETRY_DELAYS if method == "GET" else ()
         for delay in (*delays, None):
             try:
-                return self._request(method, path, **kwargs)
+                result = self._request(method, path, **kwargs)
+                log.debug("%s %s ok", method, path)
+                return result
             except Exception as exc:
+                log.debug("%s %s failed: %s", method, path, exc)
                 transient = any(code in str(exc).lower() for code in TRANSIENT)
                 if delay is None or not transient:
                     raise PushError(f"{method} {path} failed: {exc}") from exc

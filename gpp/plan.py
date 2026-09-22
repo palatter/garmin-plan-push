@@ -431,9 +431,20 @@ class Plan:
     def dumps(self) -> str:
         return json.dumps(self.to_dict(), indent=2) + "\n"
 
-    def save(self, path: str | Path) -> Path:
+    def save(self, path: str | Path, keep: int = 5) -> Path:
+        """Write the plan; an existing, different file is kept as `.1` (then `.2`...).
+
+        `gpp diff plan.json plan.json.1` shows what the last save changed.
+        """
         path = Path(path)
-        path.write_text(self.dumps(), encoding="utf-8")
+        text = self.dumps()
+        if keep and path.exists() and path.read_text(encoding="utf-8") != text:
+            for n in range(keep - 1, 0, -1):
+                older = path.with_name(f"{path.name}.{n}")
+                if older.exists():
+                    older.replace(path.with_name(f"{path.name}.{n + 1}"))
+            path.replace(path.with_name(f"{path.name}.1"))
+        path.write_text(text, encoding="utf-8")
         return path
 
     # Convenience the checks and UI lean on.

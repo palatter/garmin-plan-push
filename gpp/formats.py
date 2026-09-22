@@ -400,6 +400,80 @@ def import_share(text: str, start_monday: dt.date | None = None) -> ShareBundle:
     )
 
 
+# --- csv and markdown -------------------------------------------------------
+
+
+def export_csv(plan: Plan, profile: Profile) -> str:
+    """One row per session, for a spreadsheet (#180)."""
+    import csv
+    import io
+
+    from .load import roles_for
+    from .timeline import workout_summary
+
+    workouts = plan.sorted_workouts()
+    summaries = {id(w): workout_summary(w, profile) for w in workouts}
+    roles = roles_for(workouts, summaries)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(
+        ["date", "day", "name", "sport", "role", "phase", "minutes", "km", "hard_minutes", "notes"]
+    )
+    for w in workouts:
+        s = summaries[id(w)]
+        writer.writerow(
+            [
+                w.date.isoformat(),
+                w.date.strftime("%a"),
+                w.name,
+                w.sport,
+                roles[id(w)],
+                w.phase or "",
+                round(s["seconds"] / 60),
+                round(s["metres"] / 1000, 1),
+                round(s["hard_seconds"] / 60),
+                w.notes or "",
+            ]
+        )
+    return out.getvalue()
+
+
+def export_markdown(plan: Plan, profile: Profile) -> str:
+    """The plan as a document, week by week, for Notion, Obsidian or email (#181)."""
+    from .compile import compile_workout
+    from .load import week_start, weekly_stats
+    from .render import render_workout
+
+    lines = [f"# {plan.plan}", ""]
+    if plan.summary:
+        lines += [plan.summary, ""]
+    race = plan.a_race
+    if race:
+        lines += [f"**Race:** {race.name} on {race.date.isoformat()}", ""]
+    weeks = {w.start: w for w in weekly_stats(plan, profile)}
+    current = None
+    for workout in plan.sorted_workouts():
+        monday = week_start(workout.date)
+        if monday != current:
+            current = monday
+            stats = weeks.get(monday)
+            head = f"## Week of {monday.isoformat()}"
+            if stats:
+                head += (
+                    f" — {stats.km:.0f} km, {stats.sessions} sessions, {stats.hard_share:.0%} hard"
+                )
+            lines += [head, ""]
+        lines.append(f"### {workout.date.strftime('%a %d %b')} — {workout.name}")
+        if workout.notes:
+            lines.append(f"*{workout.notes}*")
+        lines.append("")
+        lines.append("```")
+        lines.append(render_workout(compile_workout(workout, profile, plan.plan), profile).rstrip())
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines)
+
+
 # --- dispatch ---------------------------------------------------------------
 
 EXPORTERS = {"icu": export_icu, "zwo": export_zwo, "mrc": export_mrc}

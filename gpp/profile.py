@@ -471,6 +471,10 @@ class Profile:
                 lines.append(f"lthr = {self.lthr}")
             if self.hr_max:
                 lines.append(f"max = {self.hr_max}")
+            if self.hr_zones != DEFAULT_HR_ZONES:
+                lines += ["", "[hr.zones]", "# Fractions of LTHR: low, high."]
+                for zone, (low, high) in sorted(self.hr_zones.items()):
+                    lines.append(f'"{zone}" = [{low}, {high}]')
 
         cs_cfg = raw.get("cs") or {}
         if cs_cfg.get("trials"):
