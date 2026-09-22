@@ -347,15 +347,17 @@ class GarminClient:
                 results.append(PushResult(item.name, item.date, "failed", detail=str(exc)))
         return results
 
-    def _push_one(
-        self, item, by_date, names_today, replace, verify, update_in_place, device_id, log
-    ) -> PushResult:
+    def _match(self, item, by_date, names_today) -> tuple[dict | None, list[dict]]:
+        """This plan's own sessions on the item's date: the exact match, and
+        the stale versions this item may replace. Matched rows are consumed so
+        a second session on the same day cannot claim them.
+
+        Only rows tagged with this plan's slug are ever candidates: a hand-made
+        workout has no tag, another plan's has another slug.
+        """
         _, want_slug, want_hash = item.tag.strip("[]").split(":")
         title_wanted = item.name.strip()
         candidates = by_date.get(item.date, [])
-
-        # Only this plan's own sessions on this date are ever candidates. A
-        # hand-made workout has no tag; another plan's has another slug.
         own: list[tuple[dict, str, str]] = []
         for candidate in candidates:
             title = (candidate.get("title") or "").strip()
@@ -363,22 +365,26 @@ class GarminClient:
             if tag is None or tag[0] != want_slug:
                 continue
             own.append((candidate, title, tag[1]))
-
         for candidate, title, digest in own:
             if digest == want_hash and title == title_wanted:
-                # Claimed: a second session on the same day cannot take it too.
                 candidates.remove(candidate)
-                log(f"  unchanged  {item.date}  {item.name}")
-                return PushResult(item.name, item.date, "unchanged", _id_of(candidate))
-
-        # Stale versions on this date. One with our title is ours to update in
-        # place; one titled like ANOTHER session being pushed today belongs to
-        # that session and is left for it to claim.
+                return candidate, []
+        # A stale row with our title is ours to update; one titled like
+        # ANOTHER session being pushed today belongs to that session.
         mine = [c for c, title, _ in own if title == title_wanted]
         loose = [c for c, title, _ in own if title != title_wanted and title not in names_today]
-        stale_items = mine + loose
-        for c in stale_items:
+        stale = mine + loose
+        for c in stale:
             candidates.remove(c)
+        return None, stale
+
+    def _push_one(
+        self, item, by_date, names_today, replace, verify, update_in_place, device_id, log
+    ) -> PushResult:
+        matched, stale_items = self._match(item, by_date, names_today)
+        if matched is not None:
+            log(f"  unchanged  {item.date}  {item.name}")
+            return PushResult(item.name, item.date, "unchanged", _id_of(matched))
         stale = [int(i) for i in (_id_of(c) for c in stale_items) if i]
 
         if stale and not replace:
@@ -424,6 +430,75 @@ class GarminClient:
 
         log(f"  {action:<10} {item.date}  {item.name}  (id {workout_id})")
         return PushResult(item.name, item.date, action, workout_id, detail)
+
+    def preview(self, compiled: list[CompiledWorkout]) -> list[PushResult]:
+        """A live dry run (#154): what a push would do, from the calendar, writing nothing."""
+        results: list[PushResult] = []
+        if not compiled:
+            return results
+        dates = [dt.date.fromisoformat(c.date) for c in compiled]
+        by_date = _index_by_date(self.scheduled_between(min(dates), max(dates)))
+        for item in compiled:
+            names_today = {c.name.strip() for c in compiled if c.date == item.date}
+            matched, stale_items = self._match(item, by_date, names_today)
+            if matched is not None:
+                results.append(PushResult(item.name, item.date, "unchanged", _id_of(matched)))
+                continue
+            ids = [i for i in (_id_of(c) for c in stale_items) if i]
+            if ids:
+                extra = f", delete {ids[1:]}" if len(ids) > 1 else ""
+                results.append(
+                    PushResult(
+                        item.name,
+                        item.date,
+                        "would-update",
+                        ids[0],
+                        f"update {ids[0]} in place{extra}",
+                    )
+                )
+            else:
+                results.append(PushResult(item.name, item.date, "would-create"))
+        return results
+
+    def conflicts(self, compiled: list[CompiledWorkout]) -> list[dict]:
+        """Other things already on the plan's dates (#145): hand-made workouts,
+        other plans, Garmin Coach sessions. Listed, never touched."""
+        if not compiled:
+            return []
+        dates = [dt.date.fromisoformat(c.date) for c in compiled]
+        slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
+        wanted = {c.date for c in compiled}
+        out = []
+        for item in self.scheduled_between(min(dates), max(dates)):
+            date = (item.get("date") or "")[:10]
+            if date not in wanted:
+                continue
+            title = (item.get("title") or "").strip() or "(untitled)"
+            tag = parse_tag(item.get("description")) or parse_tag(title)
+            if tag is not None and tag[0] in slugs:
+                continue
+            if tag is not None:
+                source = f"another gpp plan ({tag[0]})"
+            elif item.get("trainingPlanId") or item.get("trainingPlanPk"):
+                source = "a Garmin training plan"
+            else:
+                source = "hand-made or synced"
+            out.append({"date": date, "title": title, "source": source, "id": _id_of(item)})
+        return out
+
+    def unpush_ids(
+        self, ids: list[int], log: Callable[[str], None] = lambda _: None
+    ) -> list[PushResult]:
+        """Delete exactly these workouts, from a push receipt (#148)."""
+        results = []
+        for workout_id in ids:
+            try:
+                self.delete_workout(int(workout_id))
+                log(f"  removed    id {workout_id}")
+                results.append(PushResult(str(workout_id), "", "removed", int(workout_id)))
+            except PushError as exc:
+                results.append(PushResult(str(workout_id), "", "failed", int(workout_id), str(exc)))
+        return results
 
     def unpush(
         self, compiled: list[CompiledWorkout], log: Callable[[str], None] = lambda _: None

@@ -126,7 +126,10 @@ def tool_push(plan_json: str, dry_run: bool = True) -> dict[str, Any]:
     client = GarminClient(email, os.environ.get("GARMIN_PASSWORD") or None)
     client.connect()
     results = client.push(compiled)
-    return {"dry_run": False, "results": [r.to_dict() for r in results]}
+    from .receipts import save_receipt
+
+    receipt = save_receipt(plan.plan, results)
+    return {"dry_run": False, "results": [r.to_dict() for r in results], "receipt": str(receipt)}
 
 
 TOOLS = {

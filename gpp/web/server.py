@@ -36,6 +36,7 @@ from ..estimate import EstimateError, lthr_from_max, threshold_from_race
 from ..formats import FormatError, export_share, export_workout
 from ..generate import generate_plan, regenerate_workout
 from ..load import plan_dashboard, session_load
+from ..loadfocus import load_focus
 from ..plan import Plan, PlanError
 from ..profile import Profile, ProfileError, default_save_path, find_profile
 from ..providers import (
@@ -47,6 +48,7 @@ from ..providers import (
     pick_default,
     resolve,
 )
+from ..receipts import save_receipt
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
 from ..units import format_duration, format_pace
@@ -277,6 +279,7 @@ class App:
             "race": plan.a_race.to_dict() if plan.a_race else None,
             "report": checks.check(plan, profile).to_dict(),
             "dashboard": plan_dashboard(plan, profile),
+            "load_focus": load_focus(plan, profile),
         }
 
     def generate(self, body: dict) -> dict:
@@ -335,7 +338,15 @@ class App:
             client = GarminClient(email, password or None)
             client.connect(prompt_mfa=lambda: job.ask("Garmin MFA code"))
             job.say(f"connected via {client.transport}")
+            for other in client.conflicts(compiled):
+                job.say(
+                    f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"
+                )
             results = client.push(compiled, replace=replace, verify=True, log=job.say)
+            try:
+                job.say(f"receipt saved: {save_receipt(plan.plan, results).name}")
+            except OSError as exc:  # a receipt is a convenience, never the reason a push fails
+                job.say(f"could not save the push receipt: {exc}")
             return {
                 "results": [
                     {
@@ -421,6 +432,17 @@ class App:
             workout = plan.workouts[int(body.get("index"))]
         except (TypeError, ValueError, IndexError) as exc:
             raise AppError("which session? pass its index") from exc
+        if fmt == "fit":
+            import base64
+
+            from ..fit import encode_workout
+
+            data = encode_workout(workout, profile)
+            return {
+                "base64": base64.b64encode(data).decode("ascii"),
+                "filename": f"{_slug(workout.name)}-{workout.date.isoformat()}.fit",
+                "mime": "application/octet-stream",
+            }
         try:
             text = export_workout(workout, profile, fmt)
         except FormatError as exc:

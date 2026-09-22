@@ -271,6 +271,79 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pushes(args: argparse.Namespace) -> int:
+    from .receipts import list_receipts
+
+    receipts = list_receipts()
+    if not receipts:
+        print("no push receipts yet; they are written by `gpp push` and the web app")
+        return 0
+    for receipt in receipts:
+        print(f"  {receipt.describe()}")
+        print(f"      {receipt.path}")
+    print("\nremove exactly one push's workouts with: gpp unpush --receipt <file>")
+    return 0
+
+
+def cmd_fit(args: argparse.Namespace) -> int:
+    from .fit import encode_workout
+
+    profile = _load_profile(args.profile)
+    plan = Plan.load(args.plan)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    for workout in plan.sorted_workouts():
+        slug = (
+            "".join(c if c.isalnum() else "-" for c in workout.name.lower()).strip("-") or "workout"
+        )
+        path = out / f"{workout.date.isoformat()}-{slug}.fit"
+        path.write_bytes(encode_workout(workout, profile))
+        print(f"  {path}")
+    print(
+        f"{len(plan.workouts)} file(s). Copy them to the watch's GARMIN/NewFiles folder over USB "
+        "(older models: GARMIN/Workouts); they appear under Training > Workouts."
+    )
+    return 0
+
+
+def cmd_race_plan(args: argparse.Namespace) -> int:
+    import datetime as dt
+
+    from .race import RaceError, race_workout, splits, table
+
+    profile = _load_profile(args.profile)
+    try:
+        rows = splits(args.distance, args.time, args.strategy, profile.imperial)
+    except RaceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.distance} in {args.time}, {args.strategy} pacing:\n")
+    print(table(rows, profile.imperial))
+    print(
+        "\nEven pacing is the fastest strategy at every level in the largest split analysis "
+        "(PLOS One 2025); most recreational runners go out too fast and positive-split."
+    )
+    if args.workout:
+        goal = {
+            "name": args.name,
+            "date": args.workout,
+            "distance": args.distance,
+            "goal_time": args.time,
+        }
+        workout = race_workout(goal, profile, args.strategy)
+        if args.output and Path(args.output).exists():
+            plan = Plan.load(args.output)
+            plan.workouts = [w for w in plan.workouts if w.date != workout.date or w.role != "race"]
+            plan.workouts.append(workout)
+        else:
+            plan = Plan(plan=f"Race day: {args.name}", workouts=[workout])
+        target = args.output or f"race-{args.workout}.json"
+        plan.save(target)
+        print(f"\nrace session written to {target}")
+    del dt
+    return 0
+
+
 def cmd_zones(args: argparse.Namespace) -> int:
     print(_load_profile(args.profile).describe())
     return 0
@@ -383,6 +456,30 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if token_dir.exists()
         else "none yet - first push will ask for your Garmin password",
     )
+    age = _token_age_days(token_dir)
+    if age is not None:
+        stale = age > 300
+        line(
+            not stale,
+            "login age",
+            f"{age} day(s) old"
+            + (
+                " - Garmin expires tokens without warning; if push fails to log in, delete the folder and sign in again"
+                if stale
+                else ""
+            ),
+        )
+    if args.ping and os.environ.get("GARMIN_EMAIL"):
+        from .client import GarminClient, PushError
+
+        try:
+            garmin = GarminClient(
+                os.environ["GARMIN_EMAIL"], os.environ.get("GARMIN_PASSWORD") or None
+            )
+            garmin.connect()
+            line(True, "Garmin login", f"ok via {garmin.transport}")
+        except PushError as exc:
+            line(False, "Garmin login", str(exc))
     line(
         None,
         "watch support",
@@ -394,6 +491,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if getattr(args, "bundle", None):
         write_bundle(Path(args.bundle), profile, configs)
     return 0 if ok else 1
+
+
+def _token_age_days(token_dir: Path) -> int | None:
+    """Days since the newest file in the token cache, or None without one."""
+    try:
+        newest = max((f.stat().st_mtime for f in token_dir.iterdir() if f.is_file()), default=None)
+    except OSError:
+        return None
+    if newest is None:
+        return None
+    import time
+
+    return int((time.time() - newest) // 86400)
 
 
 def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
@@ -521,8 +631,30 @@ def cmd_push(args: argparse.Namespace) -> int:
     print(render_plan(plan, compiled, profile), end="")
     print()
 
-    if args.dry_run:
+    if args.dry_run and not args.live:
         print("Dry run: nothing sent to Garmin.")
+        return 0
+
+    if args.dry_run and args.live:
+        email = (
+            args.email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
+        )
+        password = os.environ.get("GARMIN_PASSWORD") or getpass.getpass(
+            "Garmin Connect password (not stored): "
+        )
+        client = GarminClient(email, password or None, token_dir=args.token_dir)
+        try:
+            client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+        except PushError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"connected via {client.transport}; reading the calendar, writing nothing\n")
+        for r in client.preview(compiled):
+            print(f"  {r.action:<13} {r.date}  {r.name}  {r.detail}".rstrip())
+        for other in client.conflicts(compiled):
+            print(
+                f"  also there    {other['date']}  {other['title']}  ({other['source']}, left alone)"
+            )
         return 0
 
     if not args.yes:
@@ -545,6 +677,8 @@ def cmd_push(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"connected via {client.transport}")
+    for other in client.conflicts(compiled):
+        print(f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone")
 
     results = client.push(
         compiled,
@@ -553,6 +687,12 @@ def cmd_push(args: argparse.Namespace) -> int:
         device_id=args.device,
         log=lambda line: print(line),
     )
+    from .receipts import save_receipt
+
+    try:
+        print(f"receipt: {save_receipt(plan.plan, results)}")
+    except OSError as exc:
+        print(f"warning: could not save the push receipt: {exc}")
 
     failures = [r for r in results if r.action == "failed"]
     warnings = [r for r in results if r.detail and r.action != "failed"]
@@ -639,6 +779,33 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("-o", "--output", help="write the plan JSON here")
     rc.set_defaults(func=cmd_recover)
 
+    ps = sub.add_parser(
+        "pushes", help="list push receipts (what went to Garmin, when, with which ids)"
+    )
+    ps.set_defaults(func=cmd_pushes)
+
+    ft = sub.add_parser("fit", help="write one FIT workout file per session, for USB sideload")
+    ft.add_argument("plan")
+    ft.add_argument(
+        "-o", "--output", default="fit", help="directory to write into (default: ./fit)"
+    )
+    ft.set_defaults(func=cmd_fit)
+
+    rp = sub.add_parser(
+        "race-plan", help="split targets for a goal time: even, negative or 10-10-10"
+    )
+    rp.add_argument(
+        "--distance", required=True, help="5k, 10k, half, marathon, or a distance like 15km"
+    )
+    rp.add_argument("--time", required=True, help="goal time, e.g. 1:45:00")
+    rp.add_argument("--strategy", choices=["even", "negative", "10-10-10"], default="even")
+    rp.add_argument("--workout", metavar="DATE", help="also write a race-day session dated DATE")
+    rp.add_argument("--name", default="Race", help="race name for the session")
+    rp.add_argument(
+        "-o", "--output", help="plan file to write the race session into (with --workout)"
+    )
+    rp.set_defaults(func=cmd_race_plan)
+
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)
 
@@ -708,6 +875,11 @@ def build_parser() -> argparse.ArgumentParser:
     push = sub.add_parser("push", help="upload and schedule on Garmin Connect")
     push.add_argument("plan")
     push.add_argument("--dry-run", action="store_true", help="render only, send nothing")
+    push.add_argument(
+        "--live",
+        action="store_true",
+        help="with --dry-run: read the calendar and show what a push would change",
+    )
     push.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     push.add_argument(
         "--replace",

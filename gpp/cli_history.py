@@ -18,6 +18,7 @@ from .compile import compile_plan
 from .history import History
 from .plan import Plan
 from .profile import Profile, ProfileError, find_profile
+from .render import render_plan
 from .units import format_duration, format_pace
 
 
@@ -169,6 +170,18 @@ def cmd_shape(args) -> int:
     return 0
 
 
+def _status_line(store: History) -> str | None:
+    recent = store.recent_status()
+    if not recent:
+        return None
+    latest = recent[-1]
+    return (
+        f"logged {latest['kind']} on {latest['date']}"
+        + (f" ({latest['note']})" if latest.get("note") else "")
+        + " -- an easy day or a pause is the honest choice; see gpp pause"
+    )
+
+
 def cmd_today(args) -> int:
     store = _store(args)
     role = args.role
@@ -182,6 +195,9 @@ def cmd_today(args) -> int:
     for r in advice.reasons:
         print(f"  - {r}")
     print(f"  {advice.suggestion}")
+    status = _status_line(_store(args))
+    if status:
+        print(f"  {status}")
     return 0
 
 
@@ -191,9 +207,17 @@ def cmd_log(args) -> int:
     if args.what == "rpe":
         store.log_rpe(day, args.name or "session", int(args.value), args.note)
         print(f"logged RPE {args.value} for {day}")
-    else:
+    elif args.what == "pain":
         store.log_pain(day, args.name or "unspecified", int(args.value), args.pattern, args.note)
         print(f"logged pain {args.value}/10 at {args.name} for {day}")
+    else:
+        note = " ".join(x for x in (args.value, args.note) if x) or None
+        store.log_status(day, args.what, note)
+        print(f"logged {args.what} for {day}" + (f": {note}" if note else ""))
+        if args.what in ("illness", "injury"):
+            print(
+                "  when you know how long it will last: gpp pause plan.json --start <date> --days <n>"
+            )
     return 0
 
 
@@ -213,6 +237,35 @@ def cmd_pain(args) -> int:
 
 
 def cmd_unpush(args) -> int:
+    if getattr(args, "receipt", None):
+        from .receipts import load_receipt
+
+        receipt = load_receipt(args.receipt)
+        ids = receipt.ids
+        if not ids:
+            print("that receipt lists no removable workouts")
+            return 1
+        if not args.yes:
+            answer = (
+                input(
+                    f"Remove {len(ids)} workout(s) from '{receipt.plan}' ({receipt.when[:10]})? [y/N] "
+                )
+                .strip()
+                .lower()
+            )
+            if answer not in ("y", "yes"):
+                print("Aborted.")
+                return 1
+        client = _connect(args)
+        if client is None:
+            return 2
+        results = client.unpush_ids(ids, log=print)
+        removed = sum(1 for r in results if r.action == "removed")
+        print(f"{removed} removed, {sum(1 for r in results if r.action == 'failed')} failed")
+        return 0
+    if not args.plan:
+        print("error: give a plan file, or --receipt <file> (see: gpp pushes)")
+        return 2
     profile = _profile(args)
     plan = Plan.load(args.plan)
     compiled = compile_plan(plan, profile)
@@ -231,6 +284,29 @@ def cmd_unpush(args) -> int:
     results = client.unpush(compiled, log=print)
     removed = sum(1 for r in results if r.action == "removed")
     print(f"{removed} removed, {sum(1 for r in results if r.action == 'failed')} failed")
+    return 0
+
+
+def cmd_pull(args) -> int:
+    from .decompile import plan_from_calendar
+
+    profile = _profile(args)
+    client = _connect(args)
+    if client is None:
+        return 2
+    start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
+    items = client.scheduled_between(start, end)
+    try:
+        plan, skipped = plan_from_calendar(items, client.get_workout, profile, args.name)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    for line in skipped:
+        print(f"  skipped: {line}")
+    if args.output:
+        print(f"{len(plan.workouts)} workout(s) written to {plan.save(args.output)}")
+    else:
+        print(render_plan(plan, compile_plan(plan, profile), profile), end="")
     return 0
 
 
@@ -281,6 +357,13 @@ def cmd_garmin_predict(args) -> int:
             "  Garmin HR zones: "
             + ", ".join(f"Z{i + 1} {lo}-{hi}" for i, (lo, hi) in enumerate(zones))
         )
+        if getattr(args, "apply_zones", None):
+            from .profile import find_profile
+
+            updated = profile.with_garmin_hr_zones(zones)
+            path = args.profile or find_profile()
+            updated.save(path)
+            print(f"  profile updated with Garmin's zones (LTHR {updated.lthr}): {path}")
     return 0
 
 
@@ -347,8 +430,10 @@ def register(sub: argparse._SubParsersAction) -> None:
     to.set_defaults(func=cmd_today)
 
     lg = sub.add_parser("log", help="log a session RPE or a pain score")
-    lg.add_argument("what", choices=["rpe", "pain"])
-    lg.add_argument("value", type=int)
+    lg.add_argument("what", choices=["rpe", "pain", "illness", "injury", "cycle", "note"])
+    lg.add_argument(
+        "value", nargs="?", help="RPE 1-10, pain 0-10, or a short note for status kinds"
+    )
     lg.add_argument("--name", help="session name (rpe) or body location (pain)")
     lg.add_argument("--date")
     lg.add_argument("--pattern", help="pain: e.g. 'warms up', 'worse after', 'constant'")
@@ -362,10 +447,22 @@ def register(sub: argparse._SubParsersAction) -> None:
     pa.set_defaults(func=cmd_pain)
 
     un = sub.add_parser("unpush", help="remove a plan's workouts from Garmin Connect")
-    un.add_argument("plan")
+    un.add_argument(
+        "--receipt", help="a push receipt file (see: gpp pushes); removes exactly those ids"
+    )
+    un.add_argument("plan", nargs="?")
     un.add_argument("--yes", action="store_true")
     garmin_args(un)
     un.set_defaults(func=cmd_unpush)
+
+    pl = sub.add_parser("pull", help="read scheduled Garmin workouts back into a plan file")
+    pl.add_argument("--from", dest="start", required=True, metavar="DATE")
+    pl.add_argument("--to", dest="end", required=True, metavar="DATE")
+    pl.add_argument("--name", default="Garmin calendar")
+    pl.add_argument("-o", "--output", help="plan file to write (default: print)")
+    pl.add_argument("--email")
+    pl.add_argument("--token-dir")
+    pl.set_defaults(func=cmd_pull)
 
     de = sub.add_parser("devices", help="list your Garmin devices (for --device on push)")
     garmin_args(de)
@@ -378,6 +475,10 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     gp = sub.add_parser(
         "garmin-predict", help="Garmin's race predictor and HR zones vs your profile"
+    )
+
+    gp.add_argument(
+        "--apply-zones", action="store_true", help="adopt Garmin's HR zones into the profile"
     )
     garmin_args(gp)
     gp.set_defaults(func=cmd_garmin_predict)

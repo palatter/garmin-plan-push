@@ -173,7 +173,7 @@ def test_export_endpoint_formats(app):
     with pytest.raises(AppError, match="index"):
         app.export({"plan": PLAN, "format": "zwo"})
     with pytest.raises(AppError, match="unknown format"):
-        app.export({"plan": PLAN, "format": "fit", "index": 0})
+        app.export({"plan": PLAN, "format": "tcx", "index": 0})
 
 
 def test_library_endpoint_round_trip(app):

@@ -15,8 +15,10 @@ persistent instructions. All of it is fed into every prompt.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import tomllib
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -193,6 +195,29 @@ class Profile:
             )
         low, high = self.hr_zones[zone]
         return round(self.lthr * low), round(self.lthr * high)
+
+    def with_garmin_hr_zones(self, zones: list[tuple[int, int]]) -> Profile:
+        """Adopt Garmin's five HR zones (bpm) as fractions of LTHR (#149).
+
+        Garmin's zone 4 top is its lactate-threshold estimate; when the
+        profile has no LTHR that boundary becomes it, so the zones survive a
+        later threshold change as proportions rather than as stale numbers.
+        """
+        if len(zones) < 5:
+            raise ProfileError(f"expected five Garmin HR zones, got {len(zones)}")
+        lthr = self.lthr or int(zones[3][1])
+        fractions = {
+            index + 1: (low / lthr, high / lthr) for index, (low, high) in enumerate(zones[:5])
+        }
+        out = copy.copy(self)
+        out.lthr = lthr
+        out.hr_zones = {k: (round(lo, 3), round(hi, 3)) for k, (lo, hi) in fractions.items()}
+        out.raw = deepcopy(self.raw)
+        hr = dict(out.raw.get("hr") or {})
+        hr["lthr"] = lthr
+        hr["zones"] = {str(k): [lo, hi] for k, (lo, hi) in out.hr_zones.items()}
+        out.raw["hr"] = hr
+        return out
 
     def estimate_pace(self) -> float:
         """Seconds per km used when a distance step carries no pace target."""

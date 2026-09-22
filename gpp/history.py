@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import analysis
 
+STATUS_KINDS = ("illness", "injury", "cycle", "note")
 DB_PATH = Path.home() / ".config" / "gpp" / "history.sqlite"
 
 SCHEMA = """
@@ -56,6 +57,12 @@ CREATE TABLE IF NOT EXISTS rpe (
     rpe INTEGER NOT NULL,
     note TEXT,
     PRIMARY KEY (date, name)
+);
+CREATE TABLE IF NOT EXISTS status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT
 );
 CREATE TABLE IF NOT EXISTS pain (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,6 +188,29 @@ class History:
                 "INSERT INTO pain (date, location, level, pattern, note) VALUES (?, ?, ?, ?, ?)",
                 (date, location, level, pattern, note),
             )
+
+    def log_status(self, date: str, kind: str, note: str | None = None) -> None:
+        """Illness, injury, or a cycle note (#152): logged, never used to periodize."""
+        if kind not in STATUS_KINDS:
+            raise ValueError(f"status kind must be one of {STATUS_KINDS}")
+        with self.tx() as c:
+            c.execute("INSERT INTO status (date, kind, note) VALUES (?, ?, ?)", (date, kind, note))
+
+    def status_log(self, since: dt.date | None = None) -> list[dict]:
+        sql, args = "SELECT date, kind, note FROM status", ()
+        if since:
+            sql, args = sql + " WHERE date >= ?", (since.isoformat(),)
+        return [dict(r) for r in self.conn.execute(sql + " ORDER BY date", args)]
+
+    def recent_status(self, day: dt.date | None = None, days: int = 3) -> list[dict]:
+        """Illness or injury logged within the last `days`, for the daily advice."""
+        day = day or dt.date.today()
+        since = (day - dt.timedelta(days=days)).isoformat()
+        rows = self.conn.execute(
+            "SELECT date, kind, note FROM status WHERE date >= ? AND date <= ? AND kind IN ('illness', 'injury') ORDER BY date",
+            (since, day.isoformat()),
+        )
+        return [dict(r) for r in rows]
 
     # --- reads ---
 
