@@ -400,6 +400,64 @@ def import_share(text: str, start_monday: dt.date | None = None) -> ShareBundle:
     )
 
 
+# --- iCalendar --------------------------------------------------------------
+
+
+def _ics_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_fold(line: str) -> str:
+    """RFC 5545 folds lines at 75 octets with a leading space on continuations."""
+    data = line.encode("utf-8")
+    if len(data) <= 75:
+        return line
+    out, chunk = [], bytearray()
+    for byte in data:
+        chunk.append(byte)
+        if len(chunk) >= 74:
+            out.append(chunk.decode("utf-8", "ignore"))
+            chunk = bytearray()
+    if chunk:
+        out.append(chunk.decode("utf-8", "ignore"))
+    return "\r\n ".join(out)
+
+
+def export_ics(plan: Plan, profile: Profile) -> str:
+    """The plan as all-day calendar events, one per session (#160)."""
+    from .compile import compile_workout
+    from .render import render_workout
+
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//gpp//garmin-plan-push//EN",
+        "CALSCALE:GREGORIAN",
+        f"X-WR-CALNAME:{_ics_escape(plan.plan)}",
+    ]
+    for workout in plan.sorted_workouts():
+        day = workout.date.strftime("%Y%m%d")
+        nxt = (workout.date + dt.timedelta(days=1)).strftime("%Y%m%d")
+        slug = "".join(c if c.isalnum() else "-" for c in workout.name.lower()).strip("-")
+        body = render_workout(compile_workout(workout, profile, plan.plan), profile).rstrip()
+        if workout.notes:
+            body = f"{workout.notes}\n\n{body}"
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{day}-{slug}@gpp",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{day}",
+            f"DTEND;VALUE=DATE:{nxt}",
+            f"SUMMARY:{_ics_escape(workout.name)}",
+            f"DESCRIPTION:{_ics_escape(body)}",
+            f"CATEGORIES:{_ics_escape(workout.role or workout.sport)}",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_ics_fold(line) for line in lines) + "\r\n"
+
+
 # --- csv and markdown -------------------------------------------------------
 
 

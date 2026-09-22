@@ -31,11 +31,15 @@ from pathlib import Path
 from typing import Any
 
 from .. import adapt, checks, library, oneline
+from ..agenda import week_view
 from ..compile import compile_plan
 from ..diff import diff_plans
+from ..education import ENTRIES as EDUCATION
+from ..environment import combined_band, dew_point_c, heat_slowdown_spk
 from ..estimate import EstimateError, lthr_from_max, threshold_from_race
-from ..formats import FormatError, export_share, export_workout
+from ..formats import FormatError, export_ics, export_share, export_workout
 from ..generate import generate_plan, regenerate_workout
+from ..history import DB_PATH, History
 from ..load import plan_dashboard, session_load
 from ..loadfocus import load_focus
 from ..plan import Plan, PlanError
@@ -53,6 +57,7 @@ from ..receipts import save_receipt
 from ..recent import list_recent, load_recent, save_recent
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
+from ..timeline import workout_summary as _summary
 from ..units import format_duration, format_pace
 from .jobs import JobRegistry
 
@@ -66,6 +71,7 @@ CONTENT_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".svg": "image/svg+xml",
     ".json": "application/json",
+    ".webmanifest": "application/manifest+json",
 }
 
 
@@ -86,6 +92,7 @@ class App:
         self.profile_path = profile_path
         self.library_root: Path | None = None  # tests point this somewhere disposable
         self.recent_root: Path | None = None
+        self.history_path: Path | None = None
         self._lock = threading.Lock()
 
     # --- profile ---
@@ -135,6 +142,8 @@ class App:
                 for name, config in configs.items()
             ],
             "default_provider": pick_default(configs, default),
+            "education": EDUCATION,
+            "recent": [r.to_dict() for r in list_recent(self.recent_root)[:8]],
         }
 
     def zones_preview(self, body: dict) -> dict:
@@ -287,6 +296,7 @@ class App:
             "report": checks.check(plan, profile).to_dict(),
             "dashboard": plan_dashboard(plan, profile),
             "load_focus": load_focus(plan, profile),
+            "agenda": week_view(plan, profile),
         }
 
     def generate(self, body: dict) -> dict:
@@ -435,6 +445,12 @@ class App:
         if fmt == "share":
             text = export_share(plan, profile, note=(body.get("note") or None))
             return {"text": text, "filename": f"{base}.share.json", "mime": "application/json"}
+        if fmt == "ics":
+            return {
+                "text": export_ics(plan, profile),
+                "filename": f"{base}.ics",
+                "mime": "text/calendar",
+            }
         try:
             workout = plan.workouts[int(body.get("index"))]
         except (TypeError, ValueError, IndexError) as exc:
@@ -512,6 +528,76 @@ class App:
             return self._describe(result, profile)
 
         return {"job": self.jobs.start("regenerate", work).id}
+
+    def heat(self, body: dict) -> dict:
+        """Hot-day paces (#166): every zone slowed for the dew point, without editing the plan."""
+        profile = self.profile()
+        try:
+            temp = float(body.get("temp_c"))
+            humidity = float(body.get("humidity_pct"))
+        except (TypeError, ValueError) as exc:
+            raise AppError("give the temperature (C) and relative humidity (%)") from exc
+        dew = dew_point_c(temp, humidity)
+        band = combined_band(temp, dew)
+        slowdown = max(0.0, heat_slowdown_spk(dew))  # cold never makes a target faster
+        zones = {
+            name: {
+                "slow": format_pace(slow + slowdown, profile.imperial),
+                "fast": format_pace(fast + slowdown, profile.imperial),
+            }
+            for name, (slow, fast) in profile.zone_table().items()
+        }
+        notes = {
+            "normal": "Nothing to adjust today.",
+            "adjust": "Hot enough to matter: use the slowed paces, or run by effort, and drink to thirst.",
+            "no-hard-running": "Temperature plus dew point is in the range coaches call off hard running: keep today easy or move the quality session to the coolest hour.",
+        }
+        return {
+            "dew_point_c": round(dew, 1),
+            "band": band,
+            "slowdown_spk": round(slowdown),
+            "zones": zones,
+            "note": notes[band],
+        }
+
+    def _history(self) -> History | None:
+        path = self.history_path or DB_PATH
+        return History(path) if Path(path).exists() else None
+
+    def history(self, body: dict) -> dict:
+        """Synced weekly volume (#167), for the mileage graph; empty without a history."""
+        store = self._history()
+        if store is None:
+            return {"weeks": []}
+        days = int(body.get("since_days") or 84)
+        since = dt.date.today() - dt.timedelta(days=days)
+        try:
+            return {"weeks": store.weekly(since)}
+        finally:
+            store.close()
+
+    def recap(self, body: dict) -> dict:
+        """Recap lines for a plan's past sessions from synced runs (#155)."""
+        profile = self.profile()
+        plan = _plan_of(body.get("plan"))
+        store = self._history()
+        if store is None:
+            return {"recaps": []}
+        today = dt.date.today()
+        planned = [
+            {
+                "date": w.date.isoformat(),
+                "name": w.name,
+                "seconds": _summary(w, profile)["seconds"],
+                "metres": _summary(w, profile)["metres"],
+            }
+            for w in plan.sorted_workouts()
+            if w.date < today
+        ]
+        try:
+            return {"recaps": store.recap(planned, profile.lthr)}
+        finally:
+            store.close()
 
     def recent(self, body: dict) -> dict:
         """Recent plans (#165): list them, or open one by path."""
@@ -664,6 +750,9 @@ ROUTES = {
     "/api/library": "library_action",
     "/api/regenerate": "regenerate",
     "/api/recent": "recent",
+    "/api/heat": "heat",
+    "/api/history": "history",
+    "/api/recap": "recap",
 }
 
 
@@ -677,9 +766,13 @@ def make_handler(app: App):
 
         # --- helpers ---
 
-        def _send(self, status: int, body: bytes, content_type: str) -> None:
+        def _send(
+            self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            for key, value in (extra or {}).items():
+                self.send_header(key, value)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -709,6 +802,13 @@ def make_handler(app: App):
                 return
             if path.startswith("/static/"):
                 self._serve_static(path[len("/static/") :])
+                return
+            if path == "/manifest.webmanifest":
+                self._serve_static("manifest.webmanifest")
+                return
+            if path == "/sw.js":
+                # Served from the root so the worker's scope covers the app.
+                self._serve_static("sw.js", extra={"Service-Worker-Allowed": "/"})
                 return
             self._send(404, b"not found", "text/plain")
 
@@ -759,13 +859,13 @@ def make_handler(app: App):
             html = html.replace("__GPP_TOKEN__", app.token)
             self._send(200, html.encode("utf-8"), CONTENT_TYPES[".html"])
 
-        def _serve_static(self, name: str) -> None:
+        def _serve_static(self, name: str, extra: dict[str, str] | None = None) -> None:
             target = (STATIC / name).resolve()
             if not target.is_file() or STATIC.resolve() not in target.parents:
                 self._send(404, b"not found", "text/plain")
                 return
             content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
-            self._send(200, target.read_bytes(), content_type)
+            self._send(200, target.read_bytes(), content_type, extra)
 
     return Handler
 

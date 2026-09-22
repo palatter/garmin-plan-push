@@ -182,6 +182,36 @@ def _status_line(store: History) -> str | None:
     )
 
 
+def _weather_lines(args, profile) -> list[str]:
+    """Today's conditions folded into the advice (#199), typed or from the forecast."""
+    from . import environment as env
+
+    temp = getattr(args, "temp", None)
+    humidity = getattr(args, "humidity", None)
+    if getattr(args, "forecast", False) and temp is None:
+        if profile.latitude is None or profile.longitude is None:
+            return ["  (no latitude/longitude in the profile, so no forecast)"]
+        when = dt.datetime.now().replace(hour=8, minute=0)
+        try:
+            info = env.fetch_forecast(profile.latitude, profile.longitude, when).describe()
+        except env.EnvironmentError_ as exc:
+            return [f"  ({exc})"]
+        temp, humidity = info["temp_c"], info["humidity_pct"]
+    if temp is None or humidity is None:
+        return []
+    dew = env.dew_point_c(temp, humidity)
+    band = env.combined_band(temp, dew)
+    slow = env.heat_slowdown_spk(dew)
+    lines = [f"  weather: {temp:g} C, {humidity:g}% RH, dew point {dew:.0f} C -- {band}"]
+    if slow >= 5:
+        lines.append(f"  add about {slow:.0f} s/km to every target, or run by effort")
+    if band == "no-hard-running":
+        lines.append("  move any quality session to the coolest hour, or make today easy")
+    elif band == "adjust":
+        lines.append("  an early or late start beats the midday heat for a quality session")
+    return lines
+
+
 def cmd_today(args) -> int:
     store = _store(args)
     role = args.role
@@ -198,6 +228,8 @@ def cmd_today(args) -> int:
     status = _status_line(_store(args))
     if status:
         print(f"  {status}")
+    for line in _weather_lines(args, _profile(args)):
+        print(line)
     return 0
 
 
@@ -424,6 +456,11 @@ def register(sub: argparse._SubParsersAction) -> None:
     sh.set_defaults(func=cmd_shape)
 
     to = sub.add_parser("today", help="should today's session be easier? from synced metrics")
+    to.add_argument("--temp", type=float, help="today's temperature (C), with --humidity")
+    to.add_argument("--humidity", type=float, help="relative humidity (%%)")
+    to.add_argument(
+        "--forecast", action="store_true", help="fetch the forecast for the profile's location"
+    )
     to.add_argument("--plan")
     to.add_argument("--role", default="quality")
     to.add_argument("--db")

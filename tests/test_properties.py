@@ -102,7 +102,10 @@ def test_compiled_workouts_are_well_formed(data):
     assert len(seen) == executables + sum(1 for s in data["steps"] if s["kind"] == "repeat")
     assert compiled.tag == content_tag("prop", compiled.payload)
     for item in seen and steps:
-        if item.get("type") != "RepeatGroupDTO" and item["targetType"]["workoutTargetTypeKey"] == "pace.zone":
+        if (
+            item.get("type") != "RepeatGroupDTO"
+            and item["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+        ):
             assert item["targetValueOne"] <= item["targetValueTwo"]  # slower first, faster second
 
 

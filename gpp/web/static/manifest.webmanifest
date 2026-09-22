@@ -1,0 +1,18 @@
+{
+  "name": "Training Plans",
+  "short_name": "Plans",
+  "description": "Turn AI-written running plans into structured Garmin workouts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#d1471a",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

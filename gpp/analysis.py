@@ -55,6 +55,62 @@ def match_planned_to_actual(planned: list[dict], activities: list[dict]) -> list
     return out
 
 
+# --- recap ------------------------------------------------------------------
+
+
+def recap_lines(planned: list[dict], activities: list[dict], lthr: int | None = None) -> list[dict]:
+    """One plain-language line per planned session that has passed (#155).
+
+    Stryd's headline 2026 feature is a post-run recap; this is the same idea
+    from local data: duration and distance against the plan, pace against
+    the planned pace, heart rate against threshold where both are known.
+    """
+    out = []
+    by_day: dict[str, list[dict]] = {}
+    for a in activities:
+        by_day.setdefault(a["date"], []).append(a)
+    for row in match_planned_to_actual(planned, activities):
+        actual = max(by_day.get(row["date"], []), key=lambda a: a.get("seconds", 0), default=None)
+        planned_seconds = row["planned_seconds"] or 0
+        planned_metres = next(
+            (
+                p.get("metres") or 0
+                for p in planned
+                if p["date"] == row["date"] and p.get("name") == row["name"]
+            ),
+            0,
+        )
+        if actual is None:
+            text = "No run recorded that day."
+        else:
+            seconds = actual.get("seconds") or 0
+            metres = actual.get("distance_m") or 0
+            parts = [f"{round(seconds / 60)} min"]
+            if planned_seconds:
+                parts[-1] += (
+                    f" vs {round(planned_seconds / 60)} planned ({seconds / planned_seconds:.0%})"
+                )
+            if metres:
+                pace = seconds / (metres / 1000) if metres else 0
+                parts.append(f"{metres / 1000:.1f} km at {int(pace // 60)}:{int(pace % 60):02d}/km")
+                if planned_metres and planned_seconds:
+                    planned_pace = planned_seconds / (planned_metres / 1000)
+                    gap = pace - planned_pace
+                    if abs(gap) >= 8:
+                        parts.append(
+                            f"{abs(gap):.0f} s/km {'slower' if gap > 0 else 'faster'} than planned"
+                        )
+                    else:
+                        parts.append("on the planned pace")
+            if actual.get("avg_hr") and lthr:
+                parts.append(f"avg HR {actual['avg_hr']} ({actual['avg_hr'] / lthr:.0%} of LTHR)")
+            text = "; ".join(parts) + "."
+        out.append(
+            {"date": row["date"], "name": row["name"], "status": row["status"], "text": text}
+        )
+    return out
+
+
 # --- threshold re-estimation ------------------------------------------------
 
 

@@ -536,6 +536,51 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_why(args: argparse.Namespace) -> int:
+    from .education import ENTRIES, lookup, render
+
+    if not args.topic:
+        for key, entry in ENTRIES.items():
+            print(f"  {key:<12} {entry['title']}")
+        print("\ngpp why <topic> for the explanation and the evidence")
+        return 0
+    entry = lookup(args.topic)
+    if entry is None:
+        print(f"no entry for {args.topic!r}; topics: {', '.join(ENTRIES)}", file=sys.stderr)
+        return 1
+    _emit(args, entry, render(entry))
+    return 0
+
+
+def cmd_recap(args: argparse.Namespace) -> int:
+    import datetime as dt
+
+    from .history import History
+    from .timeline import workout_summary
+
+    profile = _load_profile(args.profile)
+    plan = _plan_arg(args)
+    store = History(args.db) if args.db else History()
+    today = dt.date.today()
+    planned = [
+        {
+            "date": w.date.isoformat(),
+            "name": w.name,
+            "seconds": workout_summary(w, profile)["seconds"],
+            "metres": workout_summary(w, profile)["metres"],
+        }
+        for w in plan.sorted_workouts()
+        if w.date < today
+    ]
+    rows = store.recap(planned, profile.lthr)
+    if not rows:
+        print("nothing to recap yet: no planned sessions in the past, or no synced runs (gpp sync)")
+        return 0
+    lines = [f"  {r['date']}  {r['name']:<28} [{r['status']:<6}] {r['text']}" for r in rows]
+    _emit(args, {"recaps": rows}, "\n".join(lines))
+    return 0
+
+
 def cmd_zones(args: argparse.Namespace) -> int:
     from .units import format_pace
 
@@ -1109,6 +1154,17 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("archive")
     rs.add_argument("--force", action="store_true")
     rs.set_defaults(func=cmd_restore)
+
+    wy = sub.add_parser("why", help="what a kind of session does, and the evidence")
+    wy.add_argument("topic", nargs="?", help="easy, long, threshold, interval, strides, taper, ...")
+    wy.set_defaults(func=cmd_why)
+
+    rcp = sub.add_parser(
+        "recap", help="plain-language recap of a plan's past sessions from synced runs"
+    )
+    rcp.add_argument("plan", nargs="?", help="plan file (default: the most recent plan)")
+    rcp.add_argument("--db")
+    rcp.set_defaults(func=cmd_recap)
 
     zones = sub.add_parser("zones", help="show your resolved training zones")
     zones.set_defaults(func=cmd_zones)

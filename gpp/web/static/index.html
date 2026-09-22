@@ -17,7 +17,7 @@
     <span>Training Plans</span>
   </div>
   <div class="topbar-actions">
-    <button class="chip" id="profile-chip" aria-haspopup="dialog" hidden></button>
+    <button class="chip" id="profile-chip" aria-haspopup="dialog" aria-label="Your profile" hidden></button>
     <button class="icon-btn" id="palette-btn" title="Commands (Ctrl K)" aria-label="Commands">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <path d="M4 7h16M4 12h10M4 17h7"/>
@@ -228,7 +228,7 @@
     </div>
 
     <div class="composer card">
-      <textarea id="c-request" rows="4"
+      <textarea id="c-request" rows="4" aria-label="Describe the training you want"
         placeholder="e.g. Four weeks to a 10k. Five runs a week, one long run on Sunday, one threshold session and one set of hills. Keep Mondays easy."></textarea>
 
       <div class="chips" id="c-examples">
@@ -616,8 +616,9 @@
 </dialog>
 
 <!-- ===================== COMMAND PALETTE ===================== -->
-<dialog id="palette" class="palette">
+<dialog id="palette" class="palette" aria-labelledby="palette-title">
   <div class="palette-body">
+    <h2 id="palette-title" class="sr-only">Commands</h2>
     <input type="text" id="pal-input" placeholder="Type a command…" aria-label="Command"
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true"
            aria-controls="pal-list" aria-autocomplete="list">
@@ -628,7 +629,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden>
   <span id="toast-text"></span>
-  <button type="button" class="btn sm" id="toast-action" hidden></button>
+  <button type="button" class="btn sm" id="toast-action" aria-label="Undo" hidden></button>
 </div>
 
 <script src="/static/review.js"></script>

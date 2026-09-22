@@ -296,6 +296,13 @@ class History:
             resting_hr_baseline=self.resting_hr_baseline(day),
         )
 
+    def recap(self, planned: list[dict], lthr: int | None = None) -> list[dict]:
+        """Recap lines for planned rows (date, name, seconds, metres) against synced runs."""
+        if not planned:
+            return []
+        since = dt.date.fromisoformat(min(p["date"] for p in planned))
+        return analysis.recap_lines(planned, self.activities(since), lthr)
+
     def pain_trend(self, since: dt.date) -> dict[str, list[tuple[str, int]]]:
         """Pain level by location over time -- the soft injury signal."""
         out: dict[str, list[tuple[str, int]]] = {}
