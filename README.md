@@ -36,6 +36,17 @@ To update later: `uv tool upgrade garmin-plan-push`. Tagged releases with the
 wheel attached are on the
 [releases page](https://github.com/palatter/garmin-plan-push/releases).
 
+To try it without installing anything permanently:
+
+```bash
+uvx --from git+https://github.com/palatter/garmin-plan-push gpp web
+```
+
+`pipx install git+https://github.com/palatter/garmin-plan-push` works too.
+The release workflow publishes to PyPI with trusted publishing once the
+repository turns that on; from then, `uv tool install garmin-plan-push` is
+the short form. `gpp --version` tells you what you have.
+
 ## Using it
 
 **Setup** happens once. You don't need to know your threshold pace — give it a
@@ -65,6 +76,19 @@ start date.
 - **Calendar** view: drag a session to another day (arrow keys work too); the
   checks re-run and the weekly totals update.
 - **On the watch** previews the step screens a Fenix will show, step by step.
+- **This week** lists the days ahead with the key session, the coming phase
+  change and the days to the race; **load focus** splits the recent weeks'
+  minutes the way the watch does (low aerobic, high aerobic, anaerobic).
+- Once runs are synced, each past session carries a one-line **recap** against
+  what was planned, and **plan vs actual** graphs weekly volume.
+- **Hot day** shows every pace slowed for today's dew point without editing
+  the plan. **Move to…** moves a session without dragging. <kbd>?</kbd> lists
+  the keys; <kbd>T</kbd> jumps to today.
+- **Export** the plan as a calendar file (.ics), Markdown, CSV or a share
+  bundle, or one session as intervals.icu text, ZWO, MRC/ERG or a Garmin FIT
+  file. Print gives you the sessions and nothing else.
+- Recent plans reopen from the first screen, and the app installs to a dock or
+  home screen from the browser's install menu.
 - **Changes** is the diff against the plan as generated or last pushed, with
   undo and reset.
 - **Missed** a session? *Readapt* moves or drops what is around it by rule and
@@ -161,6 +185,12 @@ one-way document:
 | `gpp pause plan.json --start 2026-03-14 --days 7` | illness or holiday |
 | `gpp layoff 21` | what a break of N days means, by Stryd's tiers |
 | `gpp log rpe 7` / `gpp log pain 3 --name knee` | session RPE and a pain log with a trend |
+| `gpp log illness` / `gpp log cycle --note "..."` | body status that feeds the pause suggestion (logging only, by design) |
+| `gpp recap plan.json` | one line per past session from the synced run: on plan, short, skipped |
+| `gpp next` / `gpp week` | the next session, watch-style / this week and next with the key session |
+| `gpp today --forecast` | the daily nudge with today's dew point folded in |
+| `gpp recover --race 2026-10-12 --distance marathon` | a post-race recovery block (Pfitzinger's weeks after) |
+| `gpp why threshold` | what a kind of session does, and the evidence behind it |
 
 None of it is automatic. Every adaptation is a stated rule, shown with its
 reason, and you can undo it.
@@ -218,19 +248,28 @@ picks a profile file; several athletes can share one install.
 | `gpp oneline "20m wu, 6x3m @ T w/ 2m jog, 10m cd"` | a workout from a sentence |
 | `gpp library list\|save\|use` / `gpp template` | saved sessions and plan templates, re-based to any start date or race date |
 | `gpp diff a.json b.json` | what changed between two plan files |
-| `gpp export` / `gpp import` | intervals.icu text, ZWO, MRC/ERG, share bundles |
+| `gpp enrich plan.json` | fuelling cues, a heat block, strength placement, durability notes, cadence cues — by rule, each with its reason |
+| `gpp race-plan --distance half --time 1:45:00` | split targets (even, negative, 10-10-10) and, with `--workout DATE`, a race-day session |
+| `gpp export` / `gpp import` | JSON, share bundles, CSV, Markdown; one session as intervals.icu text, ZWO, MRC/ERG |
+| `gpp fit plan.json` | one Garmin FIT workout file per session, for USB sideload |
+| `gpp icu plan.json --athlete i12345` | push to an intervals.icu calendar, the partner route to Garmin (`--remove` takes it back) |
+| `gpp eval` / `gpp providers --bench` | plan quality across athlete cases (costs tokens) / measure a local model |
 | `gpp transpile` | pace targets to running power, or back |
 | `gpp predict` / `gpp cs` | race-time predictions with ranges / critical speed from two trials |
 | `gpp weather` | heat-adjusted pace for a day, typed or from a forecast |
 | `gpp watch plan.json` | re-check (or `--push`) whenever the file changes |
 | `gpp mcp` | run as an MCP server |
+| `gpp plans` / `gpp schema` / `gpp completions bash` | recent plans / the DSL's JSON Schema (`--markdown` for the reference) / shell completions |
+| `gpp profile set key value` / `gpp backup` / `gpp restore` | one field without opening the TOML / everything in one zip, and back |
+| `gpp --json …` / `gpp --verbose …` | machine-readable output on the read-only commands / a debug log for `doctor --bundle` |
 
 **Garmin**
 
 | Command | |
 |---|---|
-| `gpp push plan.json` | upload and schedule (`--dry-run`, `--device` to send to the watch now) |
-| `gpp unpush plan.json` | remove a plan's workouts |
+| `gpp push plan.json` | upload and schedule (`--dry-run`, `--dry-run --live` to compare with the calendar first, `--device` to send to the watch now) |
+| `gpp unpush plan.json` / `gpp pushes` | remove a plan's workouts, or `--receipt` to remove exactly what a push created / list the receipts |
+| `gpp pull --from 2026-09-01 --to 2026-09-30` | read scheduled Garmin workouts back into a plan file |
 | `gpp compile plan.json` | emit the raw Garmin workout JSON |
 | `gpp devices` / `gpp exercises` | your devices / search the strength exercise catalog |
 | `gpp sync` | pull runs and daily metrics into local history |
@@ -316,17 +355,39 @@ gpp/sync.py         Activities and daily metrics from Garmin.
 gpp/history.py      The local SQLite history.
 gpp/mcp_server.py   The MCP server.
 gpp/watch.py        File watching.
+gpp/enrich.py       Fuelling, heat, strength, durability and cadence cues by rule.
+gpp/chunked.py      Long plans one mesocycle per call.
+gpp/evaluate.py     The plan-quality harness and the local-model bench.
+gpp/checks.py       (also) the constraint parser: day rules, keywords, "for N weeks".
+gpp/fit.py          FIT workout files, encoded and decoded, no dependency.
+gpp/decompile.py    Garmin JSON back into the DSL.
+gpp/loadfocus.py    Garmin's three load buckets.
+gpp/receipts.py     What each push created.
+gpp/race.py         Splits and race-day sessions.
+gpp/agenda.py       The next session and the week ahead.
+gpp/education.py    What each session type does, with sources.
+gpp/recent.py       Recent plans.  gpp/backup.py  Backup and restore.
+gpp/icu.py          intervals.icu calendar push.
+gpp/completions.py  Shell completions from the parser.
 gpp/web/            Local server, background jobs, and the browser UI
                     (no build step: index.html, app.js, review.js, two CSS files).
 ```
 
-338 tests cover units, zones, the models, the compiler (step ordering, repeat
+446 tests cover units, zones, the models, the compiler (step ordering, repeat
 groups, target units), the validator, the sanity rules, adaptation, the
-formats, the library, the history store, the web endpoints and the HTTP layer,
-the MCP tools, and the job registry's input handshake. None touch the network.
-CI runs them on Linux, macOS and Windows on Python 3.12 and 3.14, lints, and
-checks that the web assets shipped in the wheel. Actions are pinned to commit
-SHAs; Dependabot keeps them fresh.
+formats, FIT encoding and decoding, the library, the history store, the web
+endpoints and the HTTP layer, the MCP tools, the job registry's input
+handshake, and the intervals.icu client up to the socket. Property-based tests
+(hypothesis) cover the unit parsers and the compile round trip; an
+accessibility test audits the real HTML (labels, headings, duplicate ids) and
+a contrast test measures the design tokens against WCAG AA in both themes.
+None touch the network. CI runs the suite on Linux, macOS and Windows on
+Python 3.12 and 3.14 with a coverage floor, lints, type-checks (advisory),
+runs CodeQL, dependency review and an OpenSSF Scorecard, and checks that the
+web assets shipped in the wheel. Actions are pinned to commit SHAs; Dependabot
+keeps them fresh. Tagging a release runs the tests, builds the wheel, takes
+the notes from [CHANGELOG.md](CHANGELOG.md) and can publish to PyPI with
+trusted publishing.
 
 ## Security notes
 
@@ -377,8 +438,10 @@ readiness nudge need a real account to prove.
 **What is not built**, and why, is listed at the top of
 [ROADMAP.md](ROADMAP.md): signed installers (paid certificates), the Courses
 and training-plan APIs (schemas unverified), altitude adjustment (no formula
-with evidence), FIT export, and lap-alert text (a watch setting, not a
-workout field).
+with evidence), and lap-alert text (a watch setting, not a workout field).
+Deliberately left out on the evidence: ACWR and the 10% rule as hard gates,
+cycle-phase periodization, Strava import and sleep prescriptions — the
+roadmap says why, with sources.
 
 ## Alternative
 

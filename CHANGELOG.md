@@ -3,7 +3,7 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
-## [0.2.0] — unreleased
+## [0.2.0] — 2026-09-22
 
 Three research-and-review rounds; two hundred roadmap items, of which the
 [roadmap's status section](ROADMAP.md#status) says which are built, partial
@@ -30,6 +30,12 @@ or deliberately not built.
   rewrite), calendar with drag-to-reschedule, sanity report, plan health,
   changes with undo, watch-screen preview, missed → readapt or keep, pause,
   return-to-run ramp, rewrite with AI, export, library, command palette.
+- Web app, round three: this week and next, load focus, the plan's rationale,
+  recap lines and plan-vs-actual once runs are synced, hot-day paces, move
+  without dragging, a shortcut sheet, education snippets in the edit and watch
+  dialogs, recent plans on the first screen, a first-run checklist, print
+  styles, calendar/FIT/Markdown/CSV export, installable (manifest and service
+  worker), accessibility and contrast tests.
 - Onboarding: goal race, availability, injuries, standing rules, recent volume.
 - Sanity checks: long-run spike, weekly ramp, deload, hard share, middle gear,
   back-to-back quality, monotony, taper shape, race windows, availability and
@@ -50,8 +56,9 @@ or deliberately not built.
   tables, Load Focus preview, body-status log, HR-zone import, MFA re-prompt.
 - History and sync: activities and daily metrics, compliance, threshold
   re-estimation, marathon shape, daily nudge, RPE and pain logs.
-- Interop: intervals.icu text, ZWO, MRC/ERG, CSV, Markdown, share bundles,
-  ICS (web), plan diff, pace ↔ power transpile, MCP server.
+- Interop: intervals.icu text and calendar push (`gpp icu`), ZWO, MRC/ERG,
+  FIT, CSV, Markdown, share bundles, ICS, plan diff, pace ↔ power transpile,
+  MCP server.
 - CLI: `next`, `week`, `plans`, `--json`, `--version`, `--verbose`,
   `[defaults]`, `profile set|get`, `schema`, completions, `backup`/`restore`,
   versioned saves, `watch`, `doctor --bundle` and environment checks.

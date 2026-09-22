@@ -1091,6 +1091,11 @@ function initPalette() {
       e.preventDefault();
       $('#keys-dialog').showModal();
     }
+    if (e.key === 't' && !typing && !document.querySelector('dialog[open]') && state.plan) {
+      // Jump to today: the first session on or after today, card or chip (#163).
+      const target = $(`[data-index="${nextIndex()}"]`);
+      if (target) { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); target.focus(); }
+    }
   });
   input.addEventListener('input', () => { cursor = 0; render(); });
   input.addEventListener('keydown', e => {

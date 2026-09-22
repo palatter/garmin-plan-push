@@ -130,6 +130,36 @@ def cmd_oneline(args) -> int:
     return 0
 
 
+def cmd_icu(args) -> int:
+    """Push (or remove) the plan on an intervals.icu calendar (#179): the
+    partner route to Garmin for anyone who prefers it to the Connect API."""
+    import os
+
+    from . import icu
+
+    profile = _profile(args)
+    plan = Plan.load(args.plan)
+    athlete = args.athlete or os.environ.get(icu.ATHLETE_ENV)
+    key = args.key or os.environ.get(icu.KEY_ENV)
+    try:
+        if args.remove:
+            results = icu.remove(plan, profile, athlete, key)
+        else:
+            results = icu.push(plan, profile, athlete, key, dry_run=args.dry_run)
+    except icu.IcuError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    for r in results:
+        print(r.describe())
+    if args.remove:
+        print(f"{len(results)} event(s) removed from intervals.icu")
+    elif args.dry_run:
+        print(f"{len(results)} session(s) would be sent; nothing was")
+    else:
+        print(f"{len(results)} session(s) on the intervals.icu calendar; Garmin syncs from there")
+    return 0
+
+
 def cmd_export(args) -> int:
     profile = _profile(args)
     plan = Plan.load(args.plan)
@@ -435,6 +465,16 @@ def register(sub: argparse._SubParsersAction) -> None:
     exp.add_argument("--note", help="a line for the person you are sending it to")
     exp.add_argument("-o", "--output", help="file (share/json) or directory (per-workout formats)")
     exp.set_defaults(func=cmd_export)
+
+    ic = sub.add_parser(
+        "icu", help="push the plan to an intervals.icu calendar (a Garmin partner route)"
+    )
+    ic.add_argument("plan", help="plan file")
+    ic.add_argument("--athlete", help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID)")
+    ic.add_argument("--key", help="intervals.icu API key (or ICU_API_KEY)")
+    ic.add_argument("--dry-run", action="store_true", help="list what would be sent")
+    ic.add_argument("--remove", action="store_true", help="delete this plan's events instead")
+    ic.set_defaults(func=cmd_icu)
 
     imp = sub.add_parser("import", help="read a share bundle, intervals.icu text or a ZWO file")
     imp.add_argument("file")

@@ -37,7 +37,9 @@ def test_paces_round_trip_within_a_second(sec_per_km):
 
 @given(st.integers(min_value=100, max_value=60_000))
 def test_distances_round_trip_within_five_metres(metres):
-    assert abs(parse_distance(format_distance(metres).replace(" ", "")) - metres) <= 5.0
+    assert (
+        abs(parse_distance(format_distance(metres).replace(" ", "")) - metres) <= 5.01
+    )  # 10 m steps, float noise
 
 
 def executable_steps():
