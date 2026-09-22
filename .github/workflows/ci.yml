@@ -14,7 +14,7 @@ jobs:
   test:
     # The app is installed by end users on all three, and the one bug class
     # that actually bites here — path handling and file encodings — only shows
-    # up when you run the matrix.
+    # up when you run the matrix. The web smoke test runs on every OS too.
     strategy:
       fail-fast: false
       matrix:
@@ -39,16 +39,22 @@ jobs:
       - name: Install
         run: uv sync --extra dev
 
-      - name: Test
-        run: uv run pytest -q
+      - name: Test, with a coverage floor
+        # 75% is what the offline suite can honestly reach: the Garmin
+        # network layer and the vendor SDK calls are exercised by fakes only.
+        run: uv run pytest -q --cov=gpp --cov-report=term-missing:skip-covered --cov-fail-under=75
 
       - name: Smoke-test the CLI
         shell: bash
         run: |
+          uv run gpp --version
           uv run gpp --help
           uv run gpp --profile examples/profile.toml zones
-          uv run gpp --profile examples/profile.toml check examples/week.json
+          uv run gpp --profile examples/profile.toml --json check examples/week.json
           uv run gpp --profile examples/profile.toml show examples/week.json
+          uv run gpp --profile examples/profile.toml report examples/week.json
+          uv run gpp completions bash > /dev/null
+          uv run gpp schema --markdown > /dev/null
 
       - name: Smoke-test the web app
         shell: bash
@@ -62,6 +68,7 @@ jobs:
           # gate must reject an unsigned call.
           curl -sf -o /dev/null -w 'page %{http_code}\n'   "http://127.0.0.1:8799/"
           curl -sf -o /dev/null -w 'app.js %{http_code}\n' "http://127.0.0.1:8799/static/app.js"
+          curl -sf -o /dev/null -w 'review.js %{http_code}\n' "http://127.0.0.1:8799/static/review.js"
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
                  -H 'Content-Type: application/json' -d '{}' \
                  "http://127.0.0.1:8799/api/state")
@@ -75,6 +82,17 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run ruff check gpp tests
       - run: uv run ruff format --check gpp tests
+
+  types:
+    # Astral's `ty` is in beta; advisory until it is stable, so a checker
+    # false positive cannot block a release.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+      - run: uv sync --extra dev
+      - run: uv run ty check gpp
 
   wheel:
     # The web UI's assets live outside .py files, so a wheel that silently
@@ -101,3 +119,12 @@ jobs:
               sys.exit(f"wheel is missing {sorted(missing)}")
           print(f"wheel contains all {len(need)} web assets")
           PY
+
+  dependency-review:
+    # Fails a pull request that adds a dependency with a known vulnerability
+    # or an incompatible licence.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0

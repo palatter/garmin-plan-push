@@ -14,7 +14,7 @@ dependencies = [
 anthropic = ["anthropic>=1.0"]
 openai = ["openai>=1.0"]
 mcp = ["mcp>=1.0"]
-dev = ["pytest>=8.0", "ruff>=0.14"]
+dev = ["pytest>=8.0", "pytest-cov>=6.0", "hypothesis>=6.100", "ruff>=0.14", "ty>=0.0.1"]
 
 [project.scripts]
 gpp = "gpp.cli:main"
@@ -48,3 +48,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106", "B011"]  # fake keys and deliberate asserts in tests
+
+[tool.coverage.run]
+source = ["gpp"]
+omit = ["gpp/web/static/*"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = true

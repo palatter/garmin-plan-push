@@ -1,21 +1,29 @@
 name: Release
 
 # Tag a version and a GitHub Release appears with the wheel and sdist
-# attached, so `uv tool install` can target a version instead of main:
+# attached and the CHANGELOG section as its notes, so `uv tool install` can
+# target a version instead of main:
 #
 #   git tag v0.2.0 && git push origin v0.2.0
 #   uv tool install "garmin-plan-push @ https://github.com/palatter/garmin-plan-push/releases/download/v0.2.0/garmin_plan_push-0.2.0-py3-none-any.whl"
+#
+# Publishing to PyPI uses trusted publishing (no stored token): register the
+# project on PyPI with this repository, this workflow file and the `pypi`
+# environment as the trusted publisher, then set the repository variable
+# PYPI_PUBLISH=true. Until then the publish job is skipped.
 
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write  # only this workflow may create releases
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # only this job may create releases
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
@@ -32,7 +40,34 @@ jobs:
       - name: Build
         run: uv build
 
+      - name: Release notes from CHANGELOG.md
+        run: |
+          uv run python - "${GITHUB_REF_NAME#v}" <<'PY'
+          import re, sys
+          version = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          match = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.S | re.M)
+          notes = match.group(1).strip() if match else f"Release {version}."
+          open("release-notes.md", "w", encoding="utf-8").write(notes + "\n")
+          print(notes)
+          PY
+
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "$GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" dist/* --notes-file release-notes.md --title "$GITHUB_REF_NAME"
+
+  publish:
+    # Separate job so the OIDC token exists only here, never beside the
+    # test and release steps (astral-sh/trusted-publishing-examples).
+    needs: release
+    if: ${{ vars.PYPI_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+      - run: uv build
+      - run: uv publish --trusted-publishing always
