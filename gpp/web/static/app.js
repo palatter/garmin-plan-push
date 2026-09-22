@@ -18,6 +18,10 @@ const state = {
   history: [],          // previous plan JSONs, for undo
   lastAdaptation: null, // reasons from the last pause / replan
   view: 'list',         // list | calendar
+  recaps: {},           // 'date|name' -> recap row, from synced runs
+  heat: null,           // /api/heat result while a hot day is set
+  mileage: null,        // /api/history weeks, fetched once per page load
+  education: {},        // session type -> explanation, from the server
   providers: [],
   pollTimer: null,
 };
@@ -284,6 +288,45 @@ function fillAthlete(a) {
   $('#s-goal-time').value = goal.goal_time || '';
   const answered = (a.injuries || []).length || (a.constraints || []).length || goal.date || (av.days || []).length;
   if (answered) $('#s-about').open = true;
+}
+
+/* Recent plans and the first-run checklist on the compose screen (#165, #168). */
+
+function renderRecent(list) {
+  const card = $('#c-recent');
+  const host = $('#c-recent-list');
+  host.innerHTML = '';
+  card.hidden = !list.length;
+  for (const r of list.slice(0, 6)) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn sm';
+    open.textContent = 'Open';
+    open.addEventListener('click', async () => {
+      try {
+        const described = await api('/api/recent', { path: r.path });
+        openPlan(described, true, 'reopened');
+      } catch (err) {
+        setError('#compose-error', err.message);
+      }
+    });
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'l-name';
+    const span = r.first ? `${r.first} to ${r.last}` : 'no dates';
+    name.textContent = `${r.name} — ${r.sessions} sessions, ${span}`;
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = r.label || 'saved';
+    li.append(name, tag, open);
+    host.append(li);
+  }
+}
+
+function renderChecklist(s) {
+  $('#c-checklist').hidden = Boolean((s.recent || []).length);
+  $('#ck-profile').onclick = () => show('setup');
+  $('#ck-template').onclick = () => openLibrary();
 }
 
 /* ------------------------------------------------------------- compose --- */
@@ -560,6 +603,9 @@ async function boot() {
     select.append(opt);
   }
   updateProviderHint();
+  state.education = s.education || {};
+  renderRecent(s.recent || []);
+  renderChecklist(s);
 
   // Pre-fill setup so "Edit paces" is an edit, not a re-entry.
   $('#s-name').value = s.profile.name;
@@ -580,6 +626,11 @@ async function boot() {
   show('compose');
 }
 
+if ('serviceWorker' in navigator) {
+  // Installable (#162). The worker caches static assets only; every number still comes from the server.
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+window.addEventListener('beforeprint', () => $$('details.w-steps').forEach(d => { d.open = true; }));
 initTheme();
 initSetup();
 initCompose();

@@ -37,7 +37,14 @@ from ..diff import diff_plans
 from ..education import ENTRIES as EDUCATION
 from ..environment import combined_band, dew_point_c, heat_slowdown_spk
 from ..estimate import EstimateError, lthr_from_max, threshold_from_race
-from ..formats import FormatError, export_ics, export_share, export_workout
+from ..formats import (
+    FormatError,
+    export_csv,
+    export_ics,
+    export_markdown,
+    export_share,
+    export_workout,
+)
 from ..generate import generate_plan, regenerate_workout
 from ..history import DB_PATH, History
 from ..load import plan_dashboard, session_load
@@ -450,6 +457,18 @@ class App:
                 "text": export_ics(plan, profile),
                 "filename": f"{base}.ics",
                 "mime": "text/calendar",
+            }
+        if fmt == "md":
+            return {
+                "text": export_markdown(plan, profile),
+                "filename": f"{base}.md",
+                "mime": "text/markdown",
+            }
+        if fmt == "csv":
+            return {
+                "text": export_csv(plan, profile),
+                "filename": f"{base}.csv",
+                "mime": "text/csv",
             }
         try:
             workout = plan.workouts[int(body.get("index"))]

@@ -8,6 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#127939;</text></svg>">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/review.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#d1471a">
 </head>
 <body>
 
@@ -227,6 +229,23 @@
       <p class="lede">Describe it the way you'd tell a coach. Everything else is automatic.</p>
     </div>
 
+    <div class="card checklist" id="c-checklist" hidden>
+      <h2 class="card-title">Three steps</h2>
+      <ol class="steps-list">
+        <li class="is-done"><span class="step-mark" aria-hidden="true">1</span><span>Your paces are set — <button type="button" class="link" id="ck-profile">edit the profile</button></span></li>
+        <li><span class="step-mark" aria-hidden="true">2</span><span>Write a plan below, or <button type="button" class="link" id="ck-template">open a template</button></span></li>
+        <li><span class="step-mark" aria-hidden="true">3</span><span>Review it — edit, drag, check — then send it to your watch</span></li>
+      </ol>
+    </div>
+
+    <div class="card recent" id="c-recent" hidden>
+      <div class="panel-head">
+        <h2 class="card-title">Pick up where you left off</h2>
+        <span class="hint">Plans this app opened or edited recently</span>
+      </div>
+      <ul class="lib-list" id="c-recent-list"></ul>
+    </div>
+
     <div class="composer card">
       <textarea id="c-request" rows="4" aria-label="Describe the training you want"
         placeholder="e.g. Four weeks to a 10k. Five runs a week, one long run on Sunday, one threshold session and one set of hills. Keep Mondays easy."></textarea>
@@ -287,6 +306,7 @@
       <div>
         <h1 id="r-title">Your plan</h1>
         <p class="lede" id="r-summary"></p>
+        <p class="rationale" id="r-rationale" hidden></p>
       </div>
       <div class="review-actions">
         <button class="btn ghost" id="r-back">Start over</button>
@@ -302,7 +322,8 @@
         <button type="button" class="seg" data-view="calendar" role="radio" aria-checked="false" tabindex="-1">Calendar</button>
       </div>
       <div class="legend" id="r-legend"></div>
-      <p class="hint shortcuts"><kbd>Ctrl</kbd><kbd>K</kbd> commands · drag a session to another day · arrow keys move a focused session</p>
+      <p class="hint shortcuts"><kbd>Ctrl</kbd><kbd>K</kbd> commands · <kbd>?</kbd> shortcuts · drag a session to another day</p>
+      <button type="button" class="chip" id="r-heat-badge" hidden>Hot day</button>
     </div>
 
     <div class="panels">
@@ -312,6 +333,24 @@
           <span class="hint" id="health-totals"></span>
         </div>
         <div class="health" id="health-body"></div>
+        <div class="focus" id="health-focus"></div>
+      </section>
+
+      <section class="card panel" id="panel-week" aria-labelledby="week-title">
+        <div class="panel-head">
+          <h2 id="week-title">This week</h2>
+          <span class="hint" id="week-race"></span>
+        </div>
+        <ul class="week-list" id="week-body"></ul>
+        <p class="hint" id="week-next"></p>
+      </section>
+
+      <section class="card panel" id="panel-mileage" aria-labelledby="mileage-title" hidden>
+        <div class="panel-head">
+          <h2 id="mileage-title">Plan vs actual</h2>
+          <span class="hint">weekly km, synced runs</span>
+        </div>
+        <div class="health mileage" id="mileage-body"></div>
       </section>
 
       <section class="card panel" id="panel-sanity" aria-labelledby="sanity-title">
@@ -424,6 +463,8 @@
       <input type="text" id="e-notes" maxlength="200" placeholder="e.g. Threshold: controlled, not a race">
     </label>
 
+    <div class="why" id="e-why" hidden></div>
+
     <div class="tabs" role="tablist" aria-label="Steps">
       <button type="button" class="tab is-active" data-etab="cues" role="tab" aria-selected="true">Steps and cues</button>
       <button type="button" class="tab" data-etab="line" role="tab" aria-selected="false" tabindex="-1">Rewrite in one line</button>
@@ -476,6 +517,7 @@
       </div>
       <ol class="wt-list" id="wt-list"></ol>
     </div>
+    <div class="why" id="wt-why" hidden></div>
     <div class="dialog-foot">
       <button type="button" class="btn ghost" id="wt-prev">Previous</button>
       <button type="button" class="btn ghost" id="wt-next">Next</button>
@@ -568,6 +610,9 @@
     <div class="export-grid">
       <button type="button" class="btn" data-export="json">Plan as JSON</button>
       <button type="button" class="btn" data-export="share">Share bundle for a friend</button>
+      <button type="button" class="btn" data-export="ics">Calendar file (.ics)</button>
+      <button type="button" class="btn" data-export="md">Markdown document</button>
+      <button type="button" class="btn" data-export="csv">Spreadsheet (.csv)</button>
     </div>
     <p class="hint">A share bundle carries zone names, not your paces — whoever imports it gets
       their own paces. Hand it to <code>gpp import</code>.</p>
@@ -580,6 +625,7 @@
           <option value="zwo">Zwift ZWO</option>
           <option value="mrc">MRC</option>
           <option value="erg">ERG (needs a power profile)</option>
+          <option value="fit">Garmin FIT file (USB sideload)</option>
         </select></label>
     </div>
     <div class="row">
@@ -612,6 +658,64 @@
     </div>
     <p class="error" id="library-error" role="alert" hidden></p>
     <div class="dialog-foot"><button type="button" class="btn ghost" id="l-close">Close</button></div>
+  </div>
+</dialog>
+
+<!-- ===================== MOVE ===================== -->
+<dialog id="move-dialog">
+  <div class="dialog-body">
+    <h2 id="mv-title">Move session</h2>
+    <p class="hint">The same as dragging, without the drag. The checks re-run after the move.</p>
+    <label class="field">
+      <span class="field-label">New date</span>
+      <input type="date" id="mv-date">
+    </label>
+    <div class="row">
+      <button type="button" class="btn sm ghost" data-shift="-1">A day earlier</button>
+      <button type="button" class="btn sm ghost" data-shift="1">A day later</button>
+      <button type="button" class="btn sm ghost" data-shift="7">A week later</button>
+    </div>
+    <p class="error" id="move-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="mv-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="mv-go">Move</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== HOT DAY ===================== -->
+<dialog id="heat-dialog">
+  <div class="dialog-body">
+    <h2>Hot day</h2>
+    <p class="hint">Enter today's conditions and every pace target is shown slowed for the dew point,
+      the coaches' rule of thumb. The plan itself is not changed.</p>
+    <div class="row">
+      <label class="field grow"><span class="field-label">Temperature (°C)</span><input type="number" id="h-temp" step="0.5" placeholder="28"></label>
+      <label class="field grow"><span class="field-label">Humidity (%)</span><input type="number" id="h-humidity" min="0" max="100" placeholder="65"></label>
+    </div>
+    <p class="hint" id="h-note" aria-live="polite"></p>
+    <p class="error" id="heat-error" role="alert" hidden></p>
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="h-clear">Clear</button>
+      <button type="button" class="btn primary" id="h-apply">Show hot-day paces</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== SHORTCUTS ===================== -->
+<dialog id="keys-dialog">
+  <div class="dialog-body">
+    <h2>Keyboard shortcuts</h2>
+    <dl class="keys">
+      <dt><kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>Command palette</dd>
+      <dt><kbd>?</kbd></dt><dd>This sheet</dd>
+      <dt><kbd>Ctrl</kbd><kbd>Enter</kbd></dt><dd>Write the plan (compose screen)</dd>
+      <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move a focused calendar session by a day or a week</dd>
+      <dt><kbd>Enter</kbd></dt><dd>Edit a focused calendar session</dd>
+      <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous and next step in the watch preview</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close any dialog</dd>
+    </dl>
+    <div class="dialog-foot"><button type="button" class="btn ghost" id="keys-close">Close</button></div>
   </div>
 </dialog>
 

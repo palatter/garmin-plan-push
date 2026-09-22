@@ -113,6 +113,9 @@ jobs:
               "gpp/web/static/review.js",
               "gpp/web/static/review.css",
               "gpp/web/static/style.css",
+              "gpp/web/static/manifest.webmanifest",
+              "gpp/web/static/sw.js",
+              "gpp/web/static/icon.svg",
           }
           missing = need - set(names)
           if missing:

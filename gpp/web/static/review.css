@@ -25,8 +25,9 @@
 .about-lede { margin: 0 0 1rem; }
 .about-gap  { margin: 0 0 .9rem; }
 
-.btn.sm  { padding: .3rem .65rem; font-size: .82rem; }
-.chip.sm { padding: .15rem .55rem; font-size: .76rem; }
+.btn.sm  { padding: .3rem .65rem; font-size: .82rem; min-height: 24px; }
+.chip.sm { padding: .15rem .55rem; font-size: .76rem; min-height: 24px; }
+.link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
 
 kbd {
   font: inherit; font-size: .74rem; padding: .05rem .35rem; margin-right: .15rem;
@@ -63,9 +64,8 @@ kbd {
 
 .panels {
   display: grid; gap: .9rem; margin-bottom: 1.1rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
 }
-@media (max-width: 960px) { .panels { grid-template-columns: 1fr; } }
 
 .panel { padding: .95rem 1.05rem; min-width: 0; }
 .panel-head {
@@ -250,3 +250,65 @@ dialog.palette { max-width: min(34rem, calc(100vw - 2rem)); margin-top: 10vh; }
 }
 .toast.is-bad { background: var(--danger); color: #fff; }
 .toast .btn { background: transparent; color: inherit; border-color: currentColor; }
+
+
+/* --- rationale, week, focus, mileage, recap, heat, education, keys ---------- */
+
+.rationale { max-width: 70ch; color: var(--text-soft); margin: .4rem 0 0; font-size: .95rem; }
+
+.focus { display: grid; gap: .3rem; margin-top: .8rem; font-size: .78rem; }
+.focus:empty { display: none; }
+.focus-title { font-weight: 600; color: var(--text-soft); }
+.focus-row { display: grid; grid-template-columns: 6.2rem 1fr 2.6rem; gap: .5rem; align-items: center; }
+.focus-label { color: var(--text-faint); }
+.focus-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.focus-fill { height: 100%; border-radius: 4px; }
+.focus-val { text-align: right; font-variant-numeric: tabular-nums; }
+.focus .hint { margin: .2rem 0 0; }
+
+.week-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .86rem; }
+.week-item { display: grid; grid-template-columns: 2.4rem 1fr auto; gap: .5rem; align-items: baseline; }
+.week-item.is-done { color: var(--text-faint); text-decoration: line-through; }
+.week-item.is-key .wk-name { font-weight: 600; }
+.wk-day { color: var(--text-faint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; }
+.wk-meta { color: var(--text-faint); font-size: .78rem; white-space: nowrap; }
+#week-next { margin: .6rem 0 0; }
+
+.hw-bar.dual { display: flex; gap: 2px; align-items: flex-end; }
+.hw-bar.dual .hw-fill { flex: 1; }
+.hw-fill.planned { background: var(--border-strong); }
+
+.w-extra { padding: 0 1.15rem .6rem; display: grid; gap: .3rem; font-size: .84rem; }
+.w-extra:empty { display: none; }
+.recap { display: flex; gap: .5rem; align-items: baseline; margin: 0; color: var(--text-soft); }
+.recap .sev { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: .08rem .4rem; border-radius: 4px; background: var(--surface-2); color: var(--text-faint); }
+.recap.green .sev { background: hsl(150 55% 34% / .14); color: var(--ok); }
+.recap.yellow .sev { background: var(--warn-soft); color: var(--warn); }
+.recap.red .sev { background: hsl(0 70% 50% / .13); color: var(--danger); }
+.heat-hint { margin: 0; color: var(--warn); }
+
+.why { margin: .2rem 0 .8rem; padding: .7rem .85rem; border-radius: var(--radius-sm); background: var(--surface-2); font-size: .86rem; display: grid; gap: .35rem; }
+.why p { margin: 0; }
+
+.keys { display: grid; grid-template-columns: auto 1fr; gap: .45rem .9rem; margin: .5rem 0 0; font-size: .9rem; }
+.keys dt { text-align: right; white-space: nowrap; }
+.keys dd { margin: 0; color: var(--text-soft); }
+
+.steps-list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .55rem; font-size: .95rem; }
+.steps-list li { display: flex; gap: .7rem; align-items: baseline; }
+.steps-list li.is-done { color: var(--text-faint); }
+.step-mark { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: .8rem; font-weight: 600; flex: none; }
+.steps-list li.is-done .step-mark { background: var(--ok); color: #fff; }
+.checklist, .recent { margin-bottom: 1rem; }
+
+/* --- print (#161): the sessions, nothing else ------------------------------- */
+
+@media print {
+  .topbar, .review-actions, .review-bar, .w-actions, .w-extra, .panels, dialog, .toast,
+  #view-setup, #view-compose { display: none !important; }
+  main { padding: 0; max-width: none; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .workout { break-inside: avoid; box-shadow: none; border: 1px solid #999; margin-bottom: .5rem; }
+  .w-steps summary { display: none; }
+  .calendar { overflow: visible; }
+}

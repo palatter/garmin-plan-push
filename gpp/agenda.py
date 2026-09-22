@@ -73,7 +73,7 @@ def week_view(plan: Plan, profile: Profile, today: dt.date | None = None) -> dic
                 }
                 for w in sessions
             ],
-            "km": week.km if week else 0.0,
+            "km": round(week.km, 1) if week else 0.0,
             "minutes": round(week.seconds / 60) if week else 0,
             "hard_share": round(week.hard_share, 3) if week else 0.0,
             "phases": phases,

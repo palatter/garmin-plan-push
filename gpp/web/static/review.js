@@ -40,7 +40,7 @@ function fmtDistance(metres) {
 
 function fmtKm(km) {
   if (!km) return '—';
-  return state.units === 'imperial' ? `${(km / 1.609344).toFixed(1)} mi` : `${km} km`;
+  return state.units === 'imperial' ? `${(km / 1.609344).toFixed(1)} mi` : `${Math.round(km * 10) / 10} km`;
 }
 
 function dateOf(iso) { return new Date(`${iso}T00:00:00`); }
@@ -111,6 +111,7 @@ function openPlan(described, fresh, label) {
   }
   renderReview(described);
   show('review');
+  loadRecaps(described);
 }
 
 async function applyPlan(json) {
@@ -199,8 +200,12 @@ function renderReview(data) {
 
   renderLegend();
   renderHealth(data.dashboard);
+  renderFocus(data.load_focus);
+  renderWeek(data.agenda);
   renderSanity(data.report);
   renderChanges();
+  renderRationale(data);
+  renderMileage(data);
 
   const list = $('#r-workouts'), cal = $('#r-calendar');
   if (state.view === 'calendar') {
@@ -426,13 +431,14 @@ function workoutCard(w, index, position) {
   };
   actions.append(
     action('Edit', () => openEdit(index), 'Change the date, steps or cues'),
+    action('Move…', () => openMove(index), 'Move to another day without dragging'),
     action('On the watch', () => openWatch(index), 'Preview the step screens'),
     action('Missed', () => openMissed(index), 'Readapt around it, or keep the plan'),
     action('Rewrite', () => openRewrite(index), 'Let the model rewrite just this session'),
     action('Save', () => saveWorkoutToLibrary(index), 'Keep this session in your library'),
   );
 
-  card.append(head, bar, steps, actions);
+  card.append(head, bar, steps, cardExtras(w, index), actions);
   return card;
 }
 
@@ -591,6 +597,7 @@ function openEdit(index) {
   refreshJson();
   selectEtab('cues');
   setError('#edit-error', '');
+  renderWhy('#e-why', state.plan.json.workouts[index]);
   $('#edit-dialog').showModal();
 }
 
@@ -721,6 +728,7 @@ function renderWatch() {
   // The workout's "why" line rides on the first step when that step has no cue of its own.
   $('#wt-note').textContent = b.note || (watch.k === 0 && w.notes ? w.notes : '');
   $('#wt-face').style.setProperty('--wt-color', rampColor(b.intensity));
+  renderWhy('#wt-why', state.plan.json.workouts[watch.index], 1);
   const list = $('#wt-list');
   list.innerHTML = '';
   blocks.forEach((x, i) => {
@@ -893,8 +901,19 @@ function openExport() {
 
 async function exportAs(format, index) {
   const r = await api('/api/export', { plan: state.plan.json, format, index });
-  downloadText(r.filename, r.text, r.mime);
+  if (r.base64) downloadBase64(r.filename, r.base64, r.mime);
+  else downloadText(r.filename, r.text, r.mime);
   return r;
+}
+
+/* Binary exports (FIT) travel as base64 (#144). */
+function downloadBase64(filename, base64, mime) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function initExport() {
@@ -1014,6 +1033,10 @@ function paletteCommands() {
     { label: 'List view', when: hasPlan, run: () => { setView('list'); show('review'); } },
     { label: 'Send to Garmin', when: hasPlan, run: () => $('#r-push').click() },
     { label: 'Export…', when: hasPlan, run: openExport },
+    { label: 'Export a calendar file (.ics)', when: hasPlan, run: () => exportAs('ics').catch(err => toast(err.message, null, true)) },
+    { label: 'Hot day: show paces slowed for today…', when: hasPlan, run: () => $('#heat-dialog').showModal() },
+    { label: 'Print the plan', when: hasPlan, run: () => window.print() },
+    { label: 'Keyboard shortcuts', when: always, run: () => $('#keys-dialog').showModal() },
     { label: 'Download the plan as JSON', when: hasPlan, run: () => exportAs('json').catch(err => toast(err.message, null, true)) },
     { label: 'Library…', when: always, run: openLibrary },
     { label: 'Save the plan as a template', when: hasPlan, run: savePlanTemplate },
@@ -1063,6 +1086,11 @@ function initPalette() {
       e.preventDefault();
       if (dialog.open) dialog.close(); else open();
     }
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target || {}).tagName);
+    if (e.key === '?' && !typing && !document.querySelector('dialog[open]')) {
+      e.preventDefault();
+      $('#keys-dialog').showModal();
+    }
   });
   input.addEventListener('input', () => { cursor = 0; render(); });
   input.addEventListener('keydown', e => {
@@ -1107,4 +1135,228 @@ function initReview() {
   initRewrite();
   initExport();
   initLibrary();
+  initMove();
+  initHeat();
+  $('#keys-close').addEventListener('click', () => $('#keys-dialog').close());
+}
+
+
+/* ------------------------------------------------------- more panels --- */
+
+/* The model's one-paragraph rationale for the plan (#158). */
+function renderRationale(data) {
+  const node = $('#r-rationale');
+  const text = (data.json && data.json.summary) || '';
+  node.hidden = !text;
+  node.textContent = text;
+}
+
+/* Garmin's three load buckets, computed from the plan (#159). */
+function renderFocus(focus) {
+  const host = $('#health-focus');
+  host.innerHTML = '';
+  if (!focus || !focus.minutes) return;
+  const labels = { low_aerobic: 'Low aerobic', high_aerobic: 'High aerobic', anaerobic: 'Anaerobic' };
+  const colors = { low_aerobic: rampColor(0.24), high_aerobic: rampColor(0.62), anaerobic: rampColor(0.95) };
+  const weeks = focus.window_weeks;
+  host.append(el('div', { class: 'focus-title' }, `Load focus, ${weeks === 1 ? 'this week' : `last ${weeks} weeks`}`));
+  for (const key of ['low_aerobic', 'high_aerobic', 'anaerobic']) {
+    const share = focus.shares[key] || 0;
+    const bar = el('div', { class: 'focus-bar' });
+    const fill = el('div', { class: 'focus-fill' });
+    fill.style.width = `${Math.max(1, share * 100)}%`;
+    fill.style.background = colors[key];
+    bar.append(fill);
+    host.append(
+      el('div', { class: 'focus-row', title: `${focus.minutes[key]} min` },
+        el('span', { class: 'focus-label' }, labels[key]), bar,
+        el('span', { class: 'focus-val' }, `${Math.round(share * 100)}%`)),
+    );
+  }
+  host.append(el('p', { class: 'hint' }, focus.verdict));
+}
+
+/* This week and next, from the server's agenda (#156). */
+function renderWeek(agenda) {
+  const panel = $('#panel-week');
+  const host = $('#week-body');
+  host.innerHTML = '';
+  panel.hidden = !agenda;
+  if (!agenda) return;
+  const week = agenda.this_week;
+  $('#week-title').textContent = week.sessions.length
+    ? `This week · ${fmtKm(week.km)} · ${Math.round((week.hard_share || 0) * 100)}% hard`
+    : 'This week: nothing planned';
+  $('#week-race').textContent = agenda.days_to_race != null && agenda.days_to_race >= 0
+    ? `${agenda.days_to_race} days to ${agenda.race}` : '';
+  for (const s of week.sessions) {
+    const li = el('li', { class: `week-item${s.done ? ' is-done' : ''}${s.name === week.key_session ? ' is-key' : ''}` });
+    li.append(
+      el('span', { class: 'wk-day' }, s.day),
+      el('span', { class: 'wk-name' }, s.name),
+      el('span', { class: 'wk-meta' }, `${s.role} · ${s.minutes} min`),
+    );
+    host.append(li);
+  }
+  const nxt = agenda.next_week;
+  const parts = [];
+  if (nxt.sessions.length) {
+    parts.push(`Next week: ${nxt.sessions.length} sessions, ${fmtKm(nxt.km)}${nxt.key_session ? `, key session ${nxt.key_session}` : ''}.`);
+  }
+  if (agenda.phase_change) parts.push(`${agenda.phase_change}.`);
+  $('#week-next').textContent = parts.join(' ');
+}
+
+/* Synced weekly volume against the plan (#167): shown only once there is history. */
+async function renderMileage(data) {
+  const panel = $('#panel-mileage');
+  if (state.mileage === null) {
+    try { state.mileage = (await api('/api/history', { since_days: 84 })).weeks || []; }
+    catch { state.mileage = []; }
+  }
+  const actual = state.mileage.filter(w => w.km > 0);
+  panel.hidden = !actual.length;
+  if (!actual.length) return;
+  const host = $('#mileage-body');
+  host.innerHTML = '';
+  const planned = Object.fromEntries((data.dashboard.weeks || []).map(w => [w.start, w.km]));
+  const rows = state.mileage.slice(-8).map(w => ({ start: w.start, actual: w.km || 0, planned: planned[w.start] || 0 }));
+  const peak = Math.max(...rows.map(r => Math.max(r.actual, r.planned)), 1);
+  for (const r of rows) {
+    const col = el('div', { class: 'hw', title: `Week of ${r.start}: ran ${fmtKm(r.actual)}${r.planned ? `, planned ${fmtKm(r.planned)}` : ''}` });
+    const bars = el('div', { class: 'hw-bar dual' });
+    const a = el('div', { class: 'hw-fill' });
+    a.style.height = `${(r.actual / peak) * 100}%`;
+    a.style.background = 'var(--accent)';
+    const p = el('div', { class: 'hw-fill planned' });
+    p.style.height = `${(r.planned / peak) * 100}%`;
+    bars.append(a, p);
+    col.append(bars, el('span', { class: 'hw-week' }, r.start.slice(5)), el('span', { class: 'hw-val' }, fmtKm(r.actual)));
+    host.append(col);
+  }
+}
+
+/* --------------------------------------------------------- card extras --- */
+
+function zonesOf(workout) {
+  const out = [];
+  const walk = steps => {
+    for (const s of steps || []) {
+      if (s.kind === 'repeat') walk(s.steps);
+      const t = s.target;
+      if (t && t.type === 'pace' && typeof t.zone === 'string' && !out.includes(t.zone)) out.push(t.zone);
+    }
+  };
+  walk(workout && workout.steps);
+  return out;
+}
+
+/* Recap line from the synced run (#155) and hot-day paces (#166) under a card. */
+function cardExtras(w, index) {
+  const box = el('div', { class: 'w-extra' });
+  const recap = state.recaps[`${w.date}|${w.name}`];
+  if (recap) box.append(el('p', { class: `recap ${recap.status}` }, el('span', { class: 'sev' }, recap.status), recap.text));
+  if (state.heat && state.plan) {
+    const zones = zonesOf(state.plan.json.workouts[index]).filter(z => state.heat.zones[z]);
+    if (zones.length) {
+      const text = zones.map(z => `${z} ${state.heat.zones[z].slow}–${state.heat.zones[z].fast}`).join(' · ');
+      box.append(el('p', { class: 'heat-hint' }, `Hot-day paces (dew point ${state.heat.dew_point_c} °C): ${text}`));
+    }
+  }
+  return box;  // empty boxes collapse in CSS; append(null) would print the word null
+}
+
+async function loadRecaps(described) {
+  const today = todayIso();
+  state.recaps = {};
+  if (!described.workouts.some(w => w.date < today)) return;
+  try {
+    const { recaps } = await api('/api/recap', { plan: described.json });
+    state.recaps = Object.fromEntries(recaps.map(r => [`${r.date}|${r.name}`, r]));
+  } catch {
+    state.recaps = {};
+  }
+  if (Object.keys(state.recaps).length && state.plan === described) renderReview(described);
+}
+
+/* ------------------------------------------------------------ education --- */
+
+/* One or two short explanations of the session type, with the evidence line (#164). */
+function renderWhy(sel, workout, max = 2) {
+  const host = $(sel);
+  host.innerHTML = '';
+  const keys = [];
+  const role = workout ? workout.role : null;
+  const generic = role === 'quality' || role === 'cross';
+  if (role && !generic && state.education[role]) keys.push(role);
+  // The work zones say what the session is for; the warm-up zone comes last.
+  const zones = zonesOf(workout);
+  const work = zones.filter(z => z !== 'easy' && z !== 'recovery');
+  for (const z of [...work, ...zones.filter(z => !work.includes(z))]) {
+    if (state.education[z] && !keys.includes(z)) keys.push(z);
+  }
+  if (!keys.length && role === 'quality') keys.push('threshold');
+  const entries = keys.slice(0, max).map(k => state.education[k]);
+  host.hidden = !entries.length;
+  for (const e of entries) {
+    host.append(
+      el('p', {}, el('strong', {}, `${e.title}: `), e.what, ' ', el('em', {}, e.feel)),
+      el('p', { class: 'hint' }, `${e.evidence} — ${e.source}`),
+    );
+  }
+}
+
+/* ----------------------------------------------------------------- move --- */
+
+const move = { index: null };
+
+function openMove(index) {
+  move.index = index;
+  const w = state.plan.workouts[index];
+  $('#mv-title').textContent = `Move ${w.name}`;
+  $('#mv-date').value = w.date;
+  setError('#move-error', '');
+  $('#move-dialog').showModal();
+}
+
+function initMove() {
+  $('#mv-cancel').addEventListener('click', () => $('#move-dialog').close());
+  $$('#move-dialog [data-shift]').forEach(b => b.addEventListener('click', () => {
+    $('#mv-date').value = isoAdd($('#mv-date').value || todayIso(), Number(b.dataset.shift));
+  }));
+  $('#mv-go').addEventListener('click', async () => {
+    const iso = $('#mv-date').value;
+    if (!iso) { setError('#move-error', 'Pick a date.'); return; }
+    $('#move-dialog').close();
+    await moveWorkout(move.index, iso);
+  });
+}
+
+/* -------------------------------------------------------------- hot day --- */
+
+function initHeat() {
+  $('#r-heat-badge').addEventListener('click', () => $('#heat-dialog').showModal());
+  $('#h-clear').addEventListener('click', () => {
+    state.heat = null;
+    $('#r-heat-badge').hidden = true;
+    $('#h-note').textContent = '';
+    $('#heat-dialog').close();
+    if (state.plan) renderReview(state.plan);
+  });
+  $('#h-apply').addEventListener('click', async () => {
+    setError('#heat-error', '');
+    try {
+      state.heat = await api('/api/heat', { temp_c: $('#h-temp').value, humidity_pct: $('#h-humidity').value });
+    } catch (err) {
+      setError('#heat-error', err.message);
+      return;
+    }
+    $('#h-note').textContent = `Dew point ${state.heat.dew_point_c} °C, +${state.heat.slowdown_spk} s/km. ${state.heat.note}`;
+    const badge = $('#r-heat-badge');
+    badge.hidden = false;
+    badge.textContent = `Hot day: +${state.heat.slowdown_spk} s/km`;
+    $('#heat-dialog').close();
+    if (state.plan) renderReview(state.plan);
+    toast(state.heat.note);
+  });
 }

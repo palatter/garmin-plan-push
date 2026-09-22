@@ -126,6 +126,10 @@ def test_state_carries_education_recent_and_describe_carries_agenda(tmp_path):
     assert app.state({})["recent"][0]["name"] == PLAN["plan"]
     ics = app.export({"plan": PLAN, "format": "ics"})
     assert ics["filename"].endswith(".ics") and ics["mime"] == "text/calendar"
+    md = app.export({"plan": PLAN, "format": "md"})
+    assert md["filename"].endswith(".md") and md["text"].startswith("# ")
+    csv_out = app.export({"plan": PLAN, "format": "csv"})
+    assert csv_out["mime"] == "text/csv" and csv_out["text"].count(chr(10)) >= len(PLAN["workouts"])
 
 
 def test_manifest_and_service_worker_are_served_from_the_root(tmp_path):
