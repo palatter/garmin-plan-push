@@ -15,6 +15,10 @@ before and after it gets there.
 Runs as a local app in your browser. Nothing is hosted, no account to make,
 and your Garmin password never leaves your machine.
 
+**New here?** The [guide](https://palatter.github.io/garmin-plan-push/) walks
+through the install, the first plan and sending it to the watch, in plain
+language. The rest of this README is the reference.
+
 ## Install
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (one

@@ -37,6 +37,8 @@ or deliberately not built.
   styles, calendar/FIT/Markdown/CSV export, installable (manifest and service
   worker), accessibility and contrast tests.
 - Onboarding: goal race, availability, injuries, standing rules, recent volume.
+- A user guide, served from GitHub Pages at
+  https://palatter.github.io/garmin-plan-push/ (`docs/`).
 - Sanity checks: long-run spike, weekly ramp, deload, hard share, middle gear,
   back-to-back quality, monotony, taper shape, race windows, availability and
   constraints, plus long-run share, two long runs, hard sessions around races,

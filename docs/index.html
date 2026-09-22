@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="What Garmin Plan Push is, how to install it in three commands, and how to write, review and send a training plan to a Garmin watch.">
+<meta name="theme-color" content="#d1471a">
+<meta property="og:title" content="Garmin Plan Push Guide">
+<meta property="og:description" content="What Garmin Plan Push is, how to install it in three commands, and how to write, review and send a training plan to a Garmin watch.">
+<meta property="og:url" content="https://palatter.github.io/garmin-plan-push/">
+<meta property="og:type" content="website">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Garmin Plan Push Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --surface: #ffffff;
+    --surface-2: #e9ebef;
+    --ink: #15181d;
+    --muted: #5b6473;
+    --faint: #7b8494;
+    --line: #dcdfe5;
+    --line-strong: #c3c8d1;
+    --accent: #d1471a;
+    --accent-ink: #ffffff;
+    --accent-soft: #fbe6de;
+    --ok: #1d7a44;
+    --ok-soft: #dff3e6;
+    --warn: #9a5400;
+    --warn-soft: #fdecd2;
+    --easy: #2a9d8f;
+    --threshold: #d1471a;
+    --hard: #b3261e;
+    --code-bg: #1b1f27;
+    --code-ink: #e8ebf0;
+    --code-muted: #8b93a3;
+    --shadow: 0 1px 2px rgb(21 24 29 / .06), 0 8px 24px rgb(21 24 29 / .06);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", Roboto, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f1216;
+      --surface: #171b21;
+      --surface-2: #20262e;
+      --ink: #eceff3;
+      --muted: #a2aab6;
+      --faint: #7f8896;
+      --line: #2a3039;
+      --line-strong: #3b434f;
+      --accent: #ff7a4d;
+      --accent-ink: #1a0c07;
+      --accent-soft: #3a1d13;
+      --ok: #5ccb8a;
+      --ok-soft: #14301f;
+      --warn: #f2b35a;
+      --warn-soft: #3a2a10;
+      --easy: #3fb8a8;
+      --threshold: #ff7a4d;
+      --hard: #ff6b61;
+      --code-bg: #0b0d11;
+      --code-ink: #e8ebf0;
+      --code-muted: #7f8896;
+      --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 8px 24px rgb(0 0 0 / .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f1216;
+    --surface: #171b21;
+    --surface-2: #20262e;
+    --ink: #eceff3;
+    --muted: #a2aab6;
+    --faint: #7f8896;
+    --line: #2a3039;
+    --line-strong: #3b434f;
+    --accent: #ff7a4d;
+    --accent-ink: #1a0c07;
+    --accent-soft: #3a1d13;
+    --ok: #5ccb8a;
+    --ok-soft: #14301f;
+    --warn: #f2b35a;
+    --warn-soft: #3a2a10;
+    --easy: #3fb8a8;
+    --threshold: #ff7a4d;
+    --hard: #ff6b61;
+    --code-bg: #0b0d11;
+    --code-ink: #e8ebf0;
+    --code-muted: #7f8896;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 8px 24px rgb(0 0 0 / .35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  h1, h2, h3 { font-family: var(--display); line-height: 1.12; text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+  h1 { font-size: clamp(2rem, 5.2vw, 3.1rem); font-weight: 700; }
+  h2 { font-size: clamp(1.45rem, 3vw, 1.85rem); font-weight: 700; }
+  h3 { font-size: 1.12rem; font-weight: 700; }
+  p { margin: 0; }
+  p + p { margin-top: .8em; }
+  code, kbd, pre { font-family: var(--mono); }
+  code { font-size: .92em; background: var(--surface-2); padding: .08em .38em; border-radius: 4px; }
+  kbd { font-size: .8em; padding: .12em .45em; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); }
+  strong { font-weight: 600; }
+  ul, ol { margin: 0; padding-left: 1.2rem; }
+  li + li { margin-top: .35rem; }
+  .muted { color: var(--muted); }
+
+  /* nav */
+  .nav {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 960px; margin: 0 auto; padding: .55rem 16px;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .brand { display: flex; align-items: center; gap: .55rem; font-family: var(--display); font-weight: 700; white-space: nowrap; color: var(--ink); text-decoration: none; }
+  .brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); position: relative; flex: none; }
+  .brand-mark::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 5px; height: 7px; border-radius: 2px; background: linear-gradient(90deg, var(--accent-ink) 0 30%, transparent 30% 45%, var(--accent-ink) 45% 100%); opacity: .9; }
+  .nav-links { display: flex; gap: .15rem; overflow-x: auto; scrollbar-width: none; margin-left: auto; }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: .86rem; padding: .3rem .55rem; border-radius: 6px; white-space: nowrap; }
+  .nav-links a:hover { color: var(--ink); background: var(--surface-2); }
+
+  /* layout */
+  .wrap { max-width: 960px; margin: 0 auto; padding-block: 0 4rem; padding-inline: 16px; }
+  section { padding-block: 2.6rem 0; scroll-margin-top: 3.6rem; }
+  section > header { display: grid; gap: .5rem; margin-bottom: 1.2rem; max-width: 62ch; }
+  .eyebrow { font-family: var(--mono); font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--accent); font-weight: 500; }
+  .lede { font-size: 1.08rem; color: var(--muted); max-width: 60ch; }
+  .prose { max-width: 66ch; }
+  .prose p + p { margin-top: .8em; }
+  .hr { border: 0; border-top: 1px solid var(--line); margin: 2.6rem 0 0; }
+
+  /* hero */
+  .hero { padding-block: 3rem 0; display: grid; gap: 1.4rem; }
+  .hero-top { display: grid; gap: .9rem; max-width: 64ch; }
+  .hero .lede { font-size: 1.15rem; }
+  .flow {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; align-items: stretch;
+    margin-top: .4rem;
+  }
+  .flow-step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .7rem .8rem; display: grid; gap: .25rem; min-width: 0; position: relative; }
+  .flow-step .k { font-family: var(--mono); font-size: .72rem; color: var(--faint); letter-spacing: .06em; text-transform: uppercase; }
+  .flow-step .v { font-weight: 600; font-size: .95rem; line-height: 1.25; }
+  .flow-step .d { font-size: .82rem; color: var(--muted); }
+  .flow-step.you { border-color: var(--accent); }
+  .flow-step.you .k { color: var(--accent); }
+  @media (max-width: 720px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .flow-step:last-child { grid-column: 1 / -1; } }
+  .facts { display: flex; flex-wrap: wrap; gap: .4rem .9rem; font-size: .88rem; color: var(--muted); }
+  .facts span::before { content: "•"; margin-right: .5rem; color: var(--line-strong); }
+  .facts span:first-child::before { content: none; }
+
+  /* cards */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  @media (max-width: 720px) { .grid-3 { grid-template-columns: 1fr; } }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.2rem; display: grid; gap: .45rem; align-content: start; }
+  .tile h3 { display: flex; align-items: baseline; gap: .6rem; }
+  .tile .num { font-family: var(--mono); font-size: .78rem; color: var(--accent); font-weight: 500; }
+  .tile p { color: var(--muted); font-size: .95rem; }
+
+  /* checklist */
+  .check { list-style: none; padding: 0; display: grid; gap: .6rem; max-width: 66ch; }
+  .check li { display: grid; grid-template-columns: 1.4rem 1fr; gap: .6rem; align-items: start; }
+  .check li::before { content: ""; width: 1.05rem; height: 1.05rem; margin-top: .22rem; border-radius: 50%; border: 2px solid var(--ok); background: var(--ok-soft); background-image: linear-gradient(var(--ok), var(--ok)); background-size: 0; }
+  .check li.opt::before { border-color: var(--line-strong); background: var(--surface-2); }
+  .check .tag { font-family: var(--mono); font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; margin-left: .4rem; }
+
+  /* steps */
+  .steps { display: grid; gap: 1rem; counter-reset: step; }
+  .step { display: grid; grid-template-columns: 2.4rem 1fr; gap: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
+  .step::before { counter-increment: step; content: counter(step); font-family: var(--display); font-weight: 700; font-size: 1.4rem; color: var(--accent); line-height: 1; padding-top: .15rem; }
+  .step-body { display: grid; gap: .6rem; min-width: 0; }
+  .step-body p { color: var(--muted); font-size: .95rem; max-width: 62ch; }
+  .step-body h3 { color: var(--ink); }
+  @media (max-width: 480px) { .step { grid-template-columns: 1fr; } .step::before { padding: 0; } }
+
+  /* os tabs */
+  .tabs { display: inline-flex; gap: .25rem; padding: .25rem; background: var(--surface-2); border-radius: 8px; }
+  .tabs button { font: inherit; font-size: .84rem; font-weight: 600; color: var(--muted); background: none; border: 0; padding: .3rem .7rem; border-radius: 6px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+
+  /* code */
+  .cmd { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: var(--radius-sm); padding: .8rem 5.4rem .8rem 1rem; overflow-x: auto; margin: 0; font-size: .86rem; line-height: 1.5; }
+  .cmd pre { margin: 0; white-space: pre; }
+  .cmd .c { color: var(--code-muted); }
+  .cmd .copy { position: absolute; top: .5rem; right: .5rem; font: inherit; font-family: var(--body); font-size: .74rem; font-weight: 600; color: var(--code-ink); background: rgb(255 255 255 / .1); border: 1px solid rgb(255 255 255 / .15); border-radius: 5px; padding: .25rem .55rem; cursor: pointer; }
+  .cmd .copy:hover { background: rgb(255 255 255 / .18); }
+  .cmd .copy[data-done="1"] { color: #8ee0a8; }
+  .note { font-size: .9rem; color: var(--muted); border-left: 3px solid var(--line-strong); padding: .15rem 0 .15rem .9rem; max-width: 62ch; }
+
+  /* feature rows */
+  .rows { display: grid; gap: 0; border-top: 1px solid var(--line); max-width: 74ch; }
+  .row { display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; padding: .85rem 0; border-bottom: 1px solid var(--line); }
+  .row dt { font-weight: 600; }
+  .row dd { margin: 0; color: var(--muted); font-size: .95rem; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap: .2rem; } }
+
+  /* mock: session card */
+  .mocks { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1rem; margin: 1.4rem 0 .6rem; align-items: start; }
+  @media (max-width: 720px) { .mocks { grid-template-columns: 1fr; } }
+  .mock-label { font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-bottom: .45rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .card-head { display: grid; grid-template-columns: auto 1fr auto; gap: .9rem; align-items: start; padding: .95rem 1.1rem .6rem; }
+  .date { text-align: center; line-height: 1; }
+  .date .dow { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .date .dom { font-family: var(--display); font-weight: 700; font-size: 1.5rem; }
+  .card-title { font-weight: 600; }
+  .card-sub { font-size: .86rem; color: var(--muted); }
+  .metrics { display: flex; gap: 1rem; font-variant-numeric: tabular-nums; }
+  .metric { text-align: right; line-height: 1.15; }
+  .metric b { display: block; font-weight: 600; font-size: .95rem; }
+  .metric span { font-family: var(--mono); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .profile { display: flex; align-items: flex-end; gap: 2px; height: 58px; padding: 0 1.1rem; }
+  .profile i { display: block; border-radius: 3px 3px 0 0; min-width: 4px; }
+  .profile .e { background: var(--easy); height: 34%; }
+  .profile .t { background: var(--threshold); height: 78%; }
+  .profile .r { background: var(--easy); height: 22%; opacity: .75; }
+  .steps-list { list-style: none; padding: .7rem 1.1rem 1rem; margin: 0; display: grid; gap: .3rem; font-size: .88rem; }
+  .steps-list li { display: grid; grid-template-columns: 1.2rem 6.5rem 1fr auto; gap: .6rem; align-items: baseline; }
+  .steps-list .sw { width: .7rem; height: .7rem; border-radius: 2px; display: inline-block; transform: translateY(1px); }
+  .steps-list .z { font-family: var(--mono); font-size: .8rem; color: var(--muted); }
+  .steps-list .rep { grid-column: 1 / -1; font-family: var(--mono); font-size: .74rem; color: var(--faint); letter-spacing: .05em; text-transform: uppercase; margin-top: .2rem; }
+  .steps-list .in { padding-left: .9rem; }
+  .cue { color: var(--muted); font-style: italic; }
+  .card-foot { display: flex; gap: .5rem; padding: 0 1.1rem .9rem; flex-wrap: wrap; }
+  .chip { font-size: .78rem; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); }
+  .finding { display: grid; grid-template-columns: auto 1fr; gap: .7rem; align-items: start; background: var(--warn-soft); color: var(--ink); padding: .7rem .9rem; border-radius: var(--radius-sm); font-size: .88rem; margin-top: .8rem; }
+  .finding .sev { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; font-weight: 500; color: var(--warn); padding-top: .2rem; }
+
+  /* mock: watch */
+  .watch { display: grid; place-items: center; padding: .4rem 0; }
+  .face { width: 214px; height: 214px; border-radius: 50%; background: #0a0c10; color: #eef1f5; border: 7px solid #262b33; box-shadow: 0 0 0 3px #0a0c10, 0 12px 30px rgb(0 0 0 / .35); display: grid; place-content: center; text-align: center; gap: .15rem; padding: 1.2rem; font-family: var(--mono); }
+  .face .s { font-size: .62rem; letter-spacing: .1em; color: #8b93a3; }
+  .face .n { font-family: var(--display); font-weight: 700; font-size: 1.85rem; letter-spacing: -.02em; line-height: 1; }
+  .face .u { font-size: .74rem; color: #ff7a4d; }
+  .face .q { font-size: .66rem; color: #c8ced8; margin-top: .4rem; line-height: 1.3; }
+  .face .ring { width: 172px; height: 3px; margin: .45rem auto 0; background: #262b33; border-radius: 2px; position: relative; }
+  .face .ring::after { content: ""; position: absolute; inset: 0 71% 0 0; background: #ff7a4d; border-radius: 2px; }
+  .watch-cap { font-size: .86rem; color: var(--muted); text-align: center; max-width: 30ch; margin-top: .6rem; }
+
+  /* shortcuts table */
+  table { border-collapse: collapse; width: 100%; max-width: 62ch; font-size: .93rem; }
+  th, td { text-align: left; padding: .5rem .6rem .5rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+  td:first-child { white-space: nowrap; width: 11rem; }
+
+  /* privacy + trouble */
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem 2.4rem; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+  .two h3 { margin-bottom: .5rem; }
+  .qa { display: grid; gap: .9rem; }
+  .qa dt { font-weight: 600; }
+  .qa dd { margin: .15rem 0 0; color: var(--muted); font-size: .95rem; }
+
+  footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; font-size: .86rem; color: var(--muted); }
+  footer a { color: var(--muted); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cmd .copy { transition: background .15s; }
+    html { scroll-behavior: smooth; }
+  }
+  @media print {
+    .nav, .copy { display: none !important; }
+    body { background: #fff; color: #000; }
+    .cmd { background: #f2f2f2; color: #000; border: 1px solid #ccc; }
+  }
+</style>
+<style>img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="nav" role="navigation" aria-label="Sections">
+  <div class="nav-inner">
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Garmin Plan Push</a>
+    <div class="nav-links">
+      <a href="#what">What it is</a>
+      <a href="#need">What you need</a>
+      <a href="#install">Install</a>
+      <a href="#setup">Setup</a>
+      <a href="#write">Write</a>
+      <a href="#review">Review</a>
+      <a href="#send">Send</a>
+      <a href="#after">After</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#help">Help</a>
+    </div>
+  </div>
+</div>
+
+<main class="wrap" id="top">
+
+  <section class="hero">
+    <div class="hero-top">
+      <span class="eyebrow">Free · open source · runs on your own computer</span>
+      <h1>Tell it what you're training for. Get real workouts on your Garmin.</h1>
+      <p class="lede">Describe a training block in plain English. An AI writes the plan, the app checks it against what the evidence actually supports, you change whatever you like, and every session lands on your watch with steps, pace targets and the cues you wrote.</p>
+    </div>
+    <div class="flow" aria-label="How a plan gets to the watch">
+      <div class="flow-step you"><span class="k">You</span><span class="v">Describe it</span><span class="d">"Four weeks to a 10k, five runs a week, long run on Sunday."</span></div>
+      <div class="flow-step"><span class="k">AI</span><span class="v">Writes the plan</span><span class="d">Claude, ChatGPT, Gemini, a local model, or paste from any chat.</span></div>
+      <div class="flow-step"><span class="k">App</span><span class="v">Checks it</span><span class="d">Long-run jumps, weekly ramps, hard days back to back, your own rules.</span></div>
+      <div class="flow-step you"><span class="k">You</span><span class="v">Review and edit</span><span class="d">Drag sessions, change steps, see what the watch will show.</span></div>
+      <div class="flow-step"><span class="k">Garmin</span><span class="v">On the watch</span><span class="d">Structured workouts on your Connect calendar, synced like any other.</span></div>
+    </div>
+    <div class="facts">
+      <span>Works with Fenix, Epix, Forerunner 255/265/955/965, Edge 530 and up</span>
+      <span>No account to create</span>
+      <span>Your Garmin password never leaves your machine</span>
+    </div>
+  </section>
+
+  <hr class="hr">
+
+  <section id="what">
+    <header>
+      <span class="eyebrow">What it is</span>
+      <h2>Three things, in order</h2>
+      <p class="lede">It is a small app that runs on your computer and opens in your browser. Everything it does fits under one of these.</p>
+    </header>
+    <div class="grid-3">
+      <div class="tile">
+        <h3><span class="num">01</span>Write</h3>
+        <p>Say what you want the way you would tell a coach. Race, weeks, days you can run, what to avoid. The AI writes a full block: dates, sessions, steps, targets in your zones. Or start from a template and set the dates.</p>
+      </div>
+      <div class="tile">
+        <h3><span class="num">02</span>Review</h3>
+        <p>Every plan goes through the same checks before it goes anywhere. You see the sessions drawn by effort, the warnings with the dates to look at, and you can edit, drag, undo, or preview a session screen by screen as the watch will show it.</p>
+      </div>
+      <div class="tile">
+        <h3><span class="num">03</span>Send</h3>
+        <p>One click uploads the sessions to Garmin Connect and schedules them. Your watch picks them up on its next sync. Edit the plan later and send again; the workouts update in place instead of piling up.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="need">
+    <header>
+      <span class="eyebrow">What you need</span>
+      <h2>A checklist before you start</h2>
+    </header>
+    <ul class="check">
+      <li><span><strong>A Garmin that accepts structured workouts.</strong> Fenix 6, 7 or 8, Epix, Forerunner 255, 265, 955 or 965, Edge 530 and newer. Older models like the Forerunner 235 or Vivoactive 3 cannot run structured workouts at all, so this will not help there.</span></li>
+      <li><span><strong>Your Garmin Connect login.</strong> The same email and password you use in the Connect app. If you have two-factor turned on, the app asks for the code when it sends.</span></li>
+      <li><span><strong>A computer.</strong> Windows, macOS or Linux, and about ten minutes for the install and first plan.</span></li>
+      <li class="opt"><span><strong>An AI key, if you have one.</strong><span class="tag">optional</span> Claude, ChatGPT or Gemini keys make plan writing automatic. Without one, pick <em>paste</em>: the app gives you the prompt, you drop it into whichever assistant you already use, and paste the answer back. Same checks, same watch.</span></li>
+      <li><span><strong>A recent hard race or time trial.</strong> Any distance, any date in the last few months. That one time is what the app uses to work out your training paces.</span></li>
+    </ul>
+  </section>
+
+  <section id="install">
+    <header>
+      <span class="eyebrow">Install</span>
+      <h2>Three commands, then it opens by itself</h2>
+      <p class="lede">The app is installed with <strong>uv</strong>, a small tool that also fetches the right Python for you. You never touch Python directly.</p>
+    </header>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <h3>Install uv</h3>
+          <div class="tabs" role="tablist" aria-label="Operating system">
+            <button type="button" role="tab" id="tab-win" aria-selected="true" aria-controls="cmd-win" data-os="win">Windows</button>
+            <button type="button" role="tab" id="tab-mac" aria-selected="false" aria-controls="cmd-mac" data-os="mac">macOS and Linux</button>
+          </div>
+          <div class="cmd" id="cmd-win" role="tabpanel" aria-labelledby="tab-win"><pre><span class="c"># in PowerShell</span>
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</pre><button type="button" class="copy" aria-label="Copy the uv install command">Copy</button></div>
+          <div class="cmd" id="cmd-mac" role="tabpanel" aria-labelledby="tab-mac" hidden><pre><span class="c"># in Terminal</span>
+curl -LsSf https://astral.sh/uv/install.sh | sh</pre><button type="button" class="copy" aria-label="Copy the uv install command">Copy</button></div>
+          <p>Then close the terminal window and open a new one, so it knows where uv lives.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Install the app</h3>
+          <div class="cmd"><pre>uv tool install git+https://github.com/palatter/garmin-plan-push</pre><button type="button" class="copy" aria-label="Copy the app install command">Copy</button></div>
+          <p>This downloads the app and everything it needs into its own folder. It does not change anything else on the computer.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Open it</h3>
+          <div class="cmd"><pre>gpp web</pre><button type="button" class="copy" aria-label="Copy the command that opens the app">Copy</button></div>
+          <p>Your browser opens on the app. Leave the terminal window open while you use it; closing it closes the app. Next time, it is the same one command.</p>
+        </div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:1rem">Later, <code>uv tool upgrade garmin-plan-push</code> updates it, and <code>gpp doctor</code> checks that the profile, any AI keys and Garmin are all set up. If <code>gpp</code> is "not recognized" right after installing, open a new terminal window first; on Windows, <code>uv tool update-shell</code> fixes the path for good.</p>
+  </section>
+
+  <section id="setup">
+    <header>
+      <span class="eyebrow">First run</span>
+      <h2>Your paces, from one race</h2>
+    </header>
+    <div class="prose">
+      <p>The first screen asks for a name and a race you ran hard: distance and time, for example <em>10k, 47:30</em>. From that it works out your threshold pace and every training zone, and shows them as you type. You can also enter a threshold pace directly, or a lactate-threshold heart rate and max heart rate if you train by heart rate.</p>
+      <p>Under <strong>About your training</strong> it asks what a coach would ask, all optional: your goal race and its date, how many days a week you can run and how long on weekdays and weekends, which day the long run goes, your longest recent run and typical weekly volume, injuries, and standing rules such as "no hills for six weeks" or "keep Mondays easy". Everything you enter goes into every plan the AI writes and into the checks that judge it.</p>
+      <p>You can change any of it later from the profile chip in the top bar.</p>
+    </div>
+  </section>
+
+  <section id="write">
+    <header>
+      <span class="eyebrow">Write a plan</span>
+      <h2>Describe it the way you'd tell a coach</h2>
+    </header>
+    <div class="prose">
+      <p>Type what you want in the box. Be as specific or as vague as you like: <em>"Eight weeks to a half marathon. Four runs a week, long run Sunday, one threshold session, nothing hard on Mondays."</em> The chips under the box give you a starting point, and <strong>Open a template</strong> lists ready-made blocks and sessions you can date and use as they are.</p>
+      <p>Pick who writes it under <strong>Written by</strong>:</p>
+    </div>
+    <dl class="rows" style="margin-top:1rem">
+      <div class="row"><dt>Paste</dt><dd>No key needed. The app builds the full prompt with your paces, dates and rules. Copy it into ChatGPT, Claude, Gemini, Copilot, anything. Paste the reply back. The app validates it and shows the plan.</dd></div>
+      <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), restart the app, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
+      <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine. The app can measure whether a given model is good enough to follow the plan format before you rely on it.</dd></div>
+    </dl>
+    <div class="cmd" style="margin-top:1rem"><pre><span class="c"># set the one you have, then restart the app</span>
+setx ANTHROPIC_API_KEY sk-ant-...   <span class="c"># Claude      (Windows; on macOS/Linux: export ANTHROPIC_API_KEY=...)</span>
+setx OPENAI_API_KEY sk-...          <span class="c"># ChatGPT</span>
+setx GEMINI_API_KEY AIza...         <span class="c"># Gemini</span></pre><button type="button" class="copy" aria-label="Copy the API key commands">Copy</button></div>
+    <p class="note" style="margin-top:1rem">Whatever writes it, the plan is treated the same way: it must fit the plan format, and it goes through the checks. When a check finds something blocking, the app sends the finding back to the AI as a correction and asks again, up to a few times, before showing you the result.</p>
+  </section>
+
+  <section id="review">
+    <header>
+      <span class="eyebrow">Review</span>
+      <h2>Look before it goes anywhere</h2>
+      <p class="lede">The review screen is where you spend most of your time. Each session is a card; the panels above them summarise the block.</p>
+    </header>
+
+    <div class="mocks">
+      <div>
+        <div class="mock-label">A session card, as the app draws it (example)</div>
+        <article class="card" aria-label="Example session card">
+          <div class="card-head">
+            <div class="date"><div class="dow">Thu</div><div class="dom">24</div></div>
+            <div><div class="card-title">Threshold 5 × 1 km</div><div class="card-sub">Comfortably hard. Relaxed, tall, quick feet on every rep.</div></div>
+            <div class="metrics">
+              <div class="metric"><b>53 min</b><span>time</span></div>
+              <div class="metric"><b>10.7 km</b><span>distance</span></div>
+              <div class="metric"><b>41</b><span>load</span></div>
+            </div>
+          </div>
+          <div class="profile" aria-hidden="true">
+            <i class="e" style="flex:15"></i>
+            <i class="t" style="flex:4"></i><i class="r" style="flex:2"></i>
+            <i class="t" style="flex:4"></i><i class="r" style="flex:2"></i>
+            <i class="t" style="flex:4"></i><i class="r" style="flex:2"></i>
+            <i class="t" style="flex:4"></i><i class="r" style="flex:2"></i>
+            <i class="t" style="flex:4"></i>
+            <i class="e" style="flex:10"></i>
+          </div>
+          <ol class="steps-list">
+            <li><span class="sw" style="background:var(--easy)"></span><span>Warm up 15m</span><span class="z">easy 5:20–5:50/km</span><span class="cue">tall posture</span></li>
+            <li><span class="rep">5 × repeat</span></li>
+            <li class="in"><span class="sw" style="background:var(--threshold)"></span><span>Run 1 km</span><span class="z">threshold 4:00–4:10/km</span><span class="cue">quick feet</span></li>
+            <li class="in"><span class="sw" style="background:var(--easy);opacity:.75"></span><span>Recover 2m</span><span class="z">jog</span><span></span></li>
+            <li><span class="sw" style="background:var(--easy)"></span><span>Cool down 10m</span><span class="z">easy</span><span></span></li>
+          </ol>
+          <div class="card-foot"><span class="chip">Edit</span><span class="chip">Move…</span><span class="chip">On the watch</span><span class="chip">Missed</span><span class="chip">Rewrite</span></div>
+        </article>
+        <div class="finding" role="note"><span class="sev">WARN</span><span>32% of running time is at threshold or harder; mostly-easy is the well-supported pattern (aim under ~30%). <span class="muted">A finding from the sanity report, as the app words it.</span></span></div>
+      </div>
+      <div>
+        <div class="mock-label">The same step on the watch (preview)</div>
+        <div class="watch" aria-label="Example watch screen">
+          <div class="face">
+            <div class="s">STEP 4 OF 14</div>
+            <div class="n">1.00 km</div>
+            <div class="u">4:00–4:10 /km</div>
+            <div class="q">quick feet</div>
+            <div class="ring" aria-hidden="true"></div>
+          </div>
+        </div>
+        <p class="watch-cap"><strong>On the watch</strong> steps through every screen the watch will show, so you can check the cues fit and the targets make sense before sending.</p>
+      </div>
+    </div>
+
+    <dl class="rows">
+      <div class="row"><dt>Sanity report</dt><dd>What the checks found, with dates. A long run that jumps past anything in the last month, a weekly ramp over 25%, hard days back to back, a taper that cuts too little or too much, a race too close to your goal race, anything that breaks your own rules. Warnings are for you to judge; blocking findings never reach the watch.</dd></div>
+      <div class="row"><dt>Plan health</dt><dd>Every week as a bar: height is volume, colour is the share of hard running. Below it, load focus splits the recent weeks the way Garmin's watch does: low aerobic, high aerobic, anaerobic.</dd></div>
+      <div class="row"><dt>This week</dt><dd>The days ahead with the key session, the next phase change and the days left to your race.</dd></div>
+      <div class="row"><dt>Edit</dt><dd>Any session: the date, the name, the one line that goes on the wrist, a cue per step, or retype the whole session in one line, like <code>15m wu, 5 x 1km @ T w/ 2m jog, 10m cd</code>.</dd></div>
+      <div class="row"><dt>Calendar</dt><dd>Drag a session to another day, or use <strong>Move…</strong> on the card. The checks re-run and the weekly totals update straight away.</dd></div>
+      <div class="row"><dt>Changes</dt><dd>Everything you changed since the plan was written or last sent, with undo and reset.</dd></div>
+      <div class="row"><dt>Missed and Pause</dt><dd>Missed a session? <em>Readapt</em> moves or drops what is around it by a stated rule and tells you why; <em>Keep</em> leaves the plan alone. <em>Pause</em> for an illness or holiday shifts everything and eases the first week back.</dd></div>
+      <div class="row"><dt>Hot day</dt><dd>Enter today's temperature and humidity and every pace target is shown slowed for the dew point, without changing the plan.</dd></div>
+      <div class="row"><dt>Export</dt><dd>The plan as a calendar file for Google, Apple or Outlook, as Markdown, CSV or a share bundle for a friend; one session as a Garmin FIT file or in the formats other training apps read.</dd></div>
+    </dl>
+  </section>
+
+  <section id="send">
+    <header>
+      <span class="eyebrow">Send</span>
+      <h2>To the watch</h2>
+    </header>
+    <div class="prose">
+      <p>Press <strong>Send to Garmin</strong>, enter your Garmin Connect email and password, and type the two-factor code if Garmin asks for one. The app signs in, uploads each session as a structured workout, schedules it on your Connect calendar on the right day, and reads each one back to make sure Garmin stored exactly what was sent.</p>
+      <p>Then sync your watch as usual, with the Connect app on your phone or Garmin Express. Each session appears on the day it is planned, with the steps, the pace or heart-rate targets and your cues, and the watch guides you through it like any Garmin workout.</p>
+      <p>Change the plan later and send again: the app updates the existing workouts in place rather than creating duplicates. To take a plan off the calendar entirely, <code>gpp unpush plan.json</code> in the terminal removes exactly what it put there and nothing else.</p>
+      <p>The password is used for that one sign-in and is not written to disk. What persists is Garmin's own login token, kept in a folder on your computer, so the next send does not ask again.</p>
+    </div>
+  </section>
+
+  <section id="after">
+    <header>
+      <span class="eyebrow">After the plan</span>
+      <h2>It keeps working once the runs are done</h2>
+    </header>
+    <div class="prose">
+      <p>Run <code>gpp sync</code> in the terminal now and then, and the app pulls your runs and daily metrics from Garmin into a local history. From then on each past session shows a one-line recap against what was planned, a plan-versus-actual graph appears beside plan health, and <code>gpp today</code> tells you when the day's session deserves to be easier, with the reason, never a silent rewrite.</p>
+      <p>None of the adaptation is automatic. Every change the app proposes is a stated rule, shown with its reason, and you can undo it. Two things most training apps do are deliberately left out because the evidence does not support them: the acute-to-chronic workload ratio and the 10% rule as hard gates.</p>
+    </div>
+  </section>
+
+  <section id="keys">
+    <header>
+      <span class="eyebrow">Keyboard</span>
+      <h2>Shortcuts</h2>
+    </header>
+    <table>
+      <thead><tr><th scope="col">Keys</th><th scope="col">What happens</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Command palette, every action by name</td></tr>
+        <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Write the plan, from the compose screen</td></tr>
+        <tr><td><kbd>?</kbd></td><td>The shortcut sheet</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Jump to today's session</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Move a focused calendar session by a day or a week</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Edit the focused session</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close any dialog</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="privacy">
+    <header>
+      <span class="eyebrow">Your data</span>
+      <h2>It stays on your computer</h2>
+    </header>
+    <div class="two">
+      <div>
+        <h3>What that means in practice</h3>
+        <ul>
+          <li>There is no server and no account. The app runs on your machine and only your own browser can talk to it.</li>
+          <li>Your paces, plans, history and settings live in a folder in your user profile. Nothing is uploaded anywhere, and nothing is collected.</li>
+          <li>Your Garmin password is used to sign in and never saved. Only Garmin's login token is kept.</li>
+          <li>If you use an AI key, the prompt goes to that provider and nowhere else. With the paste option, nothing leaves the app at all.</li>
+          <li>Sharing a plan with a friend sends zone names, not your paces. They get the same plan at their own paces.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Two honest caveats</h3>
+        <ul>
+          <li>The Garmin connection uses the same unofficial interface the Connect website uses, not an official partner API. It has been stable for years, but Garmin can change it. This is fine for your own account; it is not something to build a service on.</li>
+          <li>It is a tool, not a coach and not a doctor. The checks are the guardrails with evidence behind them, and they will tell you when a plan looks risky. Whether to run it is still your call.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="help">
+    <header>
+      <span class="eyebrow">If something goes wrong</span>
+      <h2>The usual fixes</h2>
+    </header>
+    <dl class="qa">
+      <div><dt>"gpp is not recognized" right after installing</dt><dd>Open a new terminal window; the old one does not know about uv yet. On Windows, run <code>uv tool update-shell</code> once if it still does not work.</dd></div>
+      <div><dt>Not sure what is set up</dt><dd><code>gpp doctor</code> checks the profile, each AI key and the Garmin token, and says what to fix. <code>gpp doctor --ping</code> proves each AI key and model actually answer.</dd></div>
+      <div><dt>Garmin sign-in fails, and it worked before</dt><dd>Garmin expires its login tokens without warning. The error names the folder holding the old token; delete it and send again to sign in fresh.</dd></div>
+      <div><dt>The AI's answer is rejected</dt><dd>It happens with the paste option when the reply is not the plan format. Paste the app's message about what was wrong back into the same chat and ask for a corrected version; the app accepts the fixed reply.</dd></div>
+      <div><dt>Sessions do not show on the watch</dt><dd>Check they are on the calendar in the Connect app first. If they are, sync the watch again; if they are not, the send did not finish, and the log in the send dialog says where it stopped.</dd></div>
+      <div><dt>Reporting a bug</dt><dd><code>gpp doctor --bundle</code> writes a diagnostics file with versions and the shape of your profile, and no credentials or plan contents. Attach it to an issue on GitHub.</dd></div>
+    </dl>
+  </section>
+
+  <footer>
+    <span>Garmin Plan Push 0.2.0</span>
+    <a href="https://github.com/palatter/garmin-plan-push">Source and README on GitHub</a>
+    <a href="https://github.com/palatter/garmin-plan-push/blob/main/ROADMAP.md">What is built, what is not, and the evidence</a>
+    <a href="https://github.com/palatter/garmin-plan-push/issues">Report a problem</a>
+  </footer>
+</main>
+
+<script>
+(function () {
+  // Fonts load after first paint, so the page never waits on them.
+  var f = document.createElement('link');
+  f.rel = 'stylesheet';
+  f.href = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap';
+  document.head.appendChild(f);
+  var tabs = document.querySelectorAll('[role="tab"]');
+  function pick(os) {
+    tabs.forEach(function (t) {
+      var on = t.dataset.os === os;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !on;
+    });
+    try { localStorage.setItem('gpp-guide-os', os); } catch (e) {}
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { pick(t.dataset.os); }); });
+  var saved = null;
+  try { saved = localStorage.getItem('gpp-guide-os'); } catch (e) {}
+  if (!saved) saved = /Mac|iPhone|iPad|Linux|Android/.test(navigator.platform + ' ' + navigator.userAgent) && !/Windows/.test(navigator.userAgent) ? 'mac' : 'win';
+  pick(saved);
+
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pre = btn.parentNode.querySelector('pre');
+      var text = pre.innerText.split('\n').filter(function (l) { return l.trim() && l.trim().charAt(0) !== '#'; })
+        .map(function (l) { return l.replace(/\s+#.*$/, ''); }).join('\n');
+      function done(ok) {
+        btn.textContent = ok ? 'Copied' : 'Select and copy';
+        btn.dataset.done = ok ? '1' : '';
+        setTimeout(function () { btn.textContent = 'Copy'; btn.dataset.done = ''; }, 1800);
+      }
+      try {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { fallback(); });
+      } catch (e) { fallback(); }
+      function fallback() {
+        try {
+          var range = document.createRange(); range.selectNodeContents(pre);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+          done(document.execCommand('copy'));
+        } catch (e2) { done(false); }
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
