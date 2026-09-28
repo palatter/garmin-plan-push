@@ -32,11 +32,13 @@ version that lacks one says so instead of crashing.
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import logging
 import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .compile import CompiledWorkout
@@ -55,8 +57,81 @@ RETRY_DELAYS = (1.0, 2.0, 4.0)
 log = logging.getLogger("gpp.client")
 
 
+# Where garminconnect keeps the login it saves after a successful sign-in, so
+# the next run can skip the password and the two-factor code.
+DEFAULT_TOKEN_DIR = "~/.garminconnect"  # noqa: S105 - a folder, not a secret
+TOKEN_FILE = "garmin_tokens.json"  # noqa: S105 - a file name
+
+
 class PushError(RuntimeError):
     """Something went wrong talking to Garmin Connect."""
+
+
+class NeedsPassword(PushError):
+    """No usable saved login, and no password to sign in with."""
+
+
+def token_dir(folder: str | None = None) -> Path:
+    return Path(folder or DEFAULT_TOKEN_DIR).expanduser()
+
+
+def saved_login(folder: str | None = None) -> Path | None:
+    """The saved Garmin login file, or None when there is none yet."""
+    path = token_dir(folder) / TOKEN_FILE
+    return path if path.is_file() else None
+
+
+def forget_login(folder: str | None = None) -> bool:
+    """Delete the saved login (sign out). True when there was one."""
+    path = saved_login(folder)
+    if path is None:
+        return False
+    path.unlink()
+    return True
+
+
+def sign_in(
+    email: str,
+    password: str | None,
+    token_folder: str | None = None,
+    prompt_mfa: Callable[[], str] | None = None,
+    ask_password: Callable[[], str] | None = None,
+) -> GarminClient:
+    """Connect, preferring the saved login; ask for the password only when needed.
+
+    With a saved login the password is not asked for at all. If that login
+    has expired, `ask_password` is called once and the sign-in retried; with
+    no `ask_password` (the web app) the NeedsPassword error goes back to the
+    caller, which tells the user to type it.
+    """
+    if not password and saved_login(token_folder) is None and ask_password is not None:
+        password = ask_password()
+    client = GarminClient(email, password or None, token_dir=token_folder)
+    try:
+        client.connect(prompt_mfa=prompt_mfa)
+    except NeedsPassword:
+        if ask_password is None:
+            raise
+        client = GarminClient(email, ask_password() or None, token_dir=token_folder)
+        client.connect(prompt_mfa=prompt_mfa)
+    return client
+
+
+def sign_in_at_terminal(email: str | None, token_folder: str | None = None) -> GarminClient:
+    """The command-line sign-in: email from the flag, GARMIN_EMAIL or a prompt;
+    password from GARMIN_PASSWORD, or asked for only when there is no usable
+    saved login; the two-factor code asked for only if Garmin wants one."""
+    import getpass
+    import os
+
+    email = email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
+    return sign_in(
+        email,
+        os.environ.get("GARMIN_PASSWORD"),
+        token_folder,
+        prompt_mfa=lambda: input("Garmin MFA code: ").strip(),
+        ask_password=lambda: getpass.getpass("Garmin Connect password (not stored): "),
+    )
 
 
 @dataclass
@@ -106,41 +181,50 @@ class GarminClient:
     # --- connection ---
 
     def connect(self, prompt_mfa: Callable[[], str] | None = None) -> None:
+        """Sign in, from the saved login when there is one.
+
+        garminconnect loads the token file, refreshes it when it is close to
+        expiry, and falls back to the password when Garmin rejects it. After a
+        password sign-in it writes the new token owner-only (0600 in a 0700
+        folder) and refuses symlinked paths, so the next run needs neither the
+        password nor a two-factor code.
+        """
         try:
             from garminconnect import Garmin
         except ImportError as exc:  # pragma: no cover - env dependent
-            raise PushError("python-garminconnect is not installed. Run: uv sync") from exc
+            raise PushError(
+                "python-garminconnect is missing; reinstall gpp (see the install step in the guide)"
+            ) from exc
 
         kwargs: dict[str, Any] = {}
-        if self._token_dir:
-            kwargs["tokenstore"] = self._token_dir
         if prompt_mfa is not None:
+            # Checked, not probed: silently dropping the MFA prompt would turn
+            # a two-factor account into a login that cannot finish.
+            if "prompt_mfa" not in inspect.signature(Garmin).parameters:
+                raise PushError(
+                    "this version of python-garminconnect cannot ask for a two-factor "
+                    "code; gpp needs garminconnect 0.3.x"
+                )
             kwargs["prompt_mfa"] = prompt_mfa
-
-        # Library versions differ in which keyword arguments the constructor
-        # takes. They are dropped one at a time, the MFA prompt last, so an
-        # MFA account is never silently downgraded to a login that cannot ask.
-        api = None
-        for attempt in (kwargs, {k: v for k, v in kwargs.items() if k == "prompt_mfa"}, {}):
-            try:
-                api = Garmin(self.email, self._password, **attempt)
-                break
-            except TypeError:
-                continue
-            except Exception as exc:
-                raise PushError(f"could not set up the Garmin client: {exc}") from exc
-        if api is None:
-            raise PushError("could not construct the Garmin client; check `pip show garminconnect`")
-        self._api = api
         try:
-            self._api.login()
+            self._api = Garmin(self.email, self._password, **kwargs)
         except Exception as exc:
-            where = self._token_dir or "~/.garminconnect"
-            raise PushError(
-                f"Garmin login failed: {exc}. If you signed in before, the cached token in "
-                f"{where} may be stale -- Garmin expires them without warning -- so delete "
-                "that folder and sign in again."
-            ) from exc
+            raise PushError(f"could not set up the Garmin client: {exc}") from exc
+
+        store = token_dir(self._token_dir)
+        had_saved = saved_login(self._token_dir) is not None
+        try:
+            self._api.login(str(store))
+        except Exception as exc:
+            if not self._password:
+                raise NeedsPassword(
+                    "your Garmin sign-in has expired; enter your Garmin password to sign in again"
+                    if had_saved
+                    else "no saved Garmin sign-in yet; enter your Garmin password to sign in"
+                ) from exc
+            raise PushError(f"Garmin login failed: {exc}") from exc
+        finally:
+            self._password = None  # never kept past the sign-in
 
         self._request = self._resolve_transport()
 

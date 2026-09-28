@@ -121,7 +121,7 @@ def tool_push(plan_json: str, dry_run: bool = True) -> dict[str, Any]:
     email = os.environ.get("GARMIN_EMAIL")
     if not email:
         raise PushError(
-            "GARMIN_EMAIL is not set; a real push needs it (and GARMIN_PASSWORD or a cached login)"
+            "GARMIN_EMAIL is not set; a real push needs it (and GARMIN_PASSWORD, or a saved login from an earlier push)"
         )
     client = GarminClient(email, os.environ.get("GARMIN_PASSWORD") or None)
     client.connect()

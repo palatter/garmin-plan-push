@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import getpass
-import os
 import sys
 
 from . import analysis, sync
@@ -37,15 +35,10 @@ def _store(args) -> History:
 
 def _connect(args):
     """Shared login flow for the commands that talk to Garmin."""
-    from .client import GarminClient, PushError
+    from .client import PushError, sign_in_at_terminal
 
-    email = args.email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
-    password = os.environ.get("GARMIN_PASSWORD") or getpass.getpass(
-        "Garmin Connect password (not stored): "
-    )
-    client = GarminClient(email, password or None, token_dir=getattr(args, "token_dir", None))
     try:
-        client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+        client = sign_in_at_terminal(args.email, getattr(args, "token_dir", None))
     except PushError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return None

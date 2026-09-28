@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import logging
 import os
@@ -192,18 +191,14 @@ def cmd_watch(args: argparse.Namespace) -> int:
             print(render_plan(plan, compiled, profile), end="")
             print(checks.check(plan, profile).text())
             if args.push:
-                from .client import GarminClient, PushError
+                from .client import PushError, sign_in_at_terminal
 
                 email = args.email or os.environ.get("GARMIN_EMAIL")
-                password = os.environ.get("GARMIN_PASSWORD")
                 if not email:
-                    print(
-                        "set GARMIN_EMAIL (and GARMIN_PASSWORD or a cached login) to push from watch"
-                    )
+                    print("set GARMIN_EMAIL (or pass --email) to push from watch")
                     return
-                client = GarminClient(email, password or None)
                 try:
-                    client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+                    client = sign_in_at_terminal(email)
                     client.push(compiled, device_id=args.device, log=print)
                 except PushError as exc:
                     print(f"push failed: {exc}")
@@ -641,6 +636,18 @@ def cmd_providers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_signout(args: argparse.Namespace) -> int:
+    from .client import forget_login
+
+    if forget_login(args.token_dir):
+        print(
+            "Signed out: the saved Garmin login was deleted. The next push asks for your password."
+        )
+    else:
+        print("No saved Garmin login on this computer.")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Answer the support questions before they are asked."""
     ok = True
@@ -725,15 +732,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             line(True, "connect.garmin.com", "reachable")
         except OSError as exc:
             line(False, "connect.garmin.com", f"unreachable: {exc}")
-    token_dir = Path.home() / ".garminconnect"
+    from .client import saved_login
+
+    token_file = saved_login()
     line(
-        True if token_dir.exists() else None,
+        True if token_file else None,
         "saved login",
         "found - push won't ask for a password"
-        if token_dir.exists()
+        if token_file
         else "none yet - first push will ask for your Garmin password",
     )
-    age = _token_age_days(token_dir)
+    age = _token_age_days(token_file)
     if age is not None:
         stale = age > 300
         line(
@@ -741,19 +750,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             "login age",
             f"{age} day(s) old"
             + (
-                " - Garmin expires tokens without warning; if push fails to log in, delete the folder and sign in again"
+                " - Garmin may have expired it; the next push asks for your password if so"
                 if stale
                 else ""
             ),
         )
     if args.ping and os.environ.get("GARMIN_EMAIL"):
-        from .client import GarminClient, PushError
+        from .client import PushError, sign_in
 
         try:
-            garmin = GarminClient(
-                os.environ["GARMIN_EMAIL"], os.environ.get("GARMIN_PASSWORD") or None
-            )
-            garmin.connect()
+            garmin = sign_in(os.environ["GARMIN_EMAIL"], os.environ.get("GARMIN_PASSWORD"))
             line(True, "Garmin login", f"ok via {garmin.transport}")
         except PushError as exc:
             line(False, "Garmin login", str(exc))
@@ -778,17 +784,17 @@ def _log_tail(lines: int = 200) -> list[str]:
         return []
 
 
-def _token_age_days(token_dir: Path) -> int | None:
-    """Days since the newest file in the token cache, or None without one."""
-    try:
-        newest = max((f.stat().st_mtime for f in token_dir.iterdir() if f.is_file()), default=None)
-    except OSError:
+def _token_age_days(token_file: Path | None) -> int | None:
+    """Days since the saved login was last written, or None without one."""
+    if token_file is None:
         return None
-    if newest is None:
+    try:
+        written = token_file.stat().st_mtime
+    except OSError:
         return None
     import time
 
-    return int((time.time() - newest) // 86400)
+    return int((time.time() - written) // 86400)
 
 
 def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
@@ -918,7 +924,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
 
 
 def cmd_push(args: argparse.Namespace) -> int:
-    from .client import GarminClient, PushError
+    from .client import PushError, sign_in_at_terminal
 
     profile, plan, compiled = _load(args)
 
@@ -930,15 +936,8 @@ def cmd_push(args: argparse.Namespace) -> int:
         return 0
 
     if args.dry_run and args.live:
-        email = (
-            args.email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
-        )
-        password = os.environ.get("GARMIN_PASSWORD") or getpass.getpass(
-            "Garmin Connect password (not stored): "
-        )
-        client = GarminClient(email, password or None, token_dir=args.token_dir)
         try:
-            client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+            client = sign_in_at_terminal(args.email, args.token_dir)
         except PushError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
@@ -957,16 +956,8 @@ def cmd_push(args: argparse.Namespace) -> int:
             print("Aborted.")
             return 1
 
-    email = args.email or os.environ.get("GARMIN_EMAIL")
-    if not email:
-        email = input("Garmin Connect email: ").strip()
-    password = os.environ.get("GARMIN_PASSWORD")
-    if not password:
-        password = getpass.getpass("Garmin Connect password (not stored): ")
-
-    client = GarminClient(email, password, token_dir=args.token_dir)
     try:
-        client.connect(prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+        client = sign_in_at_terminal(args.email, args.token_dir)
     except PushError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -1256,8 +1247,14 @@ def build_parser() -> argparse.ArgumentParser:
     push.add_argument("--no-verify", action="store_true", help="skip reading workouts back")
     push.add_argument("--email", help="Garmin account email")
     push.add_argument("--device", help="device id to send to immediately (see: gpp devices)")
-    push.add_argument("--token-dir", help="where to cache the auth token")
+    push.add_argument(
+        "--token-dir", help="folder for the saved Garmin login (default ~/.garminconnect)"
+    )
     push.set_defaults(func=cmd_push)
+
+    signout = sub.add_parser("signout", help="forget the saved Garmin login on this computer")
+    signout.add_argument("--token-dir", help="folder of the saved login (default ~/.garminconnect)")
+    signout.set_defaults(func=cmd_signout)
 
     return parser
 

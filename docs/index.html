@@ -582,7 +582,7 @@ setx GEMINI_API_KEY AIza...         <span class="c"># Gemini</span></pre><button
     <dl class="qa">
       <div><dt>"gpp is not recognized" right after installing</dt><dd>Open a new terminal window; the old one does not know about uv yet. On Windows, run <code>uv tool update-shell</code> once if it still does not work.</dd></div>
       <div><dt>Not sure what is set up</dt><dd><code>gpp doctor</code> checks the profile, each AI key and the Garmin token, and says what to fix. <code>gpp doctor --ping</code> proves each AI key and model actually answer.</dd></div>
-      <div><dt>Garmin sign-in fails, and it worked before</dt><dd>Garmin expires its login tokens without warning. The error names the folder holding the old token; delete it and send again to sign in fresh.</dd></div>
+      <div><dt>Garmin asks for the password again</dt><dd>Garmin expires its saved sign-in now and then. Type the password (and the two-factor code if asked) and send again; the new sign-in is saved for next time.</dd></div>
       <div><dt>The AI's answer is rejected</dt><dd>It happens with the paste option when the reply is not the plan format. Paste the app's message about what was wrong back into the same chat and ask for a corrected version; the app accepts the fixed reply.</dd></div>
       <div><dt>Sessions do not show on the watch</dt><dd>Check they are on the calendar in the Connect app first. If they are, sync the watch again; if they are not, the send did not finish, and the log in the send dialog says where it stopped.</dd></div>
       <div><dt>Reporting a bug</dt><dd><code>gpp doctor --bundle</code> writes a diagnostics file with versions and the shape of your profile, and no credentials or plan contents. Attach it to an issue on GitHub.</dd></div>

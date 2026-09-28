@@ -32,6 +32,7 @@ from typing import Any
 
 from .. import adapt, checks, library, oneline
 from ..agenda import week_view
+from ..client import saved_login
 from ..compile import compile_plan
 from ..diff import diff_plans
 from ..education import ENTRIES as EDUCATION
@@ -149,6 +150,7 @@ class App:
                 for name, config in configs.items()
             ],
             "default_provider": pick_default(configs, default),
+            "garmin_saved_login": saved_login() is not None,
             "education": EDUCATION,
             "recent": [r.to_dict() for r in list_recent(self.recent_root)[:8]],
         }
@@ -339,7 +341,7 @@ class App:
         return {"job": self.jobs.start("generate", work).id}
 
     def push(self, body: dict) -> dict:
-        from ..client import GarminClient
+        from ..client import sign_in
 
         profile = self.profile()
         raw = body.get("plan")
@@ -359,8 +361,7 @@ class App:
 
         def work(job) -> dict:
             job.say(f"signing in as {email}")
-            client = GarminClient(email, password or None)
-            client.connect(prompt_mfa=lambda: job.ask("Garmin MFA code"))
+            client = sign_in(email, password or None, prompt_mfa=lambda: job.ask("Garmin MFA code"))
             job.say(f"connected via {client.transport}")
             for other in client.conflicts(compiled):
                 job.say(

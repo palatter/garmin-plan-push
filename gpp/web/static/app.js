@@ -520,6 +520,7 @@ function initPush() {
         $('#p-mfa-code').focus();
       });
       $('#p-password').value = '';
+      state.garminSaved = true;
       // renderPushResults keeps the progress block up, because its last log
       // line is the one telling the user to sync their watch. Hiding it here
       // would erase the only instruction that matters.
@@ -587,6 +588,7 @@ async function boot() {
 
   state.units = s.profile.imperial ? 'imperial' : 'metric';
   state.providers = s.providers;
+  state.garminSaved = Boolean(s.garmin_saved_login);
 
   const chip = $('#profile-chip');
   chip.hidden = false;

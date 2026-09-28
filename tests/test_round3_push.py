@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from gpp.client import GarminClient, PushError, parse_tag
+from gpp.client import GarminClient, NeedsPassword, PushError, parse_tag
 from gpp.compile import STEP_NOTE_LIMIT, compile_plan
 from gpp.plan import Plan
 from gpp.profile import Profile
@@ -174,7 +174,7 @@ def test_verify_reports_end_conditions_second_bound_and_repeat_counts():
     assert "second target value changed" in detail
 
 
-def test_connect_keeps_the_mfa_prompt_when_a_kwarg_is_unsupported(monkeypatch):
+def test_connect_passes_the_mfa_prompt_and_the_token_folder(monkeypatch, tmp_path):
     seen = {}
 
     class Garmin:
@@ -183,26 +183,39 @@ def test_connect_keeps_the_mfa_prompt_when_a_kwarg_is_unsupported(monkeypatch):
 
         client = types.SimpleNamespace(request=lambda method, domain, path, **kw: {})
 
-        def login(self):
-            seen["logged_in"] = True
+        def login(self, tokenstore=None):
+            seen["tokenstore"] = tokenstore
 
     monkeypatch.setitem(sys.modules, "garminconnect", types.SimpleNamespace(Garmin=Garmin))
-    client = GarminClient("me@example.com", "pw", token_dir="C:/tmp/tokens")
+    client = GarminClient("me@example.com", "pw", token_dir=str(tmp_path))
     client.connect(prompt_mfa=lambda: "123456")
-    assert seen["logged_in"] and callable(seen["prompt_mfa"])
+    assert callable(seen["prompt_mfa"]) and seen["tokenstore"] == str(tmp_path)
 
 
-def test_login_failure_names_the_token_cache(monkeypatch):
+def test_connect_refuses_a_library_that_cannot_ask_for_the_mfa_code(monkeypatch):
+    class Garmin:
+        def __init__(self, email, password):
+            pass
+
+    monkeypatch.setitem(sys.modules, "garminconnect", types.SimpleNamespace(Garmin=Garmin))
+    with pytest.raises(PushError, match="two-factor"):
+        GarminClient("me@example.com", "pw").connect(prompt_mfa=lambda: "1")
+
+
+def test_login_failure_without_a_password_asks_for_one(monkeypatch, tmp_path):
     class Garmin:
         def __init__(self, *a, **kw):
             pass
 
-        def login(self):
-            raise RuntimeError("401 unauthorized")
+        def login(self, tokenstore=None):
+            raise RuntimeError("Username and password are required")
 
     monkeypatch.setitem(sys.modules, "garminconnect", types.SimpleNamespace(Garmin=Garmin))
-    with pytest.raises(PushError, match="stale"):
-        GarminClient("me@example.com", "pw").connect()
+    with pytest.raises(NeedsPassword, match="no saved Garmin sign-in"):
+        GarminClient("me@example.com", None, token_dir=str(tmp_path)).connect()
+    with pytest.raises(PushError, match="login failed") as err:
+        GarminClient("me@example.com", "pw", token_dir=str(tmp_path)).connect()
+    assert not isinstance(err.value, NeedsPassword)
 
 
 def test_reads_retry_on_transient_errors_but_writes_do_not():

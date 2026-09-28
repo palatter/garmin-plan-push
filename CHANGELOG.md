@@ -12,6 +12,14 @@ the tag being released and puts it in the GitHub Release notes.
   0.3.x client, and a contract test drives the real library offline so a
   release that moves it fails a test instead of a push. garminconnect is now
   capped below 0.4.
+- The Garmin login was never saved, so every push was a full sign-in with a
+  two-factor code, and `--token-dir` was silently ignored. The login is now
+  saved owner-only in `~/.garminconnect` (or `--token-dir`) and reused; the
+  password is asked for only when there is no saved login or Garmin has
+  expired it. The web app's push dialog says when the password can stay blank.
+
+### Added
+- `gpp signout` deletes the saved Garmin login.
 
 ## [0.2.0] — 2026-09-22
 

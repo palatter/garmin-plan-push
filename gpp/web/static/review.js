@@ -1122,6 +1122,9 @@ function initReview() {
     $('#p-mfa').hidden = true;
     $('#p-log').innerHTML = '';
     $('#p-go').disabled = false;
+    $('#p-password-hint').textContent = state.garminSaved
+      ? 'Signed in before on this computer: leave it blank.'
+      : 'Needed the first time. After that this computer stays signed in.';
     const blocks = state.plan ? state.plan.report.blocks : 0;
     const notice = $('#p-blocks');
     notice.hidden = !blocks;

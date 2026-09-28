@@ -10,12 +10,14 @@ the method and URL each call reaches the wire with.
 from __future__ import annotations
 
 import json
+import os
+import stat
 
 import pytest
 
 garminconnect = pytest.importorskip("garminconnect")
 
-from gpp.client import GarminClient  # noqa: E402
+from gpp.client import NeedsPassword, saved_login, sign_in  # noqa: E402
 
 API = "https://connectapi.garmin.com"
 
@@ -70,13 +72,62 @@ def stub(monkeypatch):
 
 
 @pytest.fixture
-def connected(stub):
-    api = garminconnect.Garmin("me@example.com", "pw")
-    api.client.loads(json.dumps({"di_token": "t", "di_refresh_token": "r", "di_client_id": "c"}))
-    client = GarminClient("me@example.com", "pw")
-    client._api = api
-    client._request = client._resolve_transport()
+def sso(monkeypatch):
+    """Garmin's password sign-in, minus the network: hands out a token."""
+    logins: list[str] = []
+
+    def login(self, email, password, prompt_mfa=None, return_on_mfa=False):
+        logins.append(email)
+        self.di_token, self.di_refresh_token, self.di_client_id = "t", "r", "c"
+        return None, None
+
+    monkeypatch.setattr(garminconnect.client.Client, "login", login)
+    return logins
+
+
+@pytest.fixture
+def connected(tmp_path, stub, sso):
+    client = sign_in("me@example.com", "pw", str(tmp_path / "tokens"))
+    stub.calls.clear()
     return client, stub
+
+
+def test_a_password_sign_in_saves_the_login_owner_only(tmp_path, stub, sso):
+    folder = str(tmp_path / "tokens")
+    sign_in("me@example.com", "pw", folder)
+    token = saved_login(folder)
+    assert token is not None and sso == ["me@example.com"]
+    if os.name == "posix":
+        assert stat.S_IMODE(token.stat().st_mode) == 0o600
+        assert stat.S_IMODE(token.parent.stat().st_mode) == 0o700
+
+
+def test_the_next_sign_in_uses_the_saved_login_without_a_password(tmp_path, stub, sso):
+    folder = str(tmp_path / "tokens")
+    sign_in("me@example.com", "pw", folder)
+    asked = []
+    client = sign_in("me@example.com", None, folder, ask_password=lambda: asked.append(1) or "pw")
+    assert client.transport == "Garmin.client.request"
+    assert asked == [] and len(sso) == 1  # no second password sign-in
+
+
+def test_an_unusable_saved_login_asks_for_the_password_once(tmp_path, stub, sso):
+    folder = tmp_path / "tokens"
+    folder.mkdir()
+    (folder / "garmin_tokens.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(NeedsPassword, match="expired"):
+        sign_in("me@example.com", None, str(folder))
+    asked = []
+    sign_in("me@example.com", None, str(folder), ask_password=lambda: asked.append(1) or "pw")
+    assert asked == [1] and sso == ["me@example.com"]
+
+
+def test_no_saved_login_asks_for_the_password_up_front(tmp_path, stub, sso):
+    asked = []
+    sign_in(
+        "me@example.com", None, str(tmp_path / "t"), ask_password=lambda: asked.append(1) or "pw"
+    )
+    assert asked == [1]
 
 
 def test_every_verb_reaches_the_wire_with_its_own_method(connected):
@@ -108,3 +159,13 @@ def test_the_calendar_month_is_zero_indexed_on_the_wire(connected):
 def test_the_transport_is_the_library_client(connected):
     client, _ = connected
     assert client.transport == "Garmin.client.request"
+
+
+def test_signout_deletes_the_saved_login(tmp_path, stub, sso, capsys):
+    from gpp.cli import main
+
+    folder = str(tmp_path / "tokens")
+    sign_in("me@example.com", "pw", folder)
+    assert main(["signout", "--token-dir", folder]) == 0
+    assert saved_login(folder) is None
+    assert "Signed out" in capsys.readouterr().out
