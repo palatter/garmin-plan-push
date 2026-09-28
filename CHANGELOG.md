@@ -3,6 +3,16 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
+## [Unreleased]
+
+### Fixed
+- Pushing to Garmin failed on every call with garminconnect 0.3.16 (the
+  version gpp requires): push, live dry run, sync, history import and unpush
+  all stopped at "Connection error". Requests now go through the library's
+  0.3.x client, and a contract test drives the real library offline so a
+  release that moves it fails a test instead of a push. garminconnect is now
+  capped below 0.4.
+
 ## [0.2.0] — 2026-09-22
 
 Three research-and-review rounds; two hundred roadmap items, of which the

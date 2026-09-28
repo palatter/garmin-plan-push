@@ -7,10 +7,11 @@ A note on how this talks to Garmin
 ----------------------------------
 `python-garminconnect` is a reverse-engineered client and its internal
 transport has changed shape more than once (garth session, then a mobile SSO
-flow). Rather than pin this tool to one private attribute that may vanish, we
-probe a short list of known transports at connect time and report which one we
-got. If all of them fail you get one clear message naming the library version,
-instead of an AttributeError from three frames deep.
+flow). This module is written against the 0.3.x line, where the authenticated
+transport is `Garmin.client.request(method, domain, path, **kw)`. That is
+checked explicitly at connect time, and `tests/test_garmin_contract.py` drives
+a real `Garmin` object over a stub HTTP session, so a library release that
+moves it fails a test instead of every push.
 
 The endpoints themselves have been stable for years:
 
@@ -151,35 +152,24 @@ class GarminClient:
         return self._api
 
     def _resolve_transport(self) -> Callable[..., Any]:
-        """Find a way to issue an authenticated request against connectapi."""
-        api = self._api
+        """The authenticated request method of garminconnect 0.3.x.
 
-        garth = getattr(api, "garth", None)
-        if garth is not None and hasattr(garth, "connectapi"):
-            self.transport = "garth.connectapi"
-            return lambda method, path, **kw: garth.connectapi(path, method=method, **kw)
+        `Garmin.connectapi` is GET-only in 0.3.x (it fixes the method and
+        rejects a `method=` keyword), so writes go through the lower-level
+        client, which takes the method as its first argument.
+        """
+        request = getattr(getattr(self._api, "client", None), "request", None)
+        if not callable(request):
+            raise PushError(
+                "this version of python-garminconnect has no client.request(); "
+                "gpp needs garminconnect 0.3.x. Reinstall gpp to get a supported version."
+            )
+        self.transport = "Garmin.client.request"
 
-        if garth is not None and hasattr(garth, "request"):
-            self.transport = "garth.request"
+        def _via_client(method: str, path: str, **kw: Any) -> Any:
+            return _json_or_none(request(method, "connectapi", path, **kw))
 
-            def _via_garth(method: str, path: str, **kw: Any) -> Any:
-                response = garth.request(method, "connectapi", path, api=True, **kw)
-                return _json_or_none(response)
-
-            return _via_garth
-
-        for name in ("connectapi", "request", "_request", "modern_request"):
-            fn = getattr(api, name, None)
-            if callable(fn):
-                self.transport = f"Garmin.{name}"
-                return lambda method, path, _fn=fn, **kw: _fn(path, method=method, **kw)
-
-        raise PushError(
-            "could not find an authenticated request method on this version of "
-            "python-garminconnect. Check `pip show garminconnect` and open "
-            "gpp/client.py -- _resolve_transport() is the single place to add "
-            "the new entry point."
-        )
+        return _via_client
 
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
         if self._request is None:

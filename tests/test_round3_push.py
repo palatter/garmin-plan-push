@@ -181,11 +181,10 @@ def test_connect_keeps_the_mfa_prompt_when_a_kwarg_is_unsupported(monkeypatch):
         def __init__(self, email, password, prompt_mfa=None):
             seen["prompt_mfa"] = prompt_mfa
 
+        client = types.SimpleNamespace(request=lambda method, domain, path, **kw: {})
+
         def login(self):
             seen["logged_in"] = True
-
-        def connectapi(self, path, method="GET", **kw):
-            return {}
 
     monkeypatch.setitem(sys.modules, "garminconnect", types.SimpleNamespace(Garmin=Garmin))
     client = GarminClient("me@example.com", "pw", token_dir="C:/tmp/tokens")
