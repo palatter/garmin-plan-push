@@ -461,7 +461,7 @@ dialog[open] { animation: pop .22s var(--ease) both; }
 .results .tag.unchanged, .results .tag.left { background: var(--surface-2); color: var(--text-faint); }
 .results .tag.would-create, .results .tag.would-update, .results .tag.updated,
 .results .tag.removed, .results .tag.would-remove { background: var(--accent-soft); color: var(--accent); }
-.results .tag.failed { background: hsl(0 70% 50% / .13); color: var(--danger); }
+.results .tag.failed, .results .tag.would-fail { background: hsl(0 70% 50% / .13); color: var(--danger); }
 .results .detail { color: var(--text-faint); font-size: .8rem; }
 
 .empty { color: var(--text-faint); text-align: center; padding: 2.5rem 1rem; }

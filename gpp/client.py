@@ -527,12 +527,7 @@ class GarminClient:
         stale = [i for i in (_workout_id(c) for c in stale_items) if i]
 
         if stale and not replace:
-            return PushResult(
-                item.name,
-                item.date,
-                "failed",
-                detail=f"{len(stale)} tagged workout(s) already on {item.date}; re-run with --replace to overwrite",
-            )
+            return PushResult(item.name, item.date, "failed", detail=_kept(len(stale), item.date))
 
         detail = ""
         if stale and update_in_place:
@@ -570,7 +565,7 @@ class GarminClient:
         log(f"  {action:<10} {item.date}  {item.name}  (id {workout_id})")
         return PushResult(item.name, item.date, action, workout_id, detail)
 
-    def preview(self, compiled: list[CompiledWorkout]) -> list[PushResult]:
+    def preview(self, compiled: list[CompiledWorkout], replace: bool = True) -> list[PushResult]:
         """A live dry run (#154): what a push would do, from the calendar, writing nothing."""
         results: list[PushResult] = []
         if not compiled:
@@ -584,7 +579,13 @@ class GarminClient:
                 results.append(PushResult(item.name, item.date, "unchanged", _workout_id(matched)))
                 continue
             ids = [i for i in (_workout_id(c) for c in stale_items) if i]
-            if ids:
+            if ids and not replace:
+                results.append(
+                    PushResult(
+                        item.name, item.date, "would-fail", ids[0], _kept(len(ids), item.date)
+                    )
+                )
+            elif ids:
                 extra = f", delete {ids[1:]}" if len(ids) > 1 else ""
                 results.append(
                     PushResult(
@@ -796,6 +797,12 @@ class GarminClient:
                     f"step {index}: exercise {sent['exerciseName']} not recognised by Garmin's catalog"
                 )
         return "; ".join(problems)
+
+
+def _kept(count: int, date: str) -> str:
+    """Why a session was not sent: the command line turns replacing off with
+    --no-replace, the page with its Replace box."""
+    return f"{count} earlier version(s) already on {date}, and replacing is turned off"
 
 
 def _workout_id(item: dict) -> int | None:

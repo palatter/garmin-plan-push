@@ -400,7 +400,7 @@ class App:
             if preview:
                 # A live dry run: read the calendar, write nothing.
                 job.say("checked the calendar; nothing was sent")
-                results = client.preview(compiled) + [
+                results = client.preview(compiled, replace=replace) + [
                     PushResult(
                         o["title"],
                         o["date"],

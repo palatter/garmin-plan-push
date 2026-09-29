@@ -1006,7 +1006,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         print(
             f"signed in as {client.account or client.email}; reading the calendar, writing nothing\n"
         )
-        for r in client.preview(compiled):
+        for r in client.preview(compiled, replace=args.replace):
             print(f"  {r.action:<13} {r.date}  {r.name}  {r.detail}".rstrip())
         for other in client.conflicts(compiled):
             print(

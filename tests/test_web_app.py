@@ -386,6 +386,24 @@ def test_check_first_reads_the_calendar_and_writes_nothing(app, monkeypatch):
     assert cal.writes == []
 
 
+def test_check_first_says_what_send_does_with_replace_unticked(app, monkeypatch):
+    # Check first used to ignore the box: "would update in place", then Send
+    # failed with "re-run with --replace", command-line wording.
+    from gpp import client as client_module
+
+    plan, _ = _upcoming()
+    first_day = plan["workouts"][0]["date"]
+    cal = _Calendar([_old_copy(first_day, plan["workouts"][0]["name"])])
+    monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
+    monkeypatch.setattr(server, "save_receipt", lambda *a: type("R", (), {"name": "r"})())
+    body = {"plan": plan, "email": "me@example.com", "replace": False}
+    checked = _finish(app, app.push({**body, "mode": "preview"})["job"])["result"]["results"]
+    sent = _finish(app, app.push(body)["job"])["result"]["results"]
+    assert (checked[0]["action"], sent[0]["action"]) == ("would-fail", "failed")
+    assert checked[0]["detail"] == sent[0]["detail"]
+    assert "replacing is turned off" in sent[0]["detail"] and "--" not in sent[0]["detail"]
+
+
 def test_send_with_prune_removes_orphans_and_says_which(app, monkeypatch):
     from gpp import client as client_module
 
