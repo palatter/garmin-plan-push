@@ -1139,6 +1139,13 @@ function initReview() {
     $('#p-prune').checked = false;  // removing sessions is chosen each time, never remembered
     $('#p-password').value = '';
     $('#p-signout').hidden = !state.garminSaved;
+    // Keeping the password needs a keychain; a computer without one is
+    // never offered the box.
+    $('#p-remember-row').hidden = !state.keychain;
+    if (state.keychain) {
+      $('#p-remember-label').textContent =
+        `Keep the password in ${state.keychain}, so an expired Garmin sign-in is renewed without asking`;
+    }
     // Saved logins are per account, and this only knows that one exists.
     $('#p-password-hint').textContent = state.garminSaved
       ? 'Leave it blank if this account has signed in on this computer before.'

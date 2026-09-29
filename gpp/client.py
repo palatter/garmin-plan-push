@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import keychain
 from .compile import CompiledWorkout
 from .constants import TAG_PREFIX
 
@@ -76,6 +77,10 @@ class NeedsPassword(PushError):
     """No usable saved login, and no password to sign in with."""
 
 
+class LoginRejected(PushError):
+    """Garmin turned the password sign-in down."""
+
+
 def token_dir(folder: str | None = None, email: str | None = None) -> Path:
     """The folder a login is saved in: `folder` as given, else this account's own.
 
@@ -103,7 +108,8 @@ def saved_logins() -> list[Path]:
 
 
 def forget_login(folder: str | None = None) -> bool:
-    """Sign out: delete the login in `folder`, else every login gpp saved here.
+    """Sign out: delete the login in `folder`, else every login gpp saved here
+    and every Garmin password in the keychain.
 
     That includes the single login 0.2.1 kept straight in ~/.garminconnect,
     which nothing reads any more. True when there was anything to delete.
@@ -117,6 +123,11 @@ def forget_login(folder: str | None = None) -> bool:
         if path.is_file():
             path.unlink()
             removed = True
+    if not folder:
+        try:
+            removed = keychain.forget_garmin_passwords() > 0 or removed
+        except keychain.KeychainError as exc:
+            log.warning("the saved Garmin passwords could not be removed: %s", exc)
     return removed
 
 
@@ -126,24 +137,49 @@ def sign_in(
     token_folder: str | None = None,
     prompt_mfa: Callable[[], str] | None = None,
     ask_password: Callable[[], str] | None = None,
+    remember: bool = False,
 ) -> GarminClient:
     """Connect, preferring the saved login; ask for the password only when needed.
 
-    With a saved login the password is not asked for at all. If that login
-    has expired, `ask_password` is called once and the sign-in retried; with
-    no `ask_password` (the web app) the NeedsPassword error goes back to the
-    caller, which tells the user to type it.
+    With a saved login the password is not asked for at all. When that login
+    has expired, or there is none yet, the password saved in the OS keychain
+    signs in; only without one, or when Garmin turns it down, is
+    `ask_password` called. With no `ask_password` (the web app) the
+    NeedsPassword error goes back to the caller, which tells the user to
+    type it. With `remember`, a password typed for this sign-in (`password`,
+    or what `ask_password` returns) goes into the keychain once Garmin has
+    accepted it; `client.remembered` says whether it did.
     """
-    if not password and saved_login(token_folder, email) is None and ask_password is not None:
-        password = ask_password()
-    client = GarminClient(email, password or None, token_dir=token_folder)
+    typed = password or None
+    stored = None if typed else keychain.garmin_password(email)
+    if not (typed or stored) and saved_login(token_folder, email) is None and ask_password:
+        typed = ask_password() or None
+    client = GarminClient(email, typed or stored, token_dir=token_folder)
     try:
         client.connect(prompt_mfa=prompt_mfa)
-    except NeedsPassword:
-        if ask_password is None:
+    except (NeedsPassword, LoginRejected) as exc:
+        # Asking again only helps when nothing was typed yet: there was no
+        # password at all, or only the keychain's, which Garmin refused
+        # (changed since it was saved, most likely).
+        if typed or (isinstance(exc, LoginRejected) and not stored):
             raise
-        client = GarminClient(email, ask_password() or None, token_dir=token_folder)
+        if ask_password is None:
+            if isinstance(exc, NeedsPassword):
+                raise
+            raise NeedsPassword(
+                "Garmin did not accept the password saved on this computer; "
+                "enter your Garmin password"
+            ) from exc
+        typed = ask_password() or None
+        client = GarminClient(email, typed, token_dir=token_folder)
         client.connect(prompt_mfa=prompt_mfa)
+    if remember and typed:
+        try:
+            keychain.save_garmin_password(email, typed)
+            client.remembered = True
+        except keychain.KeychainError as exc:
+            log.info("the Garmin password was not saved: %s", exc)
+            client.remembered = False
     return client
 
 
@@ -155,12 +191,15 @@ def sign_in_at_terminal(email: str | None, token_folder: str | None = None) -> G
     import os
 
     email = email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
+    from_env = os.environ.get("GARMIN_PASSWORD")
+    kept = f"kept in {keychain.where()}" if keychain.available() else "not stored"
     return sign_in(
         email,
-        os.environ.get("GARMIN_PASSWORD"),
+        from_env,
         token_folder,
         prompt_mfa=lambda: input("Garmin MFA code: ").strip(),
-        ask_password=lambda: getpass.getpass("Garmin Connect password (not stored): "),
+        ask_password=lambda: getpass.getpass(f"Garmin Connect password ({kept}): "),
+        remember=not from_env,
     )
 
 
@@ -246,6 +285,9 @@ class GarminClient:
         self.transport: str = "unconnected"
         # Whose calendar this is, as Garmin names the account once signed in.
         self.account: str = ""
+        # Whether sign_in() saved a typed password in the keychain (None: no
+        # password was typed, or it was not asked to).
+        self.remembered: bool | None = None
 
     # --- connection ---
 
@@ -297,7 +339,7 @@ class GarminClient:
                     if had_saved
                     else "no saved Garmin sign-in yet; enter your Garmin password to sign in"
                 ) from exc
-            raise PushError(f"Garmin login failed: {exc}") from exc
+            raise LoginRejected(f"Garmin login failed: {exc}") from exc
         finally:
             self._password = None  # never kept past the sign-in
 

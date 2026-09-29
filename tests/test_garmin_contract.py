@@ -239,3 +239,106 @@ def test_every_garmin_method_the_sync_asks_for_exists():
     names = set(re.findall(r'_call\(\s*api,\s*"(\w+)"', inspect.getsource(sync)))
     assert "get_heart_rate_zones" in names
     assert [n for n in sorted(names) if not callable(getattr(garminconnect.Garmin, n, None))] == []
+
+
+# --- the password in the OS keychain --------------------------------------------
+
+
+@pytest.fixture
+def garmin_password(monkeypatch):
+    """Garmin's sign-in with one right password; the others are turned down."""
+    from garminconnect.exceptions import GarminConnectAuthenticationError
+
+    state = {"password": "right", "logins": []}
+
+    def login(self, email, password, prompt_mfa=None, return_on_mfa=False):
+        state["logins"].append(password)
+        if password != state["password"]:
+            raise GarminConnectAuthenticationError("Authentication failed: wrong password")
+        self.di_token, self.di_refresh_token, self.di_client_id = "t", "r", "c"
+        return None, None
+
+    monkeypatch.setattr(garminconnect.client.Client, "login", login)
+    return state
+
+
+def _expired(tmp_path):
+    folder = tmp_path / "tokens"
+    folder.mkdir(exist_ok=True)
+    (folder / "garmin_tokens.json").write_text("{}", encoding="utf-8")
+    return str(folder)
+
+
+def test_a_typed_password_is_kept_and_signs_in_when_the_login_expires(
+    tmp_path, stub, garmin_password, keychain_backend
+):
+    from gpp import keychain
+
+    asked = []
+    client = sign_in(
+        "Me@Example.com",
+        None,
+        str(tmp_path / "tokens"),
+        ask_password=lambda: asked.append(1) or "right",
+        remember=True,
+    )
+    assert asked == [1] and client.remembered is True
+    assert keychain.garmin_password("me@example.com") == "right"
+    client = sign_in("me@example.com", None, _expired(tmp_path), ask_password=lambda: 1 / 0)
+    assert client.transport == "Garmin.client.request" and client.remembered is None
+    assert garmin_password["logins"] == ["right", "right"]
+
+
+def test_a_password_from_the_environment_is_not_kept(tmp_path, stub, garmin_password):
+    from gpp import keychain
+
+    sign_in("me@example.com", "right", str(tmp_path / "tokens"), remember=False)
+    assert keychain.garmin_password("me@example.com") is None
+
+
+def test_a_kept_password_garmin_turns_down_is_asked_for_again(tmp_path, stub, garmin_password):
+    from gpp import keychain
+
+    keychain.save_garmin_password("me@example.com", "old")
+    garmin_password["password"] = "new"
+    folder = _expired(tmp_path)
+    # The web app cannot ask: it is told to have the password typed.
+    with pytest.raises(NeedsPassword, match="did not accept the password saved"):
+        sign_in("me@example.com", None, folder)
+    # The terminal asks once, and the new password replaces the old.
+    asked = []
+    sign_in(
+        "me@example.com", None, folder, ask_password=lambda: asked.append(1) or "new", remember=True
+    )
+    assert asked == [1] and keychain.garmin_password("me@example.com") == "new"
+
+
+def test_a_typed_password_garmin_turns_down_is_not_kept(tmp_path, stub, garmin_password):
+    from gpp import keychain
+
+    with pytest.raises(PushError, match="login failed"):
+        sign_in("me@example.com", "wrong", str(tmp_path / "tokens"), remember=True)
+    assert keychain.garmin_password("me@example.com") is None
+
+
+def test_with_no_keychain_the_sign_in_still_works(tmp_path, stub, garmin_password):
+    import keyring
+    from keyring.backends import fail
+
+    keyring.set_keyring(fail.Keyring())
+    client = sign_in("me@example.com", "right", str(tmp_path / "tokens"), remember=True)
+    assert client.remembered is False and client.transport == "Garmin.client.request"
+
+
+def test_signout_forgets_the_kept_passwords_too(tmp_path, stub, sso, monkeypatch, capsys):
+    from gpp import keychain
+    from gpp.cli import main
+
+    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(tmp_path))
+    sign_in("a@example.com", "pw-a", remember=True)
+    sign_in("b@example.com", "pw-b", remember=True)
+    assert main(["signout"]) == 0
+    assert "passwords" in capsys.readouterr().out
+    assert keychain.garmin_accounts() == []
+    assert keychain.garmin_password("a@example.com") is None
+    assert saved_login(email="a@example.com") is None

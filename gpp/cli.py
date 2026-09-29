@@ -715,9 +715,8 @@ def cmd_signout(args: argparse.Namespace) -> int:
     from .client import forget_login
 
     if forget_login(args.token_dir):
-        print(
-            "Signed out: the saved Garmin login was deleted. The next push asks for the password."
-        )
+        what = "login was" if args.token_dir else "logins, and any saved passwords, were"
+        print(f"Signed out: the saved Garmin {what} deleted. The next push asks for the password.")
     else:
         print("No saved Garmin login on this computer.")
     return 0
@@ -840,6 +839,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if logins
         else "none yet - first push will ask for your Garmin password",
     )
+    from . import keychain
+
+    passwords = len(keychain.garmin_accounts())
+    if passwords:
+        line(
+            True,
+            "saved password",
+            f"{passwords} account(s) in {keychain.where()} - signs in again when a login expires",
+        )
     age = _token_age_days(max(logins, key=lambda p: p.stat().st_mtime) if logins else None)
     if age is not None:
         stale = age > 300
@@ -1414,7 +1422,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     push.set_defaults(func=cmd_push)
 
-    signout = sub.add_parser("signout", help="forget the saved Garmin login on this computer")
+    signout = sub.add_parser(
+        "signout", help="forget the saved Garmin logins and passwords on this computer"
+    )
     signout.add_argument(
         "--token-dir", help="folder of the saved login (default: every account's that gpp saved)"
     )

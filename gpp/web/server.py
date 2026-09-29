@@ -12,8 +12,9 @@ Security posture, because this endpoint can be handed a Garmin password:
     cross-origin POST, but it cannot read the token to sign one;
   * the Host header is checked, which is what actually stops DNS rebinding
     (an attacker's DNS can point at 127.0.0.1, but the Host will not be ours);
-  * the password is used for one login and never written to disk. Garmin's own
-    OAuth token cache is the only thing that persists.
+  * the password goes to Garmin's sign-in and, when the user keeps it, to the
+    OS keychain (Windows Credential Manager, the macOS Keychain); never to a
+    file. Garmin's own token cache is the only other thing that persists.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .. import adapt, checks, library, oneline
+from .. import adapt, checks, keychain, library, oneline
 from ..agenda import week_view
 from ..client import forget_login, saved_logins
 from ..compile import compile_plan
@@ -176,6 +177,9 @@ class App:
             ],
             "default_provider": pick_default(configs, default),
             "garmin_saved_login": bool(saved_logins()),
+            "garmin_saved_password": bool(keychain.garmin_accounts()),
+            # What the page calls the keychain; None when there is none.
+            "keychain": keychain.where() if keychain.available() else None,
             "education": EDUCATION,
             "recent": [r.to_dict() for r in list_recent(self.recent_root)[:8]],
         }
@@ -395,11 +399,21 @@ class App:
         replace = bool(body.get("replace", True))
         prune = bool(body.get("prune", False))
         preview = body.get("mode") == "preview"
+        remember = bool(body.get("remember", False))
 
         def work(job) -> dict:
             job.say(f"signing in as {email}")
-            client = sign_in(email, password or None, prompt_mfa=lambda: job.ask("Garmin MFA code"))
+            client = sign_in(
+                email,
+                password or None,
+                prompt_mfa=lambda: job.ask("Garmin MFA code"),
+                remember=remember,
+            )
             job.say(f"signed in to Garmin Connect as {client.account or email}")
+            if client.remembered:
+                job.say(f"your password is kept in {keychain.where()}")
+            elif client.remembered is False:
+                job.say(f"your password could not be kept in {keychain.where()}")
             for other in client.conflicts(compiled):
                 job.say(
                     f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"

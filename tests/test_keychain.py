@@ -185,3 +185,14 @@ def _no_profile(args):
     from gpp.profile import ProfileError
 
     raise ProfileError("no profile yet")
+
+
+def test_doctor_counts_the_kept_garmin_passwords(tmp_path, capsys):
+    from gpp import cli
+    from gpp.profile import Profile
+
+    keychain.save_garmin_password("me@example.com", "pw")
+    profile = Profile.from_dict({"pace": {"threshold": "4:30/km"}}).save(tmp_path / "p.toml")
+    cli.main(["--profile", str(profile), "doctor"])
+    (line,) = [x for x in capsys.readouterr().out.splitlines() if "saved password" in x]
+    assert "1 account(s)" in line

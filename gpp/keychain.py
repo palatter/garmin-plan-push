@@ -140,19 +140,20 @@ def garmin_password(email: str) -> str | None:
 def save_garmin_password(email: str, password: str) -> None:
     account = _account(email)
     put(GARMIN_PREFIX + account, password)
-    accounts = _garmin_accounts()
+    accounts = garmin_accounts()
     if account not in accounts:
         put(GARMIN_ACCOUNTS, json.dumps(sorted([*accounts, account])))
 
 
 def forget_garmin_passwords() -> int:
     """Remove every saved Garmin password; how many there were."""
-    removed = sum(forget(GARMIN_PREFIX + account) for account in _garmin_accounts())
+    removed = sum(forget(GARMIN_PREFIX + account) for account in garmin_accounts())
     forget(GARMIN_ACCOUNTS)
     return removed
 
 
-def _garmin_accounts() -> list[str]:
+def garmin_accounts() -> list[str]:
+    """The accounts whose Garmin password is saved, lowercased."""
     try:
         listed = json.loads(get(GARMIN_ACCOUNTS) or "[]")
     except ValueError:

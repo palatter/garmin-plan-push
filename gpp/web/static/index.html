@@ -382,9 +382,9 @@
 <dialog id="push-dialog">
   <form method="dialog" class="dialog-body" id="push-form">
     <h2>Send to Garmin Connect</h2>
-    <p class="hint">Your password is used to sign in and is never saved. Garmin's
-      sign-in is kept on this computer for each account, so the next send for the
-      same account needs only the email.</p>
+    <p class="hint">Your password goes only to Garmin's sign-in. Garmin's sign-in
+      is kept on this computer for each account, so the next send for the same
+      account needs only the email.</p>
     <p class="notice" id="p-blocks" hidden></p>
 
     <label class="field">
@@ -395,6 +395,10 @@
       <span class="field-label">Password</span>
       <input type="password" id="p-password" autocomplete="current-password">
       <span class="hint" id="p-password-hint">Leave it blank if this account has signed in on this computer before.</span>
+    </label>
+    <label class="check" id="p-remember-row" hidden>
+      <input type="checkbox" id="p-remember" checked>
+      <span id="p-remember-label">Keep the password on this computer</span>
     </label>
     <p class="hint"><button type="button" class="link" id="p-signout" hidden>Sign out of Garmin on this computer</button></p>
     <label class="check">

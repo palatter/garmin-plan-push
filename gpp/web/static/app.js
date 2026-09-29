@@ -23,6 +23,7 @@ const state = {
   mileage: null,        // /api/history weeks, fetched once per page load
   education: {},        // session type -> explanation, from the server
   providers: [],
+  keychain: null,       // what this computer's keychain is called; null when there is none
   polls: new Map(),  // log selector -> the poll writing to it
 };
 
@@ -546,6 +547,7 @@ async function runPush(mode) {
       plan: state.plan.json,
       email,
       password: $('#p-password').value,
+      remember: Boolean(state.keychain) && $('#p-remember').checked,
       replace: $('#p-replace').checked,
       prune: $('#p-prune').checked,
       mode,
@@ -637,7 +639,8 @@ async function boot() {
 
   state.units = s.profile.imperial ? 'imperial' : 'metric';
   state.providers = s.providers;
-  state.garminSaved = Boolean(s.garmin_saved_login);
+  state.garminSaved = Boolean(s.garmin_saved_login || s.garmin_saved_password);
+  state.keychain = s.keychain || null;
 
   const chip = $('#profile-chip');
   chip.hidden = false;

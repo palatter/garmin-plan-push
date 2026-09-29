@@ -517,3 +517,47 @@ def test_a_profile_with_a_typo_is_reported_and_never_saved_over(app):
 def test_no_profile_yet_still_opens_setup(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "find_profile", lambda *a: None)
     assert App(None).state({}) == {"configured": False}
+
+
+def test_a_send_keeps_the_password_only_when_the_box_is_ticked(app, monkeypatch):
+    from gpp import client as client_module
+
+    plan, _ = _upcoming()
+    cal = _Calendar([])
+    seen = []
+
+    def sign_in(email, password, **kw):
+        seen.append((password, kw["remember"]))
+        cal.client.remembered = True if kw["remember"] and password else None
+        return cal.client
+
+    monkeypatch.setattr(client_module, "sign_in", sign_in)
+    body = {"plan": plan, "email": "me@example.com", "password": "pw", "mode": "preview"}
+    kept = _finish(app, app.push({**body, "remember": True})["job"])
+    not_kept = _finish(app, app.push(body)["job"])
+    assert seen == [("pw", True), ("pw", False)]
+    assert any("password is kept" in line for line in kept["log"])
+    assert not any("password" in line for line in not_kept["log"])
+
+
+def test_the_page_is_told_what_the_keychain_is_called(app, monkeypatch):
+    import keyring
+    from keyring.backends import fail
+
+    from gpp import keychain
+
+    state = app.state({})
+    assert state["keychain"] == keychain.where() and state["garmin_saved_password"] is False
+    keychain.save_garmin_password("me@example.com", "pw")
+    assert app.state({})["garmin_saved_password"] is True
+    keyring.set_keyring(fail.Keyring())
+    assert app.state({})["keychain"] is None
+
+
+def test_signout_forgets_the_kept_passwords(app, monkeypatch, tmp_path):
+    from gpp import keychain
+
+    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(tmp_path))
+    keychain.save_garmin_password("me@example.com", "pw")
+    assert app.garmin_signout({}) == {"signed_out": True}
+    assert keychain.garmin_password("me@example.com") is None
