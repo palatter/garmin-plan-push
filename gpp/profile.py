@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import math
+import os
+import re
+import tempfile
 import tomllib
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -447,6 +451,17 @@ class Profile:
             "",
             f'name = "{_escape(self.name)}"',
             f'units = "{"imperial" if self.imperial else "metric"}"',
+        ]
+        # Keys gpp does not know are kept, so a save never loses a setting a
+        # newer version (or the user) put there. Top-level values must come
+        # before the first table.
+        others = {
+            k: v
+            for k, v in raw.items()
+            if k not in _MANAGED[""] or (k == "ai" and not isinstance(v, dict))
+        }
+        lines += [_kv(k, v) for k, v in others.items() if not isinstance(v, dict)]
+        lines += [
             "",
             "[pace]",
             "# Roughly the pace you could hold in a hard one-hour race.",
@@ -455,6 +470,7 @@ class Profile:
         ]
         if self.zone_model != "threshold":
             lines.append(f'model = "{self.zone_model}"')
+        lines += _extra(raw, "pace")
 
         custom = {
             name: bounds
@@ -463,30 +479,28 @@ class Profile:
         }
         if custom:
             lines += ["", "[pace.zones]", "# First number is the SLOWER bound."]
-            lines += [f"{name} = [{lo}, {hi}]" for name, (lo, hi) in custom.items()]
+            lines += [f"{_key(name)} = [{lo}, {hi}]" for name, (lo, hi) in custom.items()]
 
-        if self.lthr or self.hr_max:
+        hr_extra = _extra(raw, "hr")
+        if self.lthr or self.hr_max or hr_extra:
             lines += ["", "[hr]"]
             if self.lthr:
                 lines.append(f"lthr = {self.lthr}")
             if self.hr_max:
                 lines.append(f"max = {self.hr_max}")
+            lines += hr_extra
             if self.hr_zones != DEFAULT_HR_ZONES:
                 lines += ["", "[hr.zones]", "# Fractions of LTHR: low, high."]
                 for zone, (low, high) in sorted(self.hr_zones.items()):
                     lines.append(f'"{zone}" = [{low}, {high}]')
 
         cs_cfg = raw.get("cs") or {}
-        if cs_cfg.get("trials"):
+        cs_extra = _extra(raw, "cs")
+        if cs_cfg.get("trials") or cs_extra:
             lines += ["", "[cs]", "# Two or more all-out trials of 2-20 minutes."]
-            lines.append(
-                "trials = ["
-                + ", ".join(
-                    f'{{ distance = "{_escape(str(t["distance"]))}", time = "{_escape(str(t["time"]))}" }}'
-                    for t in cs_cfg["trials"]
-                )
-                + "]"
-            )
+            if cs_cfg.get("trials"):
+                lines.append(_kv("trials", cs_cfg["trials"]))
+            lines += cs_extra
 
         vdot_cfg = raw.get("vdot") or {}
         if vdot_cfg:
@@ -494,11 +508,16 @@ class Profile:
             for key in ("distance", "time", "value"):
                 if vdot_cfg.get(key) is not None:
                     lines.append(_kv(key, vdot_cfg[key]))
+            lines += _extra(raw, "vdot")
 
-        if self.power_cp:
-            lines += ["", "[power]", f"cp = {self.power_cp}"]
+        power_extra = _extra(raw, "power")
+        if self.power_cp or power_extra:
+            lines += ["", "[power]"]
+            if self.power_cp:
+                lines.append(f"cp = {self.power_cp}")
             if self.power_pace_at_cp:
                 lines.append(f'pace_at_cp = "{format_pace(self.power_pace_at_cp, self.imperial)}"')
+            lines += power_extra
 
         athlete_lines = []
         if self.instructions:
@@ -519,6 +538,7 @@ class Profile:
             athlete_lines.append(f'language = "{_escape(self.language)}"')
         if self.intensity_distribution != "pyramidal":
             athlete_lines.append(f'intensity_distribution = "{self.intensity_distribution}"')
+        athlete_lines += _extra(raw, "athlete")
         if athlete_lines:
             lines += [
                 "",
@@ -527,42 +547,48 @@ class Profile:
                 *athlete_lines,
             ]
 
-        if self.availability:
+        availability_extra = _extra(raw, "availability")
+        if self.availability or availability_extra:
             a = self.availability
             lines += ["", "[availability]"]
-            if a.days:
-                lines.append("days = [" + ", ".join(f'"{d}"' for d in a.days) + "]")
+            if a and a.days:
+                lines.append(_kv("days", list(a.days)))
             for key, value in (
-                ("weekday_max_minutes", a.weekday_max_minutes),
-                ("weekend_max_minutes", a.weekend_max_minutes),
-                ("sessions_per_week", a.sessions_per_week),
+                ("weekday_max_minutes", a.weekday_max_minutes if a else None),
+                ("weekend_max_minutes", a.weekend_max_minutes if a else None),
+                ("sessions_per_week", a.sessions_per_week if a else None),
             ):
                 if value is not None:
                     lines.append(f"{key} = {int(value)}")
-            if a.long_run_day:
-                lines.append(f'long_run_day = "{a.long_run_day}"')
+            if a and a.long_run_day:
+                lines.append(_kv("long_run_day", a.long_run_day))
+            lines += availability_extra
 
-        if self.goal_race:
+        goal_extra = _extra(raw, "goal_race")
+        if self.goal_race or goal_extra:
+            lines += ["", "[goal_race]"]
             g = self.goal_race
-            lines += [
-                "",
-                "[goal_race]",
-                f'name = "{_escape(g.name)}"',
-                f'date = "{g.date.isoformat()}"',
-            ]
-            if g.distance:
-                lines.append(f'distance = "{_escape(g.distance)}"')
-            lines.append(f'priority = "{g.priority}"')
-            if g.goal_time:
-                lines.append(f'goal_time = "{_escape(g.goal_time)}"')
+            if g:
+                lines += [f'name = "{_escape(g.name)}"', f'date = "{g.date.isoformat()}"']
+                if g.distance:
+                    lines.append(f'distance = "{_escape(g.distance)}"')
+                lines.append(_kv("priority", g.priority))
+                if g.goal_time:
+                    lines.append(f'goal_time = "{_escape(g.goal_time)}"')
+            lines += goal_extra
 
-        if self.latitude is not None and self.longitude is not None:
-            lines += [
-                "",
-                "[location]",
-                f"latitude = {self.latitude}",
-                f"longitude = {self.longitude}",
-            ]
+        location_extra = _extra(raw, "location")
+        has_location = self.latitude is not None and self.longitude is not None
+        if has_location or location_extra:
+            lines += ["", "[location]"]
+            if has_location:
+                lines += [f"latitude = {self.latitude}", f"longitude = {self.longitude}"]
+            lines += location_extra
+
+        # Tables gpp does not manage, such as [defaults] (device, port).
+        for name, table in others.items():
+            if isinstance(table, dict):
+                lines += ["", f"[{_key(name)}]", *(_kv(k, v) for k, v in table.items())]
 
         ai_block = _render_ai(raw.get("ai"))
         if ai_block:
@@ -571,9 +597,20 @@ class Profile:
         return "\n".join(lines).rstrip() + "\n"
 
     def save(self, path: str | Path) -> Path:
+        """Write the profile in one step: an interrupted save leaves the old file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.to_toml(), encoding="utf-8")
+        text = self.to_toml()
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
+            if path.exists():
+                os.chmod(tmp, path.stat().st_mode & 0o777)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
         return path
 
 
@@ -606,25 +643,107 @@ def _escape(value: str) -> str:
     return "".join(out)
 
 
-def _kv(key: str, value) -> str:
+# The keys to_toml writes itself, per table ("" is the top level). Anything
+# else found in the file is written back as it was read.
+_MANAGED: dict[str, set[str]] = {
+    "": {
+        "name",
+        "units",
+        "instructions",
+        "pace",
+        "hr",
+        "cs",
+        "vdot",
+        "power",
+        "athlete",
+        "availability",
+        "goal_race",
+        "location",
+        "ai",
+    },
+    "pace": {"threshold", "model", "zones"},
+    "hr": {"lthr", "max", "zones"},
+    "cs": {"trials"},
+    "vdot": {"distance", "time", "value"},
+    "power": {"cp", "pace_at_cp"},
+    "athlete": {
+        "instructions",
+        "injuries",
+        "constraints",
+        "longest_recent_run_km",
+        "recent_weekly_km",
+        "language",
+        "intensity_distribution",
+    },
+    "availability": {
+        "days",
+        "weekday_max_minutes",
+        "weekend_max_minutes",
+        "sessions_per_week",
+        "long_run_day",
+    },
+    "goal_race": {"name", "date", "distance", "priority", "goal_time"},
+    "location": {"latitude", "longitude"},
+}
+
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _key(name: object) -> str:
+    """A TOML key: bare when it can be, quoted otherwise ("my easy", "lätt")."""
+    text = str(name)
+    return text if _BARE_KEY.match(text) else f'"{_escape(text)}"'
+
+
+def _value(value) -> str:
+    """Any value tomllib can read, written back as TOML."""
     if isinstance(value, bool):
-        return f"{key} = {str(value).lower()}"
-    if isinstance(value, (int, float)):
-        return f"{key} = {value}"
-    return f'{key} = "{_escape(str(value))}"'
+        return str(value).lower()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "nan"
+        if math.isinf(value):
+            return "inf" if value > 0 else "-inf"
+        return repr(value)
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        return "{ " + ", ".join(f"{_key(k)} = {_value(v)}" for k, v in value.items()) + " }"
+    return f'"{_escape(str(value))}"'
+
+
+def _kv(key: object, value) -> str:
+    return f"{_key(key)} = {_value(value)}"
+
+
+def _extra(raw: dict, table: str) -> list[str]:
+    """Lines for the keys of `table` that to_toml does not write itself."""
+    section = raw.get(table)
+    if not isinstance(section, dict):
+        return []
+    return [_kv(k, v) for k, v in section.items() if k not in _MANAGED[table]]
 
 
 def _render_ai(ai: dict | None) -> str:
     """Re-emit the [ai] block so saving a profile does not drop provider config."""
-    if not ai:
+    if not ai or not isinstance(ai, dict):
         return ""
     lines = ["[ai]"]
-    if ai.get("default"):
-        lines.append(f'default = "{_escape(str(ai["default"]))}"')
-    for name, entry in (ai.get("providers") or {}).items():
-        lines += ["", f"[ai.providers.{name}]"]
-        for key, value in entry.items():
+    providers = ai.get("providers")
+    tables = isinstance(providers, dict) and all(isinstance(e, dict) for e in providers.values())
+    for key, value in ai.items():
+        if key != "providers" or not tables:
             lines.append(_kv(key, value))
+    if tables:
+        for name, entry in providers.items():
+            lines += ["", f"[ai.providers.{_key(name)}]"]
+            lines += [_kv(key, value) for key, value in entry.items()]
     return "\n".join(lines)
 
 
