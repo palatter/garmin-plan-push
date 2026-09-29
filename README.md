@@ -333,7 +333,14 @@ api_key_env = "ANTHROPIC_API_KEY"
 [ai.providers.local]
 kind = "ollama"
 model = "llama3.3"
+
+[ai.providers.paste]
+kind = "manual"
 ```
+
+Once `[ai.providers]` lists anything, the menu shows exactly those
+providers and no others, so list every one you want to keep, `paste`
+included.
 
 The Claude and OpenAI libraries (also used for Gemini and local models) come
 with every install; nothing extra is needed for any provider.

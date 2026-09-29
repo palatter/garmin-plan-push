@@ -1,3 +1,7 @@
+import re
+import tomllib
+from pathlib import Path
+
 import pytest
 
 from gpp.generate import generate_plan
@@ -154,3 +158,14 @@ def test_both_ai_libraries_ship_with_a_plain_install():
     deps = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
     names = {d.split(">")[0].split("<")[0].split("=")[0].strip() for d in deps}
     assert {"anthropic", "openai", "garminconnect"} <= names
+
+
+def test_readme_provider_example_keeps_paste():
+    # Listing providers replaces the built-in menu, so the README's example
+    # has to list paste itself, or following it takes the no-key way out away.
+    readme = (Path(__file__).parent.parent / "README.md").read_text(encoding="utf-8")
+    example = re.search(r"```toml\n(\[ai\]\n.*?)```", readme, re.S)
+    assert example
+    configs, default = load_providers(tomllib.loads(example.group(1)))
+    assert default == "claude"
+    assert [c.kind for c in configs.values()] == ["anthropic", "ollama", "manual"]

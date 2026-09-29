@@ -323,7 +323,7 @@
     <div class="facts">
       <span>Works with Fenix, Epix, Forerunner 255/265/955/965, Edge 530 and up</span>
       <span>No account to create</span>
-      <span>Your Garmin password never leaves your machine</span>
+      <span>Your Garmin password goes only to Garmin</span>
     </div>
   </section>
 
@@ -444,7 +444,7 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
     <dl class="rows" style="margin-top:1rem">
       <div class="row"><dt>Paste</dt><dd>No key needed. The app builds the full prompt with your paces, dates and rules. Copy it into ChatGPT, Claude, Gemini, Copilot, anything. Paste the reply back. The app validates it and shows the plan.</dd></div>
       <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), start the app again from a new terminal window, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
-      <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine. The app can measure whether a given model is good enough to follow the plan format before you rely on it.</dd></div>
+      <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine, for the technically minded. It is not in the menu until you add a few lines to your profile file, as the <a href="https://github.com/palatter/garmin-plan-push#ai-providers">README</a> shows. Then <code>gpp providers --bench</code> in the terminal measures whether the model can follow the plan format before you rely on it.</dd></div>
     </dl>
     <div class="tabs" role="tablist" aria-label="Operating system" style="margin-top:1rem">
       <button type="button" role="tab" id="tab-key-win" aria-selected="true" aria-controls="key-win" data-os="win">Windows</button>
@@ -522,7 +522,7 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
     </div>
 
     <dl class="rows">
-      <div class="row"><dt>Sanity report</dt><dd>What the checks found, with dates. A long run that jumps past anything in the last month, a weekly ramp over 25%, hard days back to back, a taper that cuts too little or too much, a race too close to your goal race, anything that breaks your own rules. Warnings are for you to judge; blocking findings never reach the watch.</dd></div>
+      <div class="row"><dt>Sanity report</dt><dd>What the checks found, with dates. A long run that jumps past anything in the last month, a weekly ramp over 25%, hard days back to back, a taper that cuts too little or too much, a race too close to your goal race, anything that breaks your own rules. Warnings are for you to judge. A plan the AI writes arrives without blocking findings, because they go back to it to fix. If one comes in another way, from your own edits or a file you open, it shows here and in the send dialog, and whether to send is your call.</dd></div>
       <div class="row"><dt>Plan health</dt><dd>Every week as a bar: height is volume, colour is the share of hard running. Below it, load focus splits the recent weeks the way Garmin's watch does: low aerobic, high aerobic, anaerobic.</dd></div>
       <div class="row"><dt>This week</dt><dd>The days ahead with the key session, the next phase change and the days left to your race.</dd></div>
       <div class="row"><dt>Edit</dt><dd>Any session: the date, the name, the one line that goes on the wrist, a cue per step, or retype the whole session in one line, like <code>15m wu, 5 x 1km @ T w/ 2m jog, 10m cd</code>.</dd></div>
@@ -543,7 +543,8 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
       <p>Press <strong>Send to Garmin</strong>, enter your Garmin Connect email and password, and type the two-factor code if Garmin asks for one. The app signs in, uploads each session as a structured workout, schedules it on your Connect calendar on the right day, and reads each one back to make sure Garmin stored exactly what was sent. <strong>Check first</strong> signs in and shows what Send would create, update or leave alone, without sending anything.</p>
       <p>Then sync your watch as usual, with the Connect app on your phone or Garmin Express. Each session appears on the day it is planned, with the steps, the pace or heart-rate targets and your cues, and the watch guides you through it like any Garmin workout.</p>
       <p>Change the plan later and send again: the app updates the existing workouts in place rather than creating duplicates. If you moved a session to another day, the old copy stays on its old date; the app lists it, and ticking <strong>Remove this plan's sessions left on dates it no longer uses</strong> before sending clears it (<code>gpp push plan.json --prune</code> in the terminal does the same).</p>
-      <p>The password is used for that one sign-in and is not written to disk. What persists is Garmin's own login token, kept in a folder on your computer, so the next send does not ask again.</p>
+      <p>The password is used for that one sign-in and is not written to disk. What persists is Garmin's own login token, kept in a folder on your computer for each Garmin account, so the next send for the same account needs only the email.</p>
+      <p>To take a sent plan off your calendar, open a terminal and run <code>gpp pushes</code>. It lists each send with the file that records it. <code>gpp unpush --receipt</code> followed by that file's path, in quotes, removes exactly the workouts of that send after asking you first; nothing else on your calendar is touched.</p>
     </div>
   </section>
 
