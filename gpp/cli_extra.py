@@ -106,6 +106,10 @@ def cmd_template(args) -> int:
         _write_or_print(plan.dumps(), args.output)
         return 0
     if args.action == "return":
+        if args.tier == "resume":
+            # Nothing to ramp back into, and an empty plan would not push.
+            print(f"resume: {adapt.TIER_ADVICE['resume']} No plan written.")
+            return 0
         plan = library.return_to_run(_date(args.start), args.tier)
         _write_or_print(plan.dumps(), args.output)
         return 0

@@ -830,6 +830,7 @@ function initAdapt() {
         action: 'return', days_off: Number($('#rt-days').value), start: $('#rt-start').value,
       });
       $('#return-dialog').close();
+      if (described.advice) { toast(described.advice); return; }  // nothing to build
       openPlan(described, true, 'built');
       toast(described.adaptation.reasons[0] || 'Built.');
     } catch (err) {

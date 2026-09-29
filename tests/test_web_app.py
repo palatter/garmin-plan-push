@@ -163,6 +163,9 @@ def test_adapt_endpoint_missed_pause_and_return(app):
     out = app.adapt_plan({"action": "return", "days_off": 21, "start": "2026-10-05"})
     assert out["adaptation"]["reasons"]
     assert out["workouts"]
+    # A few days off: advice only, no empty plan to replace the one on the page.
+    out = app.adapt_plan({"action": "return", "days_off": 4, "start": "2026-10-05"})
+    assert out == {"advice": "Skip what was missed and carry on; a week off costs little."}
 
     with pytest.raises(AppError, match="pause, missed or return"):
         app.adapt_plan({"plan": PLAN, "action": "shrug"})

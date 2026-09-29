@@ -184,8 +184,10 @@ def rebase(template: Plan, start_monday: dt.date, race_date: dt.date | None = No
 def return_to_run(start: dt.date, tier: str, base: Workout | None = None) -> Plan:
     """Pfitzinger's post-race recovery and a post-injury ramp, from a tier.
 
-    resume: nothing to do. restart-phase: two easy weeks at 80%. back-to-base:
-    three weeks easy at 65% climbing. foundation: four weeks, walk-run first.
+    resume: nothing to build (an error; callers give the advice instead).
+    restart-phase: two easy weeks at 80%. back-to-base: three weeks easy at 65%
+    climbing. foundation: four weeks, walk-run first. Each week has three runs
+    a day apart, counted from the start day, so none falls before it.
     """
     easy = base or Workout.from_dict(
         {
@@ -206,12 +208,14 @@ def return_to_run(start: dt.date, tier: str, base: Workout | None = None) -> Pla
     }.get(tier)
     if schedule is None:
         raise LibraryError(f"unknown tier {tier!r}")
+    if not schedule:
+        raise LibraryError(f"{tier} has no ramp to build: carry on with the plan")
     workouts: list[Workout] = []
     for week_index, factor in enumerate(schedule):
-        monday = start - dt.timedelta(days=start.weekday()) + dt.timedelta(days=7 * week_index)
+        first = start + dt.timedelta(days=7 * week_index)
         for offset in (0, 2, 4):
             w = scale_workout(easy, factor)
-            w.date = monday + dt.timedelta(days=offset)
+            w.date = first + dt.timedelta(days=offset)
             w.name = f"Easy {int(factor * 100)}%"
             w.role, w.phase = "easy", "recovery"
             workouts.append(w)

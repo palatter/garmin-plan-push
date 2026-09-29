@@ -1,10 +1,11 @@
 """Library, templates, re-basing and the return-to-run ramps."""
 
 import datetime as dt
+import itertools
 
 import pytest
 
-from gpp import library
+from gpp import cli, library
 from gpp.plan import Plan
 
 
@@ -84,18 +85,32 @@ def test_plan_template_can_be_anchored_to_a_race_date(tmp_path):
 def test_return_to_run_ramps():
     plan = library.return_to_run(dt.date(2026, 9, 23), "back-to-base")
     assert len(plan.workouts) == 9  # three weeks of three
-    assert plan.workouts[0].date == dt.date(2026, 9, 21)
     assert plan.workouts[0].steps[0].duration == "26m"  # 65% of 40
     assert plan.workouts[-1].steps[0].duration == "36m"  # 90% of 40
     assert all(w.phase == "recovery" for w in plan.workouts)
-    assert library.return_to_run(dt.date.today(), "resume").workouts == []
+    with pytest.raises(library.LibraryError, match="no ramp to build"):
+        library.return_to_run(dt.date.today(), "resume")
     with pytest.raises(library.LibraryError):
         library.return_to_run(dt.date.today(), "sideways")
 
 
-def test_a_template_file_path_works_from_the_command_line_only(tmp_path, capsys):
-    from gpp import cli
+def test_a_ramp_starts_on_its_start_day_not_that_week_s_monday():
+    # A Thursday start used to put the first two runs on Monday and Wednesday.
+    thursday = dt.date(2026, 10, 1)
+    plan = library.return_to_run(thursday, "restart-phase")
+    dates = [w.date for w in plan.workouts]
+    assert dates[0] == thursday and min(dates) == thursday and len(dates) == 6
+    assert [(b - a).days for a, b in itertools.pairwise(dates)] == [2, 2, 3, 2, 2]
 
+
+def test_resume_gives_the_advice_and_writes_no_plan(tmp_path, capsys):
+    out = tmp_path / "ramp.json"
+    args = ["template", "return", "--tier", "resume", "--start", "2026-10-01", "-o", str(out)]
+    assert cli.main(args) == 0
+    assert "carry on" in capsys.readouterr().out and not out.exists()
+
+
+def test_a_template_file_path_works_from_the_command_line_only(tmp_path, capsys):
     path = tmp_path / "block.json"
     Plan.from_dict(
         {

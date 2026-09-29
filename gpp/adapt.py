@@ -47,6 +47,8 @@ LAYOFF_TIERS = (
     ),
 )
 
+TIER_ADVICE = {tier: advice for _, tier, advice in LAYOFF_TIERS}
+
 # Volume multiplier for the first week back, by tier.
 RETURN_SCALE = {"resume": 1.0, "restart-phase": 0.8, "back-to-base": 0.65, "foundation": 0.5}
 

@@ -494,6 +494,8 @@ class App:
             elif action == "return":
                 start = _date_of(body.get("start"), "start")
                 tier, why = adapt.layoff_tier(int(body.get("days_off") or 0))
+                if tier == "resume":
+                    return {"advice": why}  # nothing to build; the plan on the page stays
                 result = adapt.Adaptation(plan=library.return_to_run(start, tier), reasons=[why])
             else:
                 raise AppError("action must be pause, missed or return")
