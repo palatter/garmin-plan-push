@@ -854,7 +854,7 @@ function openRewrite(index) {
 
 function initRewrite() {
   $('#rw-cancel').addEventListener('click', () => {
-    clearTimeout(state.pollTimer);
+    stopPolling('#rw-log');
     $('#rewrite-dialog').close();
   });
   $('#rw-go').addEventListener('click', async () => {
@@ -1115,6 +1115,11 @@ function initReview() {
   $('#r-library').addEventListener('click', openLibrary);
   $('#c-library').addEventListener('click', openLibrary);
   $('#r-push').addEventListener('click', () => {
+    if (state.pushing) {
+      // A send is still running: show it as it stands, never start another.
+      $('#push-dialog').showModal();
+      return;
+    }
     setError('#push-error', '');
     $('#p-results').hidden = true;
     $('#p-results').innerHTML = '';
@@ -1122,6 +1127,9 @@ function initReview() {
     $('#p-mfa').hidden = true;
     $('#p-log').innerHTML = '';
     $('#p-go').disabled = false;
+    $('#p-preview').disabled = false;
+    $('#p-prune').checked = false;  // removing sessions is chosen each time, never remembered
+    $('#p-password').value = '';
     $('#p-signout').hidden = !state.garminSaved;
     $('#p-password-hint').textContent = state.garminSaved
       ? 'Signed in before on this computer: leave it blank.'

@@ -112,6 +112,7 @@ class App:
         self.recent_root: Path | None = None
         self.history_path: Path | None = None
         self._lock = threading.Lock()
+        self._garmin_job: str | None = None  # the send or check running, if any
 
     # --- profile ---
 
@@ -424,7 +425,20 @@ class App:
                 job.say(f"could not save the push receipt: {exc}")
             return {"results": [r.to_dict() for r in results]}
 
-        return {"job": self.jobs.start("push", work).id}
+        # One Garmin job at a time: a second Send (the dialog reopened
+        # mid-send, or another tab) would push every session twice, and two
+        # sign-ins at once race on the saved login.
+        with self._lock:
+            running = self.jobs.get(self._garmin_job) if self._garmin_job else None
+            if running and running.snapshot()["status"] in ("running", "awaiting_input"):
+                raise AppError(
+                    "a send to Garmin is already running from this app; "
+                    "wait for it to finish, then try again",
+                    status=409,
+                )
+            job = self.jobs.start("push", work)
+            self._garmin_job = job.id
+        return {"job": job.id}
 
     def garmin_signout(self, _: dict) -> dict:
         """Forget the saved Garmin login on this computer."""

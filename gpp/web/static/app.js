@@ -23,7 +23,7 @@ const state = {
   mileage: null,        // /api/history weeks, fetched once per page load
   education: {},        // session type -> explanation, from the server
   providers: [],
-  pollTimer: null,
+  polls: new Map(),  // log selector -> the poll writing to it
 };
 
 /* ---------------------------------------------------------------- api --- */
@@ -450,40 +450,55 @@ function appendLog(sel, message, bad = false) {
   list.scrollTop = list.scrollHeight;
 }
 
+// Each poll keeps its own timer, keyed by the log it writes to, so stopping
+// one (a dialog's Cancel) never stops another (a send still running).
 function pollJob(id, logSel, onInput) {
+  stopPolling(logSel);
+  const poll = { timer: null, stopped: false };
+  state.polls.set(logSel, poll);
+  const finish = () => { if (state.polls.get(logSel) === poll) state.polls.delete(logSel); };
   return new Promise((resolve, reject) => {
     let seen = 0;
     let asked = false;  // only raise the input UI once per pause
     const tick = async () => {
+      if (poll.stopped) return;
       let snap;
       try {
         snap = await api('/api/job', { id });
-      } catch (err) { return reject(err); }
+      } catch (err) { finish(); return reject(err); }
+      if (poll.stopped) return;
 
       snap.log.slice(seen).forEach(line => appendLog(logSel, line, /error|failed/i.test(line)));
       seen = snap.log.length;
 
       if (snap.status === 'awaiting_input') {
         if (onInput && !asked) { onInput(snap.prompt, id, snap); asked = true; }
-        state.pollTimer = setTimeout(tick, POLL_MS);
+        poll.timer = setTimeout(tick, POLL_MS);
         return;
       }
       asked = false;
-      if (snap.status === 'done')  return resolve(snap);
-      if (snap.status === 'error') return reject(new Error(snap.error || 'failed'));
-      state.pollTimer = setTimeout(tick, POLL_MS);
+      if (snap.status === 'done') { finish(); return resolve(snap); }
+      if (snap.status === 'error') { finish(); return reject(new Error(snap.error || 'failed')); }
+      poll.timer = setTimeout(tick, POLL_MS);
     };
     tick();
   });
 }
 
+function stopPolling(logSel) {
+  const poll = state.polls.get(logSel);
+  if (!poll) return;
+  poll.stopped = true;
+  clearTimeout(poll.timer);
+  state.polls.delete(logSel);
+}
+
 /* ---------------------------------------------------------------- push --- */
 
 function initPush() {
-  $('#p-cancel').addEventListener('click', () => {
-    clearTimeout(state.pollTimer);
-    $('#push-dialog').close();
-  });
+  // Closing the dialog does not stop a send: it keeps running on the
+  // server, and reopening the dialog shows it again.
+  $('#p-cancel').addEventListener('click', () => $('#push-dialog').close());
 
   $('#p-mfa-send').addEventListener('click', async () => {
     const code = $('#p-mfa-code').value.trim();
@@ -523,9 +538,10 @@ async function runPush(mode) {
   $('.spinner', $('#p-progress')).style.display = '';
   $('#p-log').innerHTML = '';
   $('#p-results').hidden = true;
+  state.pushing = true;
 
   try {
-    const { job } = await api('/api/push', {
+    const request = api('/api/push', {
       plan: state.plan.json,
       email,
       password: $('#p-password').value,
@@ -533,6 +549,8 @@ async function runPush(mode) {
       prune: $('#p-prune').checked,
       mode,
     });
+    $('#p-password').value = '';  // sent; never left in the page
+    const { job } = await request;
     const done = await pollJob(job, '#p-log', (prompt, id) => {
       state.mfaJob = id;
       $('#p-mfa-label').textContent = prompt;
@@ -558,8 +576,9 @@ async function runPush(mode) {
     $('#p-go').disabled = false;
     $('#p-progress').hidden = true;
   } finally {
+    state.pushing = false;
+    $('#p-mfa').hidden = true;
     $('#p-preview').disabled = false;
-    $('#p-password').value = '';  // never left in the page, pushed or not
   }
 }
 

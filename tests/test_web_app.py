@@ -386,6 +386,33 @@ def test_send_with_prune_removes_orphans(app, monkeypatch):
     assert ("DELETE", "/workout-service/workout/9") in cal.writes
 
 
+def test_one_send_at_a_time(app, monkeypatch):
+    # The dialog could be closed and reopened mid-send, and a second Send
+    # pushed every session again alongside the first.
+    import threading
+
+    from gpp import client as client_module
+
+    cal = _Calendar([])
+    release = threading.Event()
+
+    def slow_sign_in(*a, **kw):
+        release.wait(5)
+        return cal.client
+
+    monkeypatch.setattr(client_module, "sign_in", slow_sign_in)
+    monkeypatch.setattr(server, "save_receipt", lambda *a: type("R", (), {"name": "r"})())
+    first = app.push({"plan": PLAN, "email": "me@example.com"})
+    for body in ({"mode": "preview"}, {}):
+        with pytest.raises(AppError, match="already running") as err:
+            app.push({"plan": PLAN, "email": "me@example.com", **body})
+        assert err.value.status == 409
+    release.set()
+    assert _finish(app, first["job"])["status"] == "done"
+    again = app.push({"plan": PLAN, "email": "me@example.com", "mode": "preview"})
+    assert _finish(app, again["job"])["status"] == "done"
+
+
 def test_signout_forgets_every_saved_login(app, monkeypatch, tmp_path):
     from gpp.client import token_dir
 
