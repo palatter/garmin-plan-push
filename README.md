@@ -144,8 +144,11 @@ plans conversationally. Push is a dry run unless you have set
 never sees either. It needs the MCP library, installed with:
 
 ```bash
-uv tool install --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
+uv tool install --python 3.12 --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
 ```
+
+(`--python 3.12` matters: with the `[mcp]` extra, uv otherwise tries the
+computer's default Python, and fails if that is older than 3.12.)
 
 ## Sharing it with someone
 

@@ -10,9 +10,10 @@ Nothing here can read the Garmin password: pushing requires the same
 environment variables the CLI uses (GARMIN_EMAIL / GARMIN_PASSWORD), or a
 token already cached by a previous login. An assistant never sees either.
 
-Requires the optional `mcp` extra (mcp 2.x):
+Requires the optional `mcp` extra (mcp 2.x). Name the Python: with an extra,
+uv picks the computer's default Python before it reads that gpp needs 3.12+.
 
-    uv tool install --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
+    uv tool install --python 3.12 --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
 """
 
 from __future__ import annotations
@@ -150,7 +151,7 @@ TOOLS = {
 
 
 MCP_INSTALL = (
-    'uv tool install --reinstall "garmin-plan-push[mcp] @ '
+    'uv tool install --python 3.12 --reinstall "garmin-plan-push[mcp] @ '
     'git+https://github.com/palatter/garmin-plan-push"'
 )
 
