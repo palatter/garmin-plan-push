@@ -29,6 +29,7 @@ from .providers import (
     sdk_installed,
 )
 from .render import render_plan
+from .units import UnitError
 
 
 def _load_profile(explicit: str | None) -> Profile:
@@ -245,7 +246,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
                     client.push(compiled, device_id=args.device, log=print)
                 except PushError as exc:
                     print(f"push failed: {exc}")
-        except (PlanError, ProfileError, CompileError) as exc:
+        except (PlanError, ProfileError, CompileError, UnitError) as exc:
             print(f"error: {exc}")
 
     print(f"watching {args.plan} -- Ctrl+C to stop")

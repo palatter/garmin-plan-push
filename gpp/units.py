@@ -18,7 +18,8 @@ class UnitError(ValueError):
 
 # --- Duration ---------------------------------------------------------------
 
-_DUR_TOKEN = re.compile(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|m|min|mins|s|sec|secs)", re.I)
+# Longest spellings first: with "m" ahead of "min", "20min" left "in" unparsed.
+_DUR_TOKEN = re.compile(r"(\d+(?:\.\d+)?)\s*(hrs|hr|h|mins|min|m|secs|sec|s)", re.I)
 _DUR_CLOCK = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)$")
 _DUR_MMSS = re.compile(r"^(\d{1,3}):(\d{2}(?:\.\d+)?)$")
 

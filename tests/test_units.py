@@ -24,6 +24,14 @@ from gpp.units import (
         ("1:05:00", 3900),
         ("2:30", 150),
         (300, 300),
+        ("20min", 1200),
+        ("20 mins", 1200),
+        ("1hr", 3600),
+        ("2hrs", 7200),
+        ("30sec", 30),
+        ("90 secs", 90),
+        ("1h30min", 5400),
+        ("1 hr 5 min", 3900),
     ],
 )
 def test_parse_duration(text, expected):
@@ -88,3 +96,19 @@ def test_formatting():
     assert format_duration(3930) == "1:05:30"
     assert format_pace(250) == "4:10/km"
     assert format_pace(250, imperial=True) == "6:42/mi"
+
+
+def test_watch_reports_a_bad_duration_and_keeps_going(tmp_path, monkeypatch, capsys):
+    import json
+
+    from gpp import cli
+    from gpp.profile import Profile
+
+    profile = Profile.from_dict({"name": "T", "pace": {"threshold": "4:30/km"}})
+    profile_path = profile.save(tmp_path / "profile.toml")
+    plan = tmp_path / "plan.json"
+    workout = {"name": "W", "date": "2026-10-01", "steps": [{"kind": "run", "duration": "20 fur"}]}
+    plan.write_text(json.dumps({"plan": "p", "workouts": [workout]}), encoding="utf-8")
+    monkeypatch.setattr("gpp.watch.watch", lambda path, on_change: on_change(path))
+    assert cli.main(["--profile", str(profile_path), "watch", str(plan)]) == 0
+    assert "error: cannot parse duration '20 fur'" in capsys.readouterr().out
