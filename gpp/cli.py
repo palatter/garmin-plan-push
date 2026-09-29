@@ -16,6 +16,7 @@ from . import REINSTALL, checks
 from .client import PushError
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
+from .keychain import KeychainError
 from .plan import Plan, PlanError, write_keeping
 from .profile import Profile, ProfileError, default_save_path, find_profile
 from .prompt import build_prompt
@@ -114,9 +115,13 @@ def scrub(line: str, secrets: list[str]) -> str:
 
 
 def _secret_values(configs: dict) -> list[str]:
-    names = {cfg.api_key_env for cfg in configs.values() if cfg.api_key_env}
-    names |= {n for n in os.environ if _SECRET_ENV_RE.search(n)}
-    values = {os.environ.get(n, "") for n in names}
+    from . import keychain
+    from .icu import KEY_ENV
+    from .providers import key_names
+
+    saved = {*key_names(configs), KEY_ENV}
+    names = saved | {n for n in os.environ if _SECRET_ENV_RE.search(n)}
+    values = {os.environ.get(n, "") for n in names} | {keychain.get(n) or "" for n in saved}
     return sorted((v for v in values if len(v) >= 6), key=len, reverse=True)
 
 
@@ -669,10 +674,17 @@ def cmd_prompt(args: argparse.Namespace) -> int:
 
 
 def _key_status(config) -> str:
+    from . import keychain
+
     present = key_present(config)
     if present is None:
         return "no key needed"
-    return f"{config.api_key_env} set" if present else f"{config.api_key_env} NOT set"
+    if not present:
+        return f"{config.api_key_env} NOT set"
+    where = keychain.source(config.api_key_env or "")
+    return f"{config.api_key_env} set" + (
+        f" (in {keychain.where()})" if where == "keychain" else ""
+    )
 
 
 def cmd_providers(args: argparse.Namespace) -> int:
@@ -761,7 +773,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             # Only the provider that will actually be used is a failure;
             # the others are simply not in play.
             if name == chosen:
-                line(False, label, f"{config.api_key_env} not set - set it, or use paste")
+                line(
+                    False,
+                    label,
+                    f"{config.api_key_env} not set - gpp keys set {config.api_key_env}, or use paste",
+                )
             else:
                 line(None, label, f"{config.api_key_env} not set (won't be used)")
             continue
@@ -779,7 +795,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     import platform
     import shutil
 
+    from . import keychain
+
     line(True, "python", f"{platform.python_version()} on {platform.system()} {platform.release()}")
+    line(
+        True if keychain.available() else None,
+        "keychain",
+        keychain.where() if keychain.available() else "none: keys come from the environment only",
+    )
     line(bool(shutil.which("uv")), "uv", shutil.which("uv") or "not on PATH")
     shim = shutil.which("gpp")
     line(
@@ -1422,7 +1445,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"debug log: {LOG_PATH}", file=sys.stderr)
     try:
         return args.func(args)
-    except (PlanError, ProfileError, CompileError, ProviderError, UnitError, TextError) as exc:
+    except (
+        PlanError,
+        ProfileError,
+        CompileError,
+        ProviderError,
+        UnitError,
+        TextError,
+        KeychainError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except PushError as exc:

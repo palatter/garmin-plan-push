@@ -28,6 +28,9 @@ dependencies = [
     # is tested; ceilings keep an upgrade off an untested major.
     "anthropic>=1.7,<2",
     "openai>=3.16,<4",
+    # API keys and a typed Garmin password are kept in the OS keychain
+    # (Windows Credential Manager, the macOS Keychain, the Secret Service).
+    "keyring>=25.7,<26",
 ]
 
 [project.optional-dependencies]

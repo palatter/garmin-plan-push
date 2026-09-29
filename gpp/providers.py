@@ -28,13 +28,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from . import keychain
 from .textfile import read_text
 
 log = logging.getLogger("gpp.providers")
@@ -358,9 +358,10 @@ class OpenAICompatibleProvider:
             key = "not-needed"
         if not key:
             raise ProviderError(
-                f"no API key for provider {self.name!r}; set the "
-                f"{self.config.api_key_env or 'OPENAI_API_KEY'} environment "
-                f"variable, or choose the paste provider, which needs none"
+                f"no API key for provider {self.name!r}: add "
+                f"{self.config.api_key_env or 'OPENAI_API_KEY'} in the web app's "
+                f"settings or with  gpp keys set, or choose the paste provider, "
+                f"which needs none"
             )
 
         client = OpenAI(api_key=key, base_url=self.config.base_url or None)
@@ -668,7 +669,17 @@ def key_present(config: ProviderConfig) -> bool | None:
     resolve(config)
     if config.api_key_env is None:
         return None
-    return bool(os.environ.get(config.api_key_env))
+    return bool(keychain.lookup(config.api_key_env))
+
+
+def key_names(configs: dict[str, ProviderConfig]) -> list[str]:
+    """The names these providers read their keys under, each once, in order."""
+    names: list[str] = []
+    for config in configs.values():
+        resolve(config)
+        if config.api_key_env and config.api_key_env not in names:
+            names.append(config.api_key_env)
+    return names
 
 
 def pick_default(configs: dict[str, ProviderConfig], explicit: str | None) -> str:
@@ -720,8 +731,8 @@ def describe_failure(name: str, model: str | None, exc: Exception, docs_url: str
         for s in ("authentication", "api key", "api_key", "unauthorized", "permission denied")
     ):
         return (
-            f"{name} rejected the API key. Check the environment variable is set "
-            f"in the shell that launched gpp, and that the key is current. ({text})"
+            f"{name} rejected the API key. Check that the key is current, and "
+            f"replace it in the web app's settings or with  gpp keys set. ({text})"
         )
 
     if status == 429 or "rate limit" in lowered or "quota" in lowered:
@@ -807,9 +818,8 @@ def default_configs() -> dict[str, ProviderConfig]:
 
 
 def _api_key(config: ProviderConfig, fallback_env: str) -> str | None:
-    if config.api_key_env:
-        return os.environ.get(config.api_key_env)
-    return os.environ.get(fallback_env)
+    """The key from its environment variable, else from the OS keychain."""
+    return keychain.lookup(config.api_key_env or fallback_env)
 
 
 def _is_bad_request(exc: Exception) -> bool:

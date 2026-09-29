@@ -22,12 +22,14 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from . import keychain
 from .compile import compile_plan, legacy_slug
 from .constants import TAG_PREFIX
 from .formats import FormatError, export_icu
@@ -40,6 +42,8 @@ BASE_URL = "https://intervals.icu/api/v1"
 MOVED_MARGIN_DAYS = 28
 KEY_ENV = "ICU_API_KEY"
 ATHLETE_ENV = "ICU_ATHLETE_ID"
+# Where the profile keeps the athlete id once the web app has been given it.
+PROFILE_SECTION = "intervals_icu"
 ATHLETE_ID = re.compile(r"^i\d+$")
 SPORT_TYPES = {
     "running": "Run",
@@ -82,6 +86,22 @@ def http(method: str, url: str, body: object, headers: dict[str, str]) -> tuple[
         return exc.code, exc.read()
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise IcuError(f"intervals.icu is unreachable: {exc}") from exc
+
+
+def athlete_id(given: str | None, profile: Profile | None) -> str | None:
+    """The athlete id: as given, else ICU_ATHLETE_ID, else the profile's."""
+    if given:
+        return given.strip()
+    if env := os.environ.get(ATHLETE_ENV):
+        return env.strip()
+    section = profile.raw.get(PROFILE_SECTION) if profile else None
+    saved = str(section.get("athlete") or "").strip() if isinstance(section, dict) else ""
+    return saved or None
+
+
+def api_key(given: str | None = None) -> str | None:
+    """The API key: as given, else ICU_API_KEY, else the OS keychain's."""
+    return given or keychain.lookup(KEY_ENV)
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -136,10 +156,13 @@ def _check(athlete: str | None, key: str | None) -> None:
     if not ATHLETE_ID.match(athlete or ""):
         raise IcuError(
             'the athlete id looks like "i12345" (intervals.icu -> Settings -> Developer); '
-            f"pass --athlete or set {ATHLETE_ENV}"
+            f"pass --athlete, set {ATHLETE_ENV}, or give it once in the web app"
         )
     if not key:
-        raise IcuError(f"no API key: set {KEY_ENV}, or run in a terminal to be asked for it")
+        raise IcuError(
+            f"no API key: add it in the web app, or with  gpp keys set {KEY_ENV},"
+            " or run in a terminal to be asked for it"
+        )
 
 
 def _raise_for(status: int, raw: bytes) -> None:

@@ -151,18 +151,21 @@ def cmd_oneline(args) -> int:
 def cmd_icu(args) -> int:
     """Push (or remove) the plan on an intervals.icu calendar (#179): the
     partner route to Garmin for anyone who prefers it to the Connect API."""
-    import os
-
     from . import icu
 
     profile = _profile(args)
     plan = Plan.load(args.plan)
-    athlete = args.icu_athlete or os.environ.get(icu.ATHLETE_ENV)
-    key = args.key or os.environ.get(icu.KEY_ENV)
+    athlete = icu.athlete_id(args.icu_athlete, profile)
+    key = icu.api_key(args.key)
     if not key and not args.dry_run and sys.stdin.isatty():
         import getpass
 
-        key = getpass.getpass("intervals.icu API key (not stored): ").strip() or None
+        key = (
+            getpass.getpass(
+                f"intervals.icu API key (not stored; gpp keys set {icu.KEY_ENV} keeps it): "
+            ).strip()
+            or None
+        )
     try:
         if args.remove:
             found = icu.find(plan, athlete, key)
@@ -204,6 +207,58 @@ def cmd_icu(args) -> int:
                     print(r.describe())
     except icu.IcuError as exc:
         print(f"warning: could not look for sessions this plan no longer has: {exc}")
+    return 0
+
+
+def cmd_keys(args) -> int:
+    """List, save or remove the API keys gpp reads. Saved keys live in the OS
+    keychain, so they work at once, with no environment variable to set and
+    no new terminal to open; an environment variable still comes first."""
+    import os
+
+    from . import keychain
+    from .icu import KEY_ENV
+    from .providers import key_names, load_providers
+
+    if args.action == "list":
+        try:
+            configs, _ = load_providers(_profile(args).raw)
+        except ProfileError:
+            configs, _ = load_providers({})
+        where = {"environment": "set in the environment", "keychain": f"in {keychain.where()}"}
+        for name in [*key_names(configs), KEY_ENV]:
+            print(f"  {name:<22} {where.get(keychain.source(name) or '', 'not set')}")
+        if not keychain.available():
+            print("\nThis computer has no keychain gpp can use: keys come from the environment.")
+        return 0
+    if not args.name:
+        print(
+            f"error: say which key, like  gpp keys {args.action} ANTHROPIC_API_KEY", file=sys.stderr
+        )
+        return 2
+    name = keychain.check_key_name(args.name)
+    if args.action == "clear":
+        if keychain.forget(name):
+            print(f"{name} removed from {keychain.where()}")
+        else:
+            print(f"{name} was not in {keychain.where()}")
+        if os.environ.get(name):
+            print(f"note: {name} is still set in the environment, and gpp uses that one")
+        return 0
+    if sys.stdin.isatty():
+        import getpass
+
+        value = getpass.getpass(f"{name} (typing is not shown): ")
+    else:
+        value = sys.stdin.readline()
+    value = value.strip()
+    if not value:
+        print("error: nothing was typed; no key saved", file=sys.stderr)
+        return 2
+    keychain.put(name, value)
+    print(f"{name} saved in {keychain.where()}")
+    if os.environ.get(name):
+        print(f"note: {name} is also set in the environment, and gpp uses that one first")
     return 0
 
 
@@ -538,11 +593,11 @@ def register(sub: argparse._SubParsersAction) -> None:
     ic.add_argument(
         "--athlete",
         dest="icu_athlete",
-        help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID)",
+        help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID, or the one the web app saved)",
     )
     ic.add_argument(
         "--key",
-        help="intervals.icu API key; better: set ICU_API_KEY, or leave both out to be asked",
+        help="intervals.icu API key; better: gpp keys set ICU_API_KEY, or leave it out to be asked",
     )
     ic.add_argument("--dry-run", action="store_true", help="list what would be sent")
     ic.add_argument(
@@ -553,6 +608,16 @@ def register(sub: argparse._SubParsersAction) -> None:
     ic.add_argument("--remove", action="store_true", help="delete this plan's events instead")
     ic.add_argument("--yes", action="store_true", help="skip the confirmation prompts")
     ic.set_defaults(func=cmd_icu)
+
+    ke = sub.add_parser(
+        "keys",
+        help="list, save or remove API keys (kept in the OS keychain)",
+        description="Keys saved here are kept in the OS keychain (Windows Credential Manager, "
+        "the macOS Keychain) and work at once. A key set as an environment variable is used first.",
+    )
+    ke.add_argument("action", nargs="?", choices=["list", "set", "clear"], default="list")
+    ke.add_argument("name", nargs="?", help="the key's name, like ANTHROPIC_API_KEY or ICU_API_KEY")
+    ke.set_defaults(func=cmd_keys)
 
     imp = sub.add_parser("import", help="read a share bundle, intervals.icu text or a ZWO file")
     imp.add_argument("file")

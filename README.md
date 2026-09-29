@@ -286,6 +286,7 @@ picks a profile file; several athletes can share one install.
 | `gpp mcp` | run as an MCP server |
 | `gpp plans` / `gpp schema` / `gpp completions bash` | recent plans / the DSL's JSON Schema (`--markdown` for the reference) / shell completions |
 | `gpp profile set key value` / `gpp backup` / `gpp restore` | one field without opening the TOML / everything in one zip, and back |
+| `gpp keys` / `gpp keys set ANTHROPIC_API_KEY` / `gpp keys clear …` | which API keys are set and where / save one in the OS keychain, typed without showing / remove it |
 | `gpp --json …` / `gpp --verbose …` | machine-readable output on the read-only commands / a debug log for `doctor --bundle` |
 
 **Garmin**
