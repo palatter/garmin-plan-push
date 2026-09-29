@@ -183,3 +183,57 @@ def test_weekly_from_activities():
     assert weeks == [
         {"start": "2026-09-21", "km": 15.0, "seconds": 4500, "runs": 2, "longest_km": 10.0}
     ]
+
+
+# --- sunrise in local time ----------------------------------------------------
+
+STOCKHOLM = {"latitude": 59.33, "longitude": 18.07}
+
+
+@pytest.fixture
+def stockholm(tmp_path, monkeypatch):
+    import time
+
+    from gpp.profile import Profile
+
+    profile = Profile.from_dict(
+        {"name": "T", "pace": {"threshold": "4:30/km"}, "location": STOCKHOLM}
+    )
+    path = profile.save(tmp_path / "profile.toml")
+    monkeypatch.setenv("TZ", "Europe/Stockholm")
+    time.tzset()
+    yield path
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_sunrise_uses_the_forecasts_offset(stockholm, monkeypatch, capsys):
+    # Sunrise in Stockholm on 10 November is about 07:30 CET. With UTC as
+    # the default offset, a 07:00 start raised no warning.
+    import io
+    import json
+
+    from gpp import cli
+
+    payload = {
+        "utc_offset_seconds": 3600,
+        "hourly": {"temperature_2m": [3.0] * 24, "relative_humidity_2m": [85] * 24},
+    }
+    monkeypatch.setattr(
+        "gpp.environment.urllib.request.urlopen",
+        lambda url, timeout: io.BytesIO(json.dumps(payload).encode()),
+    )
+    argv = ["--profile", str(stockholm), "weather", "--date", "2026-11-10", "--hour", "7"]
+    assert cli.main(argv) == 0
+    assert "Starts before sunrise (07:3" in capsys.readouterr().out
+
+
+def test_typed_weather_uses_this_computers_offset(stockholm, capsys):
+    from gpp import cli
+
+    argv = ["--profile", str(stockholm), "weather", "--temp", "3", "--humidity", "85"]
+    assert cli.main([*argv, "--date", "2026-11-10", "--hour", "7"]) == 0
+    assert "Starts before sunrise (07:3" in capsys.readouterr().out
+    # An explicit offset still wins: at UTC-3 that sunrise is 03:30.
+    assert cli.main([*argv, "--date", "2026-11-10", "--hour", "7", "--utc-offset", "-3"]) == 0
+    assert "sunrise" not in capsys.readouterr().out

@@ -376,13 +376,14 @@ def cmd_weather(args) -> int:
         f"  slow targets by {info['slowdown_s_per_km']} s/km: {format_pace(pace)} -> {format_pace(info['adjusted_pace_spk'])}"
     )
     if profile.latitude is not None and profile.longitude is not None:
-        note = environment.daylight_note(
-            profile.latitude,
-            profile.longitude,
-            _date(args.date),
-            dt.time(args.hour),
-            args.utc_offset,
-        )
+        day, start = _date(args.date), dt.time(args.hour)
+        # --hour is local time, and sunrise comes out in UTC.
+        offset = args.utc_offset
+        if offset is None:
+            offset = cond.utc_offset_hours
+        if offset is None:
+            offset = environment.local_utc_offset_hours(day, start)
+        note = environment.daylight_note(profile.latitude, profile.longitude, day, start, offset)
         if note:
             print(f"  {note}")
     return 0
@@ -582,8 +583,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     we.add_argument("--humidity", type=float, help="relative humidity, percent")
     we.add_argument("--pace", help="target pace to adjust, e.g. 5:00/km")
     we.add_argument("--date")
-    we.add_argument("--hour", type=int, default=7)
-    we.add_argument("--utc-offset", type=float, default=0.0)
+    we.add_argument("--hour", type=int, default=7, help="start hour, local time (default 7)")
+    we.add_argument(
+        "--utc-offset",
+        type=float,
+        help="hours from UTC at the location (default: the forecast's, else this computer's)",
+    )
     we.set_defaults(func=cmd_weather)
 
     cs = sub.add_parser(

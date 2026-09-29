@@ -100,6 +100,8 @@ def wbgt_band(wbgt_c: float) -> str:
 class Conditions:
     temp_c: float
     humidity_pct: float
+    # The place's hours from UTC on that day, when a forecast said.
+    utc_offset_hours: float | None = None
 
     @property
     def dew_point_c(self) -> float:
@@ -160,7 +162,12 @@ def parse_forecast(payload: dict, hour: int) -> Conditions:
     if not temps or not hums:
         raise EnvironmentError_("forecast had no hourly data")
     index = min(max(hour, 0), len(temps) - 1)
-    return Conditions(temp_c=float(temps[index]), humidity_pct=float(hums[index]))
+    offset = payload.get("utc_offset_seconds")  # sent with timezone=auto
+    return Conditions(
+        temp_c=float(temps[index]),
+        humidity_pct=float(hums[index]),
+        utc_offset_hours=offset / 3600 if isinstance(offset, (int, float)) else None,
+    )
 
 
 # --- daylight (NOAA) --------------------------------------------------------
@@ -207,6 +214,12 @@ def sun_times(latitude: float, longitude: float, day: dt.date) -> tuple[dt.datet
     set_min = noon_min + 4 * ha
     base = dt.datetime.combine(day, dt.time(0), tzinfo=dt.UTC)
     return base + dt.timedelta(minutes=rise_min), base + dt.timedelta(minutes=set_min)
+
+
+def local_utc_offset_hours(day: dt.date, start_local: dt.time) -> float:
+    """This computer's hours from UTC at that moment, summer time included."""
+    offset = dt.datetime.combine(day, start_local).astimezone().utcoffset()
+    return offset.total_seconds() / 3600 if offset else 0.0
 
 
 def daylight_note(
