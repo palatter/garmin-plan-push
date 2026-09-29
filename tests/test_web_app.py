@@ -387,3 +387,22 @@ def test_signout_forgets_every_saved_login(app, monkeypatch, tmp_path):
     assert app.garmin_signout({}) == {"signed_out": True}
     assert app.state({})["garmin_saved_login"] is False
     assert not list(tmp_path.rglob("garmin_tokens.json"))
+
+
+def test_a_profile_with_a_typo_is_reported_and_never_saved_over(app):
+    # One unclosed quote used to read as "no profile": the first-run setup
+    # showed, and its Save wrote a fresh file over every hand-edited section.
+    path = app.profile_path
+    path.write_text(path.read_text() + '\nnote = "hilly\n', encoding="utf-8")
+    before = path.read_text()
+    with pytest.raises(AppError, match="could not be read") as err:
+        app.state({})
+    assert err.value.status == 409 and str(path) in str(err.value)
+    with pytest.raises(AppError, match="could not be read"):
+        app.save_profile({"name": "Pat", "threshold": "4:00/km"})
+    assert path.read_text() == before
+
+
+def test_no_profile_yet_still_opens_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "find_profile", lambda *a: None)
+    assert App(None).state({}) == {"configured": False}

@@ -116,10 +116,24 @@ class App:
         return Profile.load(path)
 
     def try_profile(self) -> Profile | None:
+        """The profile, or None when there is none yet.
+
+        A file that exists but cannot be read is an error, not a missing
+        profile: the first-run setup it would otherwise show saves over the
+        file, losing every section the form does not know about.
+        """
+        path = self.profile_path or find_profile()
         try:
             return self.profile()
-        except (AppError, ProfileError):
+        except AppError:
             return None
+        except ProfileError as exc:
+            detail = str(exc) if str(path) in str(exc) else f"{path}: {exc}"
+            raise AppError(
+                f"the profile could not be read: {detail}. Fix it in a text editor and "
+                "reload this page; the app has not changed it.",
+                status=409,
+            ) from exc
 
     # --- endpoints ---
 
