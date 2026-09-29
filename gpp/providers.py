@@ -230,9 +230,7 @@ class AnthropicProvider:
         try:
             import anthropic
         except ImportError as exc:
-            raise ProviderError(
-                "the anthropic SDK is not installed. Run: uv sync --extra anthropic"
-            ) from exc
+            raise ProviderError(missing_sdk("anthropic")) from exc
 
         key = _api_key(self.config, "ANTHROPIC_API_KEY")
         client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
@@ -349,9 +347,7 @@ class OpenAICompatibleProvider:
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise ProviderError(
-                "the openai SDK is not installed. Run: uv sync --extra openai"
-            ) from exc
+            raise ProviderError(missing_sdk("openai")) from exc
 
         key = _api_key(self.config, "OPENAI_API_KEY")
         if not key and (self.config.api_key_env is None or self.config.base_url):
@@ -537,6 +533,32 @@ class ManualProvider:
 
 
 # --- registry ---------------------------------------------------------------
+
+
+def sdk_for(config: ProviderConfig) -> str | None:
+    """The Python library a provider needs, or None for paste."""
+    cls = KINDS.get(config.kind.strip().lower())
+    if cls is AnthropicProvider:
+        return "anthropic"
+    if cls is OpenAICompatibleProvider:
+        return "openai"
+    return None
+
+
+def sdk_installed(name: str) -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec(name) is not None
+
+
+def missing_sdk(name: str) -> str:
+    from . import REINSTALL
+
+    return (
+        f"the {name} library is missing from this install of gpp. Close the app, run "
+        f"this in a terminal, then start it again:  {REINSTALL}"
+    )
+
 
 KINDS = {
     "anthropic": AnthropicProvider,

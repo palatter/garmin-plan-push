@@ -192,9 +192,9 @@ class GarminClient:
         try:
             from garminconnect import Garmin
         except ImportError as exc:  # pragma: no cover - env dependent
-            raise PushError(
-                "python-garminconnect is missing; reinstall gpp (see the install step in the guide)"
-            ) from exc
+            from . import REINSTALL
+
+            raise PushError(f"python-garminconnect is missing; reinstall gpp: {REINSTALL}") from exc
 
         kwargs: dict[str, Any] = {}
         if prompt_mfa is not None:
@@ -278,9 +278,7 @@ class GarminClient:
         """Call a python-garminconnect method by name, or explain it is missing."""
         fn = getattr(self.api, name, None)
         if not callable(fn):
-            raise PushError(
-                f"this version of python-garminconnect has no {name}(); upgrade it (uv lock --upgrade)"
-            )
+            raise PushError(f"this version of python-garminconnect has no {name}(); run gpp doctor")
         try:
             return fn(*args)
         except Exception as exc:

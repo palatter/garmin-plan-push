@@ -18,8 +18,17 @@ the tag being released and puts it in the GitHub Release notes.
   password is asked for only when there is no saved login or Garmin has
   expired it. The web app's push dialog says when the password can stay blank.
 
+- Installing the way the guide says left out the Claude and OpenAI libraries,
+  so generating a plan failed with an instruction (`uv sync --extra ...`) that
+  does not apply to an installed tool. Both now come with every install, and
+  a missing library names the reinstall command. `gpp doctor` flags it.
+
 ### Added
 - `gpp signout` deletes the saved Garmin login.
+
+### Changed
+- anthropic 1.9.0 and openai 3.20.0 in the lock; both capped below their
+  next major.
 
 ## [0.2.0] — 2026-09-22
 

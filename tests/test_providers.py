@@ -130,3 +130,27 @@ def test_gives_up_after_the_attempt_budget():
     provider = ScriptedProvider(["nonsense", "still nonsense"])
     with pytest.raises(ProviderError, match="could not produce"):
         generate_plan(provider, PROFILE, "go", attempts=2)
+
+
+def test_a_missing_sdk_says_how_to_reinstall_not_uv_sync(monkeypatch):
+    import sys
+
+    from gpp.providers import ProviderConfig, build_provider
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)  # import now raises ImportError
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    provider = build_provider(ProviderConfig(name="claude", kind="anthropic"))
+    with pytest.raises(ProviderError) as err:
+        provider.complete("system", "user", None)
+    assert "uv tool install --reinstall" in str(err.value)
+    assert "uv sync" not in str(err.value)
+
+
+def test_both_ai_libraries_ship_with_a_plain_install():
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    deps = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
+    names = {d.split(">")[0].split("<")[0].split("=")[0].strip() for d in deps}
+    assert {"anthropic", "openai", "garminconnect"} <= names

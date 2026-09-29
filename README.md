@@ -314,8 +314,8 @@ kind = "ollama"
 model = "llama3.3"
 ```
 
-Only the SDK you actually use needs installing (`--extra anthropic`,
-`--extra openai`, `--extra mcp` for the MCP server).
+The Claude and OpenAI libraries (also used for Gemini and local models) come
+with every install; nothing extra is needed for any provider.
 
 ## Development
 

@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import checks
+from . import REINSTALL, checks
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
 from .plan import Plan, PlanError
@@ -24,6 +24,8 @@ from .providers import (
     pick_default,
     probe,
     resolve,
+    sdk_for,
+    sdk_installed,
 )
 from .render import render_plan
 
@@ -686,6 +688,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if is_manual(config):
             line(True, label, "paste: always works, no key")
             continue
+        sdk = sdk_for(config)
+        if sdk and not sdk_installed(sdk):
+            line(
+                False if name == chosen or present else None,
+                label,
+                f"the {sdk} library is missing - reinstall: {REINSTALL}",
+            )
+            continue
         if present is False:
             # Only the provider that will actually be used is a failure;
             # the others are simply not in play.
@@ -723,7 +733,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
         line(True, "python-garminconnect", f"installed ({_metadata.version('garminconnect')})")
     except Exception:
-        line(False, "python-garminconnect", "missing - run: uv sync")
+        line(False, "python-garminconnect", f"missing - reinstall: {REINSTALL}")
     if args.ping:
         import socket
 
