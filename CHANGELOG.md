@@ -33,6 +33,10 @@ the tag being released and puts it in the GitHub Release notes.
 - A session moved to another day left its old copy on the calendar with no
   word about it. Push (and the live dry run) now list this plan's sessions on
   dates it no longer uses, and `gpp push --prune` removes them.
+- The package now passes `ty check` (it had about 45 errors, a few of them
+  real: a missing pace or HR bound failed with a bare TypeError instead of
+  saying which target is incomplete, and a profile update could try to save
+  to no path at all).
 
 ### Security
 - `--verbose` wrote the full command line to the debug log, so
@@ -52,6 +56,8 @@ the tag being released and puts it in the GitHub Release notes.
 - `gpp signout` deletes the saved Garmin login.
 
 ### Changed
+- `scripts/check.py` runs everything CI used to (ruff, ty, the tests with a
+  75% coverage floor, pip-audit); `ty` is pinned in the dev extra.
 - anthropic 1.9.0 and openai 3.20.0 in the lock; both capped below their
   next major.
 

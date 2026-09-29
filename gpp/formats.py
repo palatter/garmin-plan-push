@@ -328,7 +328,8 @@ def import_zwo(text: str, date: dt.date) -> Workout:
 
 def export_mrc(workout: Workout, profile: Profile, erg: bool = False) -> str:
     """Minutes/percent table. ERG writes watts (needs CP); MRC writes percent."""
-    if erg and not profile.power_cp:
+    cp = profile.power_cp or 0
+    if erg and not cp:
         raise FormatError("ERG export needs a critical power (profile [power] cp)")
     unit = "WATTS" if erg else "PERCENT"
     lines = [
@@ -344,7 +345,7 @@ def export_mrc(workout: Workout, profile: Profile, erg: bool = False) -> str:
     t = 0.0
     for step in _flatten(workout.steps):
         frac = _fraction_of_threshold(step, profile)
-        value = frac * profile.power_cp if erg else frac * 100
+        value = frac * cp if erg else frac * 100
         secs = _seconds(step, profile) or 60
         lines.append(f"{t / 60:.2f}\t{value:.0f}")
         t += secs

@@ -228,6 +228,18 @@ class Target:
             out["type"] = "none"
         return out
 
+    def span(self) -> tuple[int, int]:
+        """(low, high) of an explicit heart-rate, cadence or power target."""
+        if self.low is None or self.high is None:
+            raise PlanError(f"a {self.type} target needs a zone, or both low and high")
+        return self.low, self.high
+
+    def pace_span(self) -> tuple[str, str]:
+        """(slow, fast) of an explicit pace target."""
+        if self.slow is None or self.fast is None:
+            raise PlanError("a pace target needs a zone, or both slow and fast")
+        return self.slow, self.fast
+
 
 @dataclass
 class Step:

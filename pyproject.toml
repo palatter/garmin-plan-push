@@ -22,7 +22,7 @@ dependencies = [
 anthropic = []
 openai = []
 mcp = ["mcp>=2.2,<3"]
-dev = ["pytest>=8.0", "pytest-cov>=6.0", "hypothesis>=6.100", "ruff>=0.14", "ty>=0.0.1"]
+dev = ["pytest>=8.0", "pytest-cov>=6.0", "hypothesis>=6.100", "ruff>=0.14", "ty==0.0.83"]
 
 [project.scripts]
 gpp = "gpp.cli:main"
@@ -64,3 +64,8 @@ omit = ["gpp/web/static/*"]
 [tool.coverage.report]
 show_missing = false
 skip_covered = true
+
+[tool.ty.src]
+# The package is held to the checker; the tests (fakes and monkeypatching)
+# are not. `uv run python scripts/check.py` runs it with everything else.
+include = ["gpp"]

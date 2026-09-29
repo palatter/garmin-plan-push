@@ -523,7 +523,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1" },
+    { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.83" },
 ]
 provides-extras = ["anthropic", "openai", "mcp", "dev"]
 

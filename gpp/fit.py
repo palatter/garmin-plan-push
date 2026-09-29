@@ -174,13 +174,16 @@ def _target(target: Target, profile: Profile) -> tuple[int, int | None, int | No
     if target.type == "hr":
         if target.zone is not None:
             return TGT_HEART_RATE, int(target.zone), None, None
-        return TGT_HEART_RATE, 0, int(target.low) + 100, int(target.high) + 100
+        low, high = target.span()
+        return TGT_HEART_RATE, 0, int(low) + 100, int(high) + 100
     if target.type == "cadence":
-        return TGT_CADENCE, 0, int(target.low), int(target.high)
+        low, high = target.span()
+        return TGT_CADENCE, 0, int(low), int(high)
     if target.type == "power":
         if target.zone is not None:
             return TGT_POWER, int(target.zone), None, None
-        return TGT_POWER, 0, int(target.low) + 1000, int(target.high) + 1000
+        low, high = target.span()
+        return TGT_POWER, 0, int(low) + 1000, int(high) + 1000
     return TGT_OPEN, None, None, None
 
 

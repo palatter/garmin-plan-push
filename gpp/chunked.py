@@ -121,15 +121,15 @@ def _previous_summary(workouts: list, profile: Profile) -> str:
     )
 
 
-def _ask(
+def _ask[T](
     provider: Provider,
     system: str,
     user: str,
     schema: dict,
-    accept: Callable[[dict], object],
+    accept: Callable[[dict], T],
     attempts: int,
     log: Callable[[str], None],
-) -> tuple[object, str, list[str]]:
+) -> tuple[T, str, list[str]]:
     """Ask, validate with `accept`, feed errors back; the generic inner loop."""
     history: list[dict[str, str]] = []
     corrections: list[str] = []

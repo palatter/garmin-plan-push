@@ -498,7 +498,11 @@ def _check_goal_race(
     )
     if goal_date is None:
         return
-    name = plan.a_race.name if plan.a_race else profile.goal_race.name
+    if plan.a_race:
+        name = plan.a_race.name
+    else:
+        assert profile.goal_race is not None  # goal_date came from it
+        name = profile.goal_race.name
     if goal_date >= workouts[0].date and not any(
         w.date == goal_date and roles[id(w)] == "race" for w in workouts
     ):

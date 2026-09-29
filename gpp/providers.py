@@ -283,6 +283,8 @@ class AnthropicProvider:
                 raise ProviderError(
                     describe_failure(self.name, self.model, exc, ANTHROPIC_MODELS_URL)
                 ) from exc
+        if response is None:  # pragma: no cover - "plain" either answers or raises
+            raise ProviderError("Claude returned nothing")
 
         self.last_usage = usage_from_anthropic(response, self.model)
         self.last_stop = getattr(response, "stop_reason", None)
@@ -400,7 +402,7 @@ class OpenAICompatibleProvider:
                 client.chat.completions.create(
                     **req, stream=True, stream_options={"include_usage": True}
                 ),
-                on_delta,
+                on_delta or (lambda _: None),
             )
 
         # Degrade one rung at a time on a 400: streaming off first (some

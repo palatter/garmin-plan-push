@@ -72,7 +72,7 @@ class CompiledWorkout:
     payload: dict[str, Any]
     tag: str
     estimated_seconds: float
-    source: Workout = field(repr=False, default=None)  # type: ignore[assignment]
+    source: Workout = field(repr=False)
 
 
 @dataclass
@@ -122,7 +122,7 @@ def _compile_target(target: Target, profile: Profile, where: str) -> dict[str, A
         if target.zone is not None:
             low, high = profile.hr_zone(int(target.zone))
         else:
-            low, high = int(target.low), int(target.high)
+            low, high = target.span()
         return {
             "targetType": TARGET_TYPES["heart.rate.zone"],
             "targetValueOne": float(low),
@@ -132,8 +132,8 @@ def _compile_target(target: Target, profile: Profile, where: str) -> dict[str, A
     if target.type == "cadence":
         return {
             "targetType": TARGET_TYPES["cadence.zone"],
-            "targetValueOne": float(target.low),
-            "targetValueTwo": float(target.high),
+            "targetValueOne": float(target.span()[0]),
+            "targetValueTwo": float(target.span()[1]),
         }
 
     if target.type == "power":
@@ -144,10 +144,11 @@ def _compile_target(target: Target, profile: Profile, where: str) -> dict[str, A
                 "targetValueTwo": None,
                 "zoneNumber": int(target.zone),
             }
+        low, high = target.span()
         return {
             "targetType": TARGET_TYPES["power.zone"],
-            "targetValueOne": float(target.low),
-            "targetValueTwo": float(target.high),
+            "targetValueOne": float(low),
+            "targetValueTwo": float(high),
         }
 
     raise CompileError(f"{where}: unsupported target type {target.type!r}")
@@ -158,7 +159,8 @@ def resolve_pace_bounds(target: Target, profile: Profile) -> tuple[float, float]
     unit = "mi" if profile.imperial else "km"
     if target.zone is not None:
         return profile.pace_zone(str(target.zone))
-    return parse_pace(target.slow, unit), parse_pace(target.fast, unit)
+    slow, fast = target.pace_span()
+    return parse_pace(slow, unit), parse_pace(fast, unit)
 
 
 def step_note(step: Step) -> str | None:

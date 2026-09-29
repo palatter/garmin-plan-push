@@ -47,8 +47,8 @@ def render_next(plan: Plan, profile: Profile, today: dt.date | None = None) -> s
 
 def week_view(plan: Plan, profile: Profile, today: dt.date | None = None) -> dict:
     """This week's sessions and totals, and a preview of next week."""
-    today = today or dt.date.today()
-    monday = week_start(today)
+    now = today or dt.date.today()
+    monday = week_start(now)
     workouts = plan.sorted_workouts()
     summaries = {id(w): workout_summary(w, profile) for w in workouts}
     roles = roles_for(workouts, summaries)
@@ -69,7 +69,7 @@ def week_view(plan: Plan, profile: Profile, today: dt.date | None = None) -> dic
                     "role": roles[id(w)],
                     "minutes": round(summaries[id(w)]["seconds"] / 60),
                     "km": round(summaries[id(w)]["metres"] / 1000, 1),
-                    "done": w.date < today,
+                    "done": w.date < now,
                 }
                 for w in sessions
             ],
@@ -89,9 +89,9 @@ def week_view(plan: Plan, profile: Profile, today: dt.date | None = None) -> dic
             f"{', '.join(next_week['phases'])}"
         )
     race = plan.a_race
-    days_to_race = (race.date - today).days if race else None
+    days_to_race = (race.date - now).days if race else None
     return {
-        "today": today.isoformat(),
+        "today": now.isoformat(),
         "this_week": this_week,
         "next_week": next_week,
         "phase_change": change,

@@ -331,10 +331,12 @@ with every install; nothing extra is needed for any provider.
 git clone https://github.com/palatter/garmin-plan-push
 cd garmin-plan-push
 uv sync --extra dev
-uv run pytest
-uv run ruff check gpp tests && uv run ruff format --check gpp tests
+uv run python scripts/check.py   # before every push: ruff, ty, tests (coverage floor), pip-audit
 uv run gpp web
 ```
+
+There is no CI; `scripts/check.py` is the gate. `ty check` covers `gpp/`
+(the tests are left out: fakes and monkeypatching are not worth typing).
 
 ```
 gpp/constants.py    Garmin's magic IDs, with provenance notes. The only file

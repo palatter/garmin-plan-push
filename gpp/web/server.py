@@ -477,8 +477,8 @@ class App:
                 "mime": "text/csv",
             }
         try:
-            workout = plan.workouts[int(body.get("index"))]
-        except (TypeError, ValueError, IndexError) as exc:
+            workout = plan.workouts[int(body["index"])]
+        except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise AppError("which session? pass its index") from exc
         if fmt == "fit":
             import base64
@@ -558,9 +558,9 @@ class App:
         """Hot-day paces (#166): every zone slowed for the dew point, without editing the plan."""
         profile = self.profile()
         try:
-            temp = float(body.get("temp_c"))
-            humidity = float(body.get("humidity_pct"))
-        except (TypeError, ValueError) as exc:
+            temp = float(body["temp_c"])
+            humidity = float(body["humidity_pct"])
+        except (KeyError, TypeError, ValueError) as exc:
             raise AppError("give the temperature (C) and relative humidity (%)") from exc
         dew = dew_point_c(temp, humidity)
         band = combined_band(temp, dew)
@@ -786,7 +786,7 @@ def make_handler(app: App):
         server_version = "gpp"
         protocol_version = "HTTP/1.1"
 
-        def log_message(self, fmt: str, *args: Any) -> None:
+        def log_message(self, format: str, *args: Any) -> None:
             pass  # the UI is the log
 
         # --- helpers ---

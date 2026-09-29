@@ -15,7 +15,7 @@ from . import analysis, sync
 from .compile import compile_plan
 from .history import History
 from .plan import Plan
-from .profile import Profile, ProfileError, find_profile
+from .profile import Profile, ProfileError, default_save_path, find_profile
 from .render import render_plan
 from .units import format_duration, format_pace
 
@@ -131,7 +131,8 @@ def cmd_reestimate(args) -> int:
         )
         if args.apply:
             profile.threshold_pace = est.threshold_pace
-            path = args.profile or find_profile(getattr(args, "athlete", None))
+            athlete = getattr(args, "athlete", None)
+            path = args.profile or find_profile(athlete) or default_save_path(athlete)
             profile.save(path)
             print(f"  wrote {path}")
     else:
@@ -383,10 +384,10 @@ def cmd_garmin_predict(args) -> int:
             + ", ".join(f"Z{i + 1} {lo}-{hi}" for i, (lo, hi) in enumerate(zones))
         )
         if getattr(args, "apply_zones", None):
-            from .profile import find_profile
+            from .profile import default_save_path, find_profile
 
             updated = profile.with_garmin_hr_zones(zones)
-            path = args.profile or find_profile()
+            path = args.profile or find_profile() or default_save_path()
             updated.save(path)
             print(f"  profile updated with Garmin's zones (LTHR {updated.lthr}): {path}")
     return 0
