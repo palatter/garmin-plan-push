@@ -3,6 +3,116 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
+## [Unreleased]
+
+After upgrading, each Garmin account signs in with its password once more:
+logins are now kept per account. None of this has been run against a live
+Garmin, intervals.icu or OpenAI account; the Garmin calls are checked
+offline against the real garminconnect library.
+
+### Fixed
+- Garmin: on a computer shared by several athletes, every push went to
+  whichever account signed in first, whatever email was typed, and with
+  Replace or prune rewrote that athlete's sessions. Each account now has
+  its own saved login (under `~/.garminconnect/gpp/`), and the log names
+  the account Garmin signed in to.
+- Garmin: with no internet, a saved login was reported as expired and the
+  password asked for. A network error, a 5xx or a 429 now says what is
+  wrong and asks for nothing.
+- Push: a plan was known on the calendar by the first 16 letters of its
+  name, so two plans whose names began alike rewrote each other's sessions
+  on a shared day, and `--prune` removed the other plan's. Each plan now
+  has its own tag; sessions pushed by 0.2.1 are still recognised on their
+  own day and title. Prune only looks from today on, lists what it would
+  remove and asks first (`--yes` skips the question).
+- Push: a failed calendar read after the writes no longer loses the
+  receipt that `gpp unpush` works from.
+- Strength sessions: exercises are looked up in Garmin's own catalog
+  (names used to be guessed into pairs Garmin does not have), `gpp check`
+  flags a name the catalog lacks with the closest matches, and `gpp
+  exercises` searches it without signing in. Weights go out in grams, as
+  Garmin stores them: a 16 kg goblet squat used to arrive as 16 g.
+- Claude: rewriting one session in the web app and `gpp generate
+  --chunk-weeks` failed with "Streaming is required"; every call streams.
+- OpenAI: the default model (gpt-5.2) rejected every request because gpp
+  sent `max_tokens`; OpenAI now gets `max_completion_tokens`. The `gpp
+  doctor --ping` check gives thinking models room to answer.
+- MCP: a tool error reaches the assistant with its reason instead of
+  "Error executing tool".
+- intervals.icu: `--athlete` is the athlete id again (it was looked up as
+  a gpp profile name). Distances under 1 km go out as `mtr`, since
+  intervals.icu reads `400m` as 400 minutes, and imports read `m` as
+  minutes. Sessions moved since a push are found and listed, and removed
+  with `--prune` after asking; `--remove` lists what it found and asks too.
+- Profile: a save (`gpp profile set`, `reestimate --apply`, the heart-rate
+  zone sync, the web settings) dropped `[defaults]` and every key gpp does
+  not manage, and could write TOML the next command could not read. It now
+  keeps every setting and replaces the file in one step. New profiles go
+  to `~/.config/gpp/profile.toml`, so `gpp web` finds them from any folder,
+  and `gpp backup` includes the profile in use wherever it lives.
+- Web app: a profile with a typo is reported with its line, instead of
+  opening setup and saving a new profile over it.
+- Web app: closing the send dialog mid-send no longer loses the send, and
+  a second send cannot run alongside the first.
+- Web app: Check first honours the Replace box; a return to running after
+  a week or less off shows the advice instead of replacing the plan with
+  an empty one; a decimal heart rate is rounded and saved; Enter works in
+  the edit dialog.
+- One-line workouts read "warm up", "cool down" and "warm down" as two
+  words, so the README's own example works. Durations accept `min`, `hr`
+  and `sec`.
+- Windows: plans and profiles saved as UTF-16 or with a byte-order mark
+  are read; text the console cannot show no longer crashes the output; a
+  CSV export opens in Excel with every letter intact.
+- A mistyped path, a bad duration or a Garmin failure prints one line
+  instead of a traceback.
+- `gpp pause`, `missed` and `import` keep stdout to the plan, so
+  `> file.json` saves a plan gpp can read.
+- `gpp doctor --bundle` works with no file name, as the guide gives it.
+- `gpp template return` ramps start on their start day, and `--tier
+  resume` prints the advice instead of writing an empty plan.
+- Calendar (.ics) exports and FIT names no longer lose letters at a line
+  fold or a field limit.
+- `gpp pull` never fetches a workout by a calendar entry's own id.
+- `gpp weather` checks the start hour against sunrise and sunset in local
+  time; away from UTC, a start in the dark could pass without a warning.
+- `gpp --json eval` prints JSON; `gpp watch --push` sends to
+  `[defaults] device` and saves a receipt; a second `gpp backup` the same
+  day no longer overwrites the first.
+- `gpp generate --chunk-weeks` reports its tokens and cost, and `gpp
+  eval`'s default races are dated from today.
+- Cost estimates price Opus 5.5 and Sonnet 5.5, and each model's own
+  cache-read rate.
+
+### Security
+- Web app: a start-up error is shown as text (a crafted profile could run
+  script in the page), provider settings can no longer be written from the
+  page, every response carries a Content-Security-Policy, and library
+  templates open by name only, never by a path on disk.
+- Options can no longer be abbreviated (`--ke` for `--key`), so a key
+  cannot slip past the debug log's redaction.
+
+### Changed
+- The default Claude model is Opus 5.5. A profile that names
+  `claude-opus-5` keeps it.
+- Plans written with `-o` keep the file they replace as `.1` (up to `.5`),
+  and plans the command line writes or pushes join the recent plans that
+  `gpp next` and `gpp week` read.
+- The guide: install Git first if the computer lacks it; a key step that
+  works on Windows and on a Mac; and it now says where the password goes,
+  how to add a local model, what blocking findings do, and how to remove
+  a sent plan (`gpp pushes`, then `gpp unpush --receipt`).
+- The MCP install line names Python 3.12.
+- Package metadata: description, licence, links and classifiers. The
+  Homebrew draft is renamed `garmin-plan-push`, since homebrew-core
+  already has a `gpp`; both packaging files are marked as drafts.
+- Development: `scripts/check.py` installs every extra and fails on a
+  stale lock; ty 0.0.84; the lock is refreshed.
+
+### Removed
+- `gpp suggestion`: garminconnect has no call for Garmin's daily suggested
+  workout, so it could only say none was available.
+
 ## [0.2.1] — 2026-09-29
 
 Pushing to Garmin should work again, and sign in once instead of every
