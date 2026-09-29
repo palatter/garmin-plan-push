@@ -519,7 +519,6 @@ function initPush() {
         $('#p-mfa').hidden = false;
         $('#p-mfa-code').focus();
       });
-      $('#p-password').value = '';
       state.garminSaved = true;
       // renderPushResults keeps the progress block up, because its last log
       // line is the one telling the user to sync their watch. Hiding it here
@@ -533,6 +532,8 @@ function initPush() {
       setError('#push-error', err.message);
       $('#p-go').disabled = false;
       $('#p-progress').hidden = true;
+    } finally {
+      $('#p-password').value = '';  // never left in the page, pushed or not
     }
   });
 }

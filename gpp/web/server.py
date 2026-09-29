@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import json
+import logging
 import re
 import secrets
 import threading
@@ -55,6 +56,7 @@ from ..profile import Profile, ProfileError, default_save_path, find_profile
 from ..providers import (
     ProviderError,
     build_provider,
+    check_ai_block,
     is_manual,
     key_present,
     load_providers,
@@ -68,6 +70,8 @@ from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
 from ..timeline import workout_summary as _summary
 from ..units import format_duration, format_pace
 from .jobs import JobRegistry
+
+log = logging.getLogger("gpp.web")
 
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
@@ -222,6 +226,7 @@ class App:
                     hr.pop(name, None)
         _put(data, "hr", hr)
         if body.get("providers"):
+            check_ai_block(body["providers"])
             data["ai"] = body["providers"]
 
         athlete = dict(raw.get("athlete") or {})
@@ -801,6 +806,9 @@ def make_handler(app: App):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            # No other site may frame the app and steer clicks into it.
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(body)
 
@@ -854,7 +862,13 @@ def make_handler(app: App):
                 self._json(403, {"error": "bad or missing token; reload the page"})
                 return
 
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:
+                self._json(400, {"error": "bad Content-Length"})
+                return
             if length > MAX_BODY_BYTES:
                 self._json(413, {"error": "request too large"})
                 return
@@ -875,6 +889,7 @@ def make_handler(app: App):
             except (PlanError, ProfileError, ProviderError) as exc:
                 self._json(400, {"error": str(exc)})
             except Exception as exc:
+                log.exception("%s failed", method)  # the traceback, for --verbose and bug reports
                 self._json(500, {"error": f"{exc.__class__.__name__}: {exc}"})
 
         # --- static ---

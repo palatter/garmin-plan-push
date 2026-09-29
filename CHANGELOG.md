@@ -56,6 +56,11 @@ the tag being released and puts it in the GitHub Release notes.
   absolute or drive-qualified name. Every entry is now resolved and skipped
   unless it lands inside its folder; restored Garmin tokens are written
   owner-only; and backups no longer include the debug log.
+- The local web server can no longer be framed by another site, rejects a
+  negative Content-Length, and refuses AI provider settings that would send
+  a key to a non-https URL or read a variable not named `*_API_KEY`.
+  Unexpected server errors are logged with their traceback (`--verbose`),
+  and the Garmin password field is cleared after a failed push too.
 
 ### Added
 - `gpp signout` deletes the saved Garmin login.

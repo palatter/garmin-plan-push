@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -731,6 +732,37 @@ def probe(config: ProviderConfig) -> str:
     return provider.complete(
         "Reply with the single word OK and nothing else.", "Ready?", None
     ).strip()
+
+
+_KEY_ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]*_API_KEY$")
+
+
+def check_ai_block(ai: object) -> None:
+    """Refuse an [ai] block that would send a key somewhere unexpected.
+
+    The web app lets the page rewrite the providers. A key variable must be
+    named like an API key (so no page can aim AWS_SECRET_ACCESS_KEY at its own
+    server), and a base_url must be https, or plain http only to this machine.
+    """
+    if not isinstance(ai, dict):
+        raise ProviderError("the AI settings must be an object")
+    for name, entry in (ai.get("providers") or {}).items():
+        if not isinstance(entry, dict):
+            raise ProviderError(f"provider {name!r} must be an object")
+        env = entry.get("api_key_env")
+        if env is not None and not _KEY_ENV_RE.match(str(env)):
+            raise ProviderError(
+                f"provider {name!r}: api_key_env must name an *_API_KEY variable, not {env!r}"
+            )
+        url = entry.get("base_url")
+        if url is not None:
+            parsed = urllib.parse.urlsplit(str(url))
+            local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
+                raise ProviderError(
+                    f"provider {name!r}: base_url must be https (plain http only to localhost)"
+                )
+    load_providers({"ai": ai})
 
 
 def load_providers(data: dict) -> tuple[dict[str, ProviderConfig], str | None]:

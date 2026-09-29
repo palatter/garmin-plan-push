@@ -245,3 +245,57 @@ def test_http_layer_requires_the_token_and_serves_the_assets(app):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_pages_refuse_to_be_framed_and_bad_lengths_are_rejected(app):
+    import http.client
+
+    httpd = server.QuietServer(("127.0.0.1", 0), server.make_handler(app))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    try:
+        page = urllib.request.urlopen(f"http://127.0.0.1:{port}/")
+        assert page.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in page.headers["Content-Security-Policy"]
+
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest("POST", "/api/state")
+        conn.putheader("X-GPP-Token", app.token)
+        conn.putheader("Content-Length", "-5")
+        conn.endheaders()
+        assert conn.getresponse().status == 400
+        conn.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ({"kind": "openai-compatible", "api_key_env": "AWS_SECRET_ACCESS_KEY"}, "api_key_env"),
+        ({"kind": "openai-compatible", "base_url": "http://evil.example/v1"}, "base_url"),
+    ],
+)
+def test_profile_providers_cannot_aim_a_secret_at_another_host(app, entry, message):
+    from gpp.providers import ProviderError
+
+    with pytest.raises(ProviderError, match=message):
+        app.save_profile({"providers": {"providers": {"x": entry}}})
+
+
+def test_profile_providers_accept_https_and_local_models(app):
+    app.save_profile(
+        {
+            "providers": {
+                "providers": {
+                    "hosted": {
+                        "kind": "openai-compatible",
+                        "base_url": "https://api.example.com/v1",
+                        "api_key_env": "EXAMPLE_API_KEY",
+                    },
+                    "local": {"kind": "ollama", "base_url": "http://localhost:11434/v1"},
+                }
+            }
+        }
+    )

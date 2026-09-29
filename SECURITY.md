@@ -26,7 +26,13 @@ Garmin password, it:
   load, so a page on any other origin cannot drive it (it cannot read the
   token to sign a request);
 - checks the `Host` header, which is what stops DNS-rebinding attacks;
-- compares the token in constant time, as bytes.
+- compares the token in constant time, as bytes;
+- refuses to be framed by another site (`X-Frame-Options: DENY` and
+  `frame-ancestors 'none'`), so its buttons cannot be clicked through a
+  disguised page;
+- only accepts AI provider settings whose key variable is named `*_API_KEY`
+  and whose URL is https (plain http only to this machine), so no request
+  can point another secret at someone else's server.
 
 There is no TLS because there is no network hop — traffic never leaves the
 loopback interface.
