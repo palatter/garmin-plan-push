@@ -139,7 +139,7 @@ def cmd_icu(args) -> int:
 
     profile = _profile(args)
     plan = Plan.load(args.plan)
-    athlete = args.athlete or os.environ.get(icu.ATHLETE_ENV)
+    athlete = args.icu_athlete or os.environ.get(icu.ATHLETE_ENV)
     key = args.key or os.environ.get(icu.KEY_ENV)
     if not key and not args.dry_run and sys.stdin.isatty():
         import getpass
@@ -474,7 +474,12 @@ def register(sub: argparse._SubParsersAction) -> None:
         "icu", help="push the plan to an intervals.icu calendar (a Garmin partner route)"
     )
     ic.add_argument("plan", help="plan file")
-    ic.add_argument("--athlete", help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID)")
+    # Not `athlete`: _profile() reads that name to pick a named gpp profile.
+    ic.add_argument(
+        "--athlete",
+        dest="icu_athlete",
+        help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID)",
+    )
     ic.add_argument(
         "--key",
         help="intervals.icu API key; better: set ICU_API_KEY, or leave both out to be asked",

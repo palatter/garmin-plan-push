@@ -132,6 +132,21 @@ def test_command_is_registered_with_a_dry_run(tmp_path, capsys, monkeypatch):
     assert "would-send" in out and "nothing was" in out
 
 
+def test_the_athlete_option_is_the_intervals_id_not_a_profile_name(tmp_path, capsys, monkeypatch):
+    # README's own example: --athlete used to be looked up as a gpp profile
+    # called i12345, so the command always stopped at "no profile yet".
+    path = tmp_path / "plan.json"
+    path.write_text(PLAN.dumps(), encoding="utf-8")
+    profile = PROFILE.save(tmp_path / "profile.toml")
+    monkeypatch.setattr("gpp.profile.DEFAULT_PROFILE_PATHS", (profile,))
+    monkeypatch.setattr("gpp.profile.PROFILES_DIR", tmp_path / "profiles")
+    monkeypatch.delenv(icu.ATHLETE_ENV, raising=False)
+    args = build_parser().parse_args(["icu", str(path), "--athlete", "i12345", "--dry-run"])
+    assert args.func(args) == 0
+    assert "would-send" in capsys.readouterr().out
+    assert args.icu_athlete == "i12345"
+
+
 def test_an_edited_session_keeps_its_external_id_so_a_repush_updates_it():
     edited = Plan.from_dict(
         {
