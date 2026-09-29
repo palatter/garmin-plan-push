@@ -51,7 +51,10 @@ KIND_TO_STEP_TYPE = {
     "cooldown": "cooldown",
 }
 
+# Garmin stores a strength step's weight in grams and shows it in this unit
+# (garminconnect's create_strength_exercise_step does the same).
 WEIGHT_UNIT_KG = {"unitId": 8, "unitKey": "kilogram", "factor": 1000.0}
+GRAMS_PER_KG = 1000.0
 
 # Longest a "why this session" note can be on the watch's first step.
 CUE_LIMIT = 200
@@ -277,7 +280,7 @@ def _compile_step(
             compiled["exerciseName"] = garmin_exercise_name(step.exercise)
             compiled["category"] = garmin_exercise_name(step.category or step.exercise.split()[-1])
         if step.weight:
-            compiled["weightValue"] = float(step.weight)
+            compiled["weightValue"] = float(step.weight) * GRAMS_PER_KG
             compiled["weightUnit"] = WEIGHT_UNIT_KG
 
     if child_step_id is not None:

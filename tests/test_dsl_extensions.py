@@ -134,7 +134,7 @@ def test_exercise_step_carries_garmin_catalog_fields():
     assert step["category"] == "SQUAT"
     assert step["endCondition"]["conditionTypeKey"] == "reps"
     assert step["endConditionValue"] == 10.0
-    assert step["weightValue"] == 16.0
+    assert step["weightValue"] == 16000.0  # grams
     assert step["weightUnit"]["unitKey"] == "kilogram"
 
 

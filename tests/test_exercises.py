@@ -11,6 +11,7 @@ import re
 
 import pytest
 from garminconnect import exercises as garmin
+from garminconnect import workout as garmin_workout
 
 from gpp import checks, cli, exercises
 from gpp.compile import compile_workout
@@ -144,3 +145,31 @@ def test_the_names_the_prompt_suggests_are_all_in_the_catalog():
     names = re.findall(r'"([^"]+)"', rule)
     assert len(names) >= 8
     assert [n for n in names if n != "weight" and exercises.lookup(n) is None] == []
+
+
+def test_weights_go_to_garmin_in_grams_and_come_back_in_kilograms():
+    # garminconnect: "Garmin stores weightValue in GRAMS tagged with this
+    # kilogram unit". gpp sent kilograms, so 16 kg reached Garmin as 16 g.
+    plan = Plan.from_dict(
+        {
+            "plan": "Gym",
+            "workouts": [
+                {
+                    "name": "Strength",
+                    "date": DAY.isoformat(),
+                    "sport": "strength",
+                    "steps": [
+                        {"kind": "exercise", "exercise": "goblet squat", "count": 10, "weight": 16}
+                    ],
+                }
+            ],
+        }
+    )
+    payload = compile_workout(plan.workouts[0], PROFILE, plan.plan).payload
+    (step,) = payload["workoutSegments"][0]["workoutSteps"]
+    library = garmin_workout.create_strength_exercise_step("SQUAT", 1, 10, "GOBLET_SQUAT", 16)
+    sent = library.model_dump(exclude_none=True)
+    assert (step["weightValue"], step["weightUnit"]) == (sent["weightValue"], sent["weightUnit"])
+    assert step["weightValue"] == 16000.0
+    (pulled,) = workout_from_garmin(payload, DAY).steps
+    assert pulled.weight == 16.0

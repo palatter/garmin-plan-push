@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .client import parse_tag
+from .compile import GRAMS_PER_KG
 from .plan import Plan, Workout
 from .profile import Profile
 from .units import format_pace, mps_to_pace
@@ -104,7 +105,7 @@ def _step(step: dict, profile: Profile | None) -> dict:
         if step.get("category"):
             out["category"] = str(step["category"]).replace("_", " ").lower()
         if step.get("weightValue"):
-            out["weight"] = float(step["weightValue"])
+            out["weight"] = round(float(step["weightValue"]) / GRAMS_PER_KG, 2)
     out.update(_extent(step))
     if out["kind"] == "exercise" and "until" in out:
         out.pop("until")
