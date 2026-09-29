@@ -55,8 +55,8 @@ below: ✅ built · ◐ partial · ✗ not built, each with the reason.
 - **#86** — ZWO, MRC and ERG export are done; FIT workout files are not. The
   binary format needs a library or a careful encoder, and USB sideload is the
   fallback nobody needs once push works.
-- **#99** — a Homebrew formula and a winget manifest sit in `packaging/`, not
-  yet submitted to a tap or to winget-pkgs.
+- **#99** — a Homebrew formula and a winget manifest sit in `packaging/` as
+  drafts, untested and not submitted to a tap or to winget-pkgs.
 
 **Not built, and why**
 

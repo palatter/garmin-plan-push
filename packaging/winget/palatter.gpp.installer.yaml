@@ -1,0 +1,23 @@
+# winget installer manifest: a DRAFT, not submittable yet.
+# winget cannot run an install command, and a wheel is not an executable,
+# so this points at a release zip that does not exist yet: one holding a
+# small launcher (gpp.exe) that runs gpp through uv. A submission to
+# microsoft/winget-pkgs also needs the version and locale manifests beside
+# this one (palatter.gpp.yaml, palatter.gpp.locale.en-US.yaml). See
+# packaging/README.md.
+PackageIdentifier: palatter.gpp
+PackageVersion: 0.2.1
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: gpp.exe
+    PortableCommandAlias: gpp
+Installers:
+  - Architecture: neutral
+    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.1/gpp-0.2.1-windows.zip
+    InstallerSha256: REPLACE_WITH_ZIP_SHA256
+Dependencies:
+  PackageDependencies:
+    - PackageIdentifier: astral-sh.uv
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -22,7 +22,10 @@ def test_the_version_is_the_same_everywhere():
     assert f"Garmin Plan Push {version}<" in (ROOT / "docs" / "index.html").read_text(
         encoding="utf-8"
     )
-    for template in ("packaging/Formula/gpp.rb", "packaging/winget/palatter.gpp.yaml"):
+    for template in (
+        "packaging/Formula/garmin-plan-push.rb",
+        "packaging/winget/palatter.gpp.installer.yaml",
+    ):
         text = (ROOT / template).read_text(encoding="utf-8")
         assert f"v{version}" in text and not re.search(
             r"v0\.\d+\.\d+", text.replace(f"v{version}", "")
