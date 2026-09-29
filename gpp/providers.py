@@ -245,13 +245,14 @@ class AnthropicProvider:
         }
 
         def call(req: dict[str, Any]):
-            if on_delta is None:
-                return client.messages.create(**req)
-            # Streaming: the plan appears as it is written, and long outputs
-            # cannot hit a request timeout.
+            # Always streamed, with or without on_delta: the SDK refuses a
+            # plain request whose max_tokens could outlast its ten-minute
+            # timeout (anything over about 21,000, so the default 32,000),
+            # and a long plan cannot hit a request timeout this way.
             with client.messages.stream(**req) as stream:
-                for text in stream.text_stream:
-                    on_delta(text)
+                if on_delta is not None:
+                    for text in stream.text_stream:
+                        on_delta(text)
                 return stream.get_final_message()
 
         # Structured outputs, then the older beta spelling, then prompt-only

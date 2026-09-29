@@ -155,17 +155,34 @@ def test_usage_adds_up_and_prices_cache_reads():
 def test_anthropic_ladder_falls_back_to_plain_when_schema_kwargs_are_rejected(monkeypatch):
     seen = []
 
+    class Stream:
+        def __init__(self, message):
+            self.message = message
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get_final_message(self):
+            return self.message
+
     class Messages:
-        def create(self, **req):
+        def stream(self, **req):
             seen.append(sorted(req))
             if "output_config" in req:
                 raise TypeError("unexpected keyword argument 'output_config'")
             if "output_format" in req:
                 raise RuntimeError("Error code: 400 - invalid_request_error: output_format")
-            return SimpleNamespace(
-                content=[SimpleNamespace(type="text", text='{"ok": true}')],
-                usage=SimpleNamespace(input_tokens=5, output_tokens=2, cache_read_input_tokens=3),
-                stop_reason="end_turn",
+            return Stream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text='{"ok": true}')],
+                    usage=SimpleNamespace(
+                        input_tokens=5, output_tokens=2, cache_read_input_tokens=3
+                    ),
+                    stop_reason="end_turn",
+                )
             )
 
     class Anthropic:
