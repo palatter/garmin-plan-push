@@ -96,19 +96,23 @@ class Usage:
         )
 
 
-# USD per million tokens (input, output). Anthropic's published first-party
-# rates; other vendors are left out rather than guessed, so their calls
-# report tokens only.
-PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
-    "claude-fable-5-1": (10.0, 50.0),
-    "claude-fable-5": (10.0, 50.0),
-    "claude-opus-5": (5.0, 25.0),
-    "claude-opus-4-8": (5.0, 25.0),
-    "claude-opus-4-7": (5.0, 25.0),
-    "claude-opus-4-6": (5.0, 25.0),
-    "claude-sonnet-5": (2.0, 10.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-haiku-4-5": (1.0, 5.0),
+# USD per million tokens: input, output, cache read. Anthropic's published
+# first-party rates; other vendors are left out rather than guessed, so their
+# calls report tokens only. Cache reads are a tenth of input on most models,
+# but a twentieth on Opus 5.5 and a fortieth on Fable 5.1. Cache writes (the
+# five-minute kind, the only one gpp asks for) are 1.25x input everywhere.
+PRICES_PER_MTOK: dict[str, tuple[float, float, float]] = {
+    "claude-fable-5-1": (10.0, 50.0, 0.25),
+    "claude-fable-5": (10.0, 50.0, 1.0),
+    "claude-opus-5-5": (4.0, 20.0, 0.2),
+    "claude-opus-5": (5.0, 25.0, 0.5),
+    "claude-opus-4-8": (5.0, 25.0, 0.5),
+    "claude-opus-4-7": (5.0, 25.0, 0.5),
+    "claude-opus-4-6": (5.0, 25.0, 0.5),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.2),
+    "claude-sonnet-5": (2.0, 10.0, 0.2),
+    "claude-sonnet-4-6": (3.0, 15.0, 0.3),
+    "claude-haiku-4-5": (1.0, 5.0, 0.1),
 }
 
 
@@ -119,15 +123,14 @@ def estimate_cost(
     cache_read: int = 0,
     cache_write: int = 0,
 ) -> float | None:
-    """Cache reads are billed at a tenth of input, cache writes at 1.25x."""
     if not model:
         return None
-    for prefix, (cin, cout) in sorted(PRICES_PER_MTOK.items(), key=lambda kv: -len(kv[0])):
+    for prefix, (cin, cout, cread) in sorted(PRICES_PER_MTOK.items(), key=lambda kv: -len(kv[0])):
         if model.startswith(prefix):
             return (
                 input_tokens * cin
                 + output_tokens * cout
-                + cache_read * cin * 0.1
+                + cache_read * cread
                 + cache_write * cin * 1.25
             ) / 1_000_000
     return None

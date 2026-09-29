@@ -21,6 +21,17 @@ def test_cost_for_known_anthropic_models_and_none_otherwise():
     assert providers.estimate_cost(None, 1, 1) is None
 
 
+def test_opus_5_5_is_priced_as_itself_with_its_own_cache_read_rate():
+    # A prefix match on "claude-opus-5" used to price it at Opus 5's $5/$25.
+    assert providers.estimate_cost("claude-opus-5-5", 1_000_000, 1_000_000) == 24.0
+    assert providers.estimate_cost("claude-sonnet-5-5", 1_000_000, 1_000_000) == 12.0
+    read = 1_000_000
+    assert providers.estimate_cost("claude-opus-5-5", 0, 0, cache_read=read) == pytest.approx(0.2)
+    assert providers.estimate_cost("claude-fable-5-1", 0, 0, cache_read=read) == pytest.approx(0.25)
+    assert providers.estimate_cost("claude-opus-5", 0, 0, cache_read=read) == pytest.approx(0.5)
+    assert providers.estimate_cost("claude-opus-5-5", 0, 0, cache_write=read) == pytest.approx(5.0)
+
+
 def test_usage_describe():
     u = providers.Usage(1200, 3400, 0.0912)
     assert u.describe() == "1,200 in / 3,400 out tokens (~$0.091)"
