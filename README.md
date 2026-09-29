@@ -55,6 +55,12 @@ The release workflow publishes to PyPI with trusted publishing once the
 repository turns that on; from then, `uv tool install garmin-plan-push` is
 the short form. `gpp --version` tells you what you have.
 
+On Windows, releases from 0.2.3 also carry `gpp-<version>-windows.zip`:
+gpp with its own Python, so neither uv nor Git is needed. Unzip it and run
+`gpp.exe web` from that folder. Once winget lists it,
+`winget install palatter.GarminPlanPush` installs it and puts `gpp` on
+PATH. [packaging/README.md](packaging/README.md) says how both are made.
+
 ## Using it
 
 **Setup** happens once. You don't need to know your threshold pace — give it a

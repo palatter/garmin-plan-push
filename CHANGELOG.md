@@ -3,6 +3,35 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
+## [Unreleased]
+
+### Added
+- Keys in the OS keychain (Windows Credential Manager, the macOS Keychain,
+  a system keyring on Linux): `gpp keys set ANTHROPIC_API_KEY` saves one,
+  `gpp keys` lists what is set and where, and the web app's profile has a
+  Keys section. An environment variable still wins, so `setx` and `export`
+  keep working.
+- A Garmin password typed into gpp is kept in the keychain too, so an
+  expired login signs in again without asking; `gpp signout` forgets it.
+  A password from GARMIN_PASSWORD is never stored. The web app asks before
+  keeping one.
+- Web app: **Send to intervals.icu**, with a preview of what it would
+  create, update and remove. The key and athlete id are kept after the
+  first send.
+- A standalone Windows download, gpp with its own Python
+  (`packaging/windows/build.py`), and winget manifests for it as
+  `palatter.GarminPlanPush` (`packaging/winget/`).
+- `gpp doctor` checks curl_cffi, which Garmin's sign-in silently does
+  without, by routes Garmin blocks more often.
+
+### Changed
+- With no terminal (a scheduled task), gpp no longer asks for the Garmin
+  password; on Windows that prompt waited for ever. It says to sign in
+  once in a terminal instead.
+
+### Removed
+- The OpenSSF Scorecard workflow. CodeQL stays.
+
 ## [0.2.2] — 2026-09-29
 
 After upgrading, each Garmin account signs in with its password once more:
