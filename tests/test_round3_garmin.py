@@ -150,6 +150,21 @@ def test_plan_from_calendar_uses_the_fetcher_and_reports_skips():
     assert skipped and "Race day" in skipped[0]
 
 
+def test_pull_never_fetches_a_workout_by_the_calendar_entry_id():
+    # A row's own id is the schedule entry; fetching it as a workout gets the wrong one.
+    payloads = {12: compile_plan(plan(EASY), PROFILE)[0].payload}
+    fetched = []
+    items = [
+        {"id": 12, "date": "2026-09-23", "title": "Entry only", "itemType": "workout"},
+        {"workoutId": 12, "id": 900, "date": "2026-09-22", "title": "Easy"},
+    ]
+    result, skipped = decompile.plan_from_calendar(
+        items, lambda i: fetched.append(i) or payloads[i], PROFILE
+    )
+    assert fetched == [12] and [w.date.isoformat() for w in result.workouts] == ["2026-09-22"]
+    assert skipped == ["2026-09-23 Entry only: not a workout"]
+
+
 # --- load focus ---------------------------------------------------------------------
 
 

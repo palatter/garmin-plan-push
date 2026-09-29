@@ -13,7 +13,7 @@ import datetime as dt
 from collections.abc import Callable
 from typing import Any
 
-from .client import parse_tag
+from .client import _workout_id, parse_tag
 from .compile import GRAMS_PER_KG
 from .plan import Plan, Workout
 from .profile import Profile
@@ -170,13 +170,13 @@ def plan_from_calendar(
     skipped: list[str] = []
     seen: set[tuple[str, str]] = set()
     for item in items:
-        wid = item.get("workoutId") or item.get("id")
+        wid = _workout_id(item)  # never the row's own id: that is the calendar entry
         raw_date = (item.get("date") or "")[:10]
         if not wid or not raw_date or item.get("itemType") not in (None, "workout"):
             skipped.append(f"{raw_date or '?'} {item.get('title') or '?'}: not a workout")
             continue
         try:
-            payload = fetch(int(wid))
+            payload = fetch(wid)
             workout = workout_from_garmin(payload, dt.date.fromisoformat(raw_date), profile)
         except Exception as exc:
             skipped.append(f"{raw_date} {item.get('title') or wid}: {exc}")
