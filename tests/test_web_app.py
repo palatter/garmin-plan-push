@@ -113,6 +113,19 @@ def test_save_profile_rejects_a_non_number(app):
         app.save_profile({"longest_recent_run_km": "far"})
 
 
+def test_a_decimal_heart_rate_is_rounded_and_the_page_is_told(app):
+    saved = app.save_profile({"lthr": "165.5", "hr_max": "186"})
+    assert (
+        saved["note"] == "Saved Threshold HR 165.5 as 166: heart rates are whole beats per minute."
+    )
+    profile = Profile.load(app.profile_path)
+    assert (profile.lthr, profile.hr_max) == (166, 186)
+    assert "note" not in app.save_profile({"lthr": "166"})
+    assert app.estimate_lthr({"hr_max": 186.4}) == app.estimate_lthr({"hr_max": "186"})
+    with pytest.raises(AppError, match="Threshold HR must be a number"):
+        app.save_profile({"lthr": "fast"})
+
+
 def test_preview_carries_index_hard_time_and_step_notes(app):
     plan = deepcopy(PLAN)
     plan["workouts"][0]["steps"][1]["note"] = "tall posture"

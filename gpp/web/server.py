@@ -22,6 +22,7 @@ import contextlib
 import datetime as dt
 import json
 import logging
+import math
 import re
 import secrets
 import threading
@@ -215,8 +216,8 @@ class App:
 
     def estimate_lthr(self, body: dict) -> dict:
         try:
-            return {"lthr": lthr_from_max(int(body.get("hr_max", 0)))}
-        except (EstimateError, ValueError) as exc:
+            return {"lthr": lthr_from_max(_bpm(body.get("hr_max"), "Max HR"))}
+        except EstimateError as exc:
             raise AppError(str(exc)) from exc
 
     def save_profile(self, body: dict) -> dict:
@@ -239,10 +240,13 @@ class App:
         data["pace"] = pace
 
         hr = dict(raw.get("hr") or {})
-        for key, name in (("lthr", "lthr"), ("hr_max", "max")):
+        rounded = []
+        for key, name, label in (("lthr", "lthr", "Threshold HR"), ("hr_max", "max", "Max HR")):
             if key in body:
                 if body[key]:
-                    hr[name] = int(body[key])
+                    hr[name] = _bpm(body[key], label)
+                    if hr[name] != _number(body[key], label):
+                        rounded.append(f"{label} {body[key]} as {hr[name]}")
                 else:
                     hr.pop(name, None)
         _put(data, "hr", hr)
@@ -279,7 +283,12 @@ class App:
         profile.save(path)
         with self._lock:
             self.profile_path = path
-        return {"saved": str(path), "zones": self.state({})["zones"]}
+        saved = {"saved": str(path), "zones": self.state({})["zones"]}
+        if rounded:
+            saved["note"] = (
+                f"Saved {' and '.join(rounded)}: heart rates are whole beats per minute."
+            )
+        return saved
 
     def preview(self, body: dict) -> dict:
         profile = self.profile()
@@ -760,6 +769,14 @@ def _number(value: Any, key: str) -> float | None:
         return float(value)
     except (TypeError, ValueError) as exc:
         raise AppError(f"{key.replace('_', ' ')} must be a number") from exc
+
+
+def _bpm(value: Any, label: str) -> int:
+    """A heart rate in whole beats per minute, rounded half up: 165.5 is 166."""
+    number = _number(value, label)
+    if number is None or not math.isfinite(number):
+        raise AppError(f"{label} must be a number")
+    return math.floor(number + 0.5)
 
 
 def _plan_of(raw: Any) -> Plan:

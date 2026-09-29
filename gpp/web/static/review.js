@@ -696,12 +696,19 @@ function initEdit() {
   $('#e-save').addEventListener('click', saveEdit);
   $('#e-parse').addEventListener('click', parseLine);
   $('#e-json').addEventListener('input', () => { edit.jsonDirty = true; });
-  // Enter in a field must not close the dialog (method="dialog" would).
-  $('#edit-form').addEventListener('submit', e => {
+  // The form has several text fields and no submit button, so a browser does
+  // nothing on Enter. Enter in the one-line box uses the line, in any other
+  // field it saves; a field with suggestions keeps Enter for picking one.
+  $('#edit-form').addEventListener('keydown', e => {
+    const field = e.target;
+    if (e.key !== 'Enter' || e.repeat || e.isComposing) return;
+    if (field.tagName !== 'INPUT' || field.list) return;
     e.preventDefault();
-    if (document.activeElement === $('#e-line')) parseLine();
-    else if (document.activeElement.tagName !== 'TEXTAREA') saveEdit();
+    if (field === $('#e-line')) parseLine();
+    else saveEdit();
   });
+  // Nothing may close the dialog by submitting it (method="dialog" would).
+  $('#edit-form').addEventListener('submit', e => e.preventDefault());
 }
 
 /* --------------------------------------------------------------- watch --- */

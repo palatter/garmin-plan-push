@@ -220,7 +220,7 @@ function initSetup() {
     const btn = $('#s-save');
     btn.disabled = true;
     try {
-      await api('/api/profile', {
+      const saved = await api('/api/profile', {
         name: $('#s-name').value,
         imperial: state.units === 'imperial',
         threshold: state.threshold,
@@ -229,6 +229,7 @@ function initSetup() {
         ...collectAthlete(),
       });
       await boot();
+      if (saved.note) toast(saved.note);
     } catch (err) {
       setError('#setup-error', err.message);
       btn.disabled = false;
