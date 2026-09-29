@@ -118,17 +118,22 @@ a key is missing.
 is needed:
 
 ```powershell
-# Windows PowerShell: paste the key when asked, so it stays out of the history
+# Windows PowerShell: run the one line for your key and paste the key when
+# asked, so it stays out of the history
 setx ANTHROPIC_API_KEY (Read-Host "Claude key")
 setx OPENAI_API_KEY (Read-Host "ChatGPT key")
 setx GEMINI_API_KEY (Read-Host "Gemini key")
 ```
 
-On macOS/Linux, `read -rs ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY`
-(and the same line in your shell profile to keep it).
+```bash
+# macOS and Linux: the same for your shell's settings file (swap in
+# OPENAI_API_KEY or GEMINI_API_KEY)
+printf 'Claude key: ' && read -rs k && echo && echo "export ANTHROPIC_API_KEY='$k'" >> ~/.${SHELL##*/}rc; unset k
+```
 
-Then restart the app. `gpp doctor --ping` proves each key and model actually
-work before you rely on them. Generation streams, and each call reports its
+Then close the terminal, open a new one and start the app there: a key set
+this way only reaches windows opened afterwards. `gpp doctor --ping` proves
+each key and model actually work before you rely on them. Generation streams, and each call reports its
 tokens and estimated cost. `gpp providers` lists which local models (via
 Ollama) are good enough to hold the schema and which are not.
 

@@ -427,15 +427,26 @@ curl -LsSf https://astral.sh/uv/install.sh | sh</pre><button type="button" class
     </div>
     <dl class="rows" style="margin-top:1rem">
       <div class="row"><dt>Paste</dt><dd>No key needed. The app builds the full prompt with your paces, dates and rules. Copy it into ChatGPT, Claude, Gemini, Copilot, anything. Paste the reply back. The app validates it and shows the plan.</dd></div>
-      <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), restart the app, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
+      <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), start the app again from a new terminal window, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
       <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine. The app can measure whether a given model is good enough to follow the plan format before you rely on it.</dd></div>
     </dl>
-    <div class="cmd" style="margin-top:1rem"><pre><span class="c"># in PowerShell: run only the line for the key you have, paste the key when</span>
-<span class="c"># asked (it stays out of the command history), then restart the app</span>
-setx ANTHROPIC_API_KEY (Read-Host "Claude key")
-setx OPENAI_API_KEY (Read-Host "ChatGPT key")
-setx GEMINI_API_KEY (Read-Host "Gemini key")
-<span class="c"># macOS/Linux: read -rs ANTHROPIC_API_KEY &amp;&amp; export ANTHROPIC_API_KEY</span></pre><button type="button" class="copy" aria-label="Copy the API key commands">Copy</button></div>
+    <div class="tabs" role="tablist" aria-label="Operating system" style="margin-top:1rem">
+      <button type="button" role="tab" id="tab-key-win" aria-selected="true" aria-controls="key-win" data-os="win">Windows</button>
+      <button type="button" role="tab" id="tab-key-mac" aria-selected="false" aria-controls="key-mac" data-os="mac">macOS and Linux</button>
+    </div>
+    <div id="key-win" role="tabpanel" aria-labelledby="tab-key-win" style="display:grid;gap:.5rem;margin-top:.6rem">
+      <p>In PowerShell, run only the line for the key you have, and paste the key when it asks. It stays out of the command history.</p>
+      <div class="cmd"><pre>setx ANTHROPIC_API_KEY (Read-Host "Claude key")</pre><button type="button" class="copy" aria-label="Copy the Claude key command">Copy</button></div>
+      <div class="cmd"><pre>setx OPENAI_API_KEY (Read-Host "ChatGPT key")</pre><button type="button" class="copy" aria-label="Copy the ChatGPT key command">Copy</button></div>
+      <div class="cmd"><pre>setx GEMINI_API_KEY (Read-Host "Gemini key")</pre><button type="button" class="copy" aria-label="Copy the Gemini key command">Copy</button></div>
+    </div>
+    <div id="key-mac" role="tabpanel" aria-labelledby="tab-key-mac" style="display:grid;gap:.5rem;margin-top:.6rem" hidden>
+      <p>In Terminal, run only the line for the key you have, paste the key and press Enter. Nothing shows while you paste, and the key is saved in your shell's settings file.</p>
+      <div class="cmd"><pre>printf 'Claude key: ' &amp;&amp; read -rs k &amp;&amp; echo &amp;&amp; echo "export ANTHROPIC_API_KEY='$k'" &gt;&gt; ~/.${SHELL##*/}rc; unset k</pre><button type="button" class="copy" aria-label="Copy the Claude key command">Copy</button></div>
+      <div class="cmd"><pre>printf 'ChatGPT key: ' &amp;&amp; read -rs k &amp;&amp; echo &amp;&amp; echo "export OPENAI_API_KEY='$k'" &gt;&gt; ~/.${SHELL##*/}rc; unset k</pre><button type="button" class="copy" aria-label="Copy the ChatGPT key command">Copy</button></div>
+      <div class="cmd"><pre>printf 'Gemini key: ' &amp;&amp; read -rs k &amp;&amp; echo &amp;&amp; echo "export GEMINI_API_KEY='$k'" &gt;&gt; ~/.${SHELL##*/}rc; unset k</pre><button type="button" class="copy" aria-label="Copy the Gemini key command">Copy</button></div>
+    </div>
+    <p class="note" style="margin-top:1rem">Then close the terminal window, which closes the app too, open a new one and run <code>gpp web</code>. A key set this way only reaches windows opened after it.</p>
     <p class="note" style="margin-top:1rem">Whatever writes it, the plan is treated the same way: it must fit the plan format, and it goes through the checks. When a check finds something blocking, the app sends the finding back to the AI as a correction and asks again, up to a few times, before showing you the result.</p>
   </section>
 

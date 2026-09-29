@@ -354,8 +354,8 @@ function updateProviderHint() {
   if (!p) { hint.hidden = true; return; }
   if (p.key_present === false) {
     hint.textContent =
-      `${p.key_env} isn't set in the shell that launched this app, so ${name} can't be called. ` +
-      `Set it and restart, or choose "paste" — no key needed.`;
+      `${p.key_env} isn't set for this app, so ${name} can't be called. After setting it, ` +
+      `close the terminal window, open a new one and run gpp web again. Or choose "paste": no key needed.`;
     hint.hidden = false;
   } else if (p.kind === 'manual' || p.kind === 'paste') {
     hint.textContent = 'You’ll copy the prompt into any assistant you already use and paste its reply back.';
