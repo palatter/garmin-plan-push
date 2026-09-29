@@ -10,6 +10,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import REINSTALL, checks
 from .client import PushError
@@ -1093,8 +1094,18 @@ def _confirm(question: str) -> bool:
 # --- wiring -----------------------------------------------------------------
 
 
+class _Parser(argparse.ArgumentParser):
+    """No abbreviated options, here or in any subcommand (which inherit the
+    class): `--ke SECRET` must not be taken for `--key`, because the debug log
+    hides only the full spellings of credential flags."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="gpp",
         description="Compile AI-generated running plans into Garmin workouts.",
     )

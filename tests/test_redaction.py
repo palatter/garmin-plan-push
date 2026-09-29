@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 
+import pytest
+
 from gpp import cli
 
 
@@ -91,3 +93,12 @@ def test_doctor_bundle_needs_no_file_name(tmp_path, monkeypatch, capsys):
     written = tmp_path / "gpp-diagnostics.json"
     assert json.loads(written.read_text(encoding="utf-8"))["profile"]["has_lthr"] is False
     assert f"diagnostics written to {written}" in capsys.readouterr().out
+
+
+def test_an_abbreviated_option_is_refused_so_a_key_cannot_slip_into_the_log(capsys):
+    # `--ke` used to be taken for `--key`, and the log hides only `--key`'s value.
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["icu", "plan.json", "--ke", "SECRET"])
+    assert "unrecognized arguments: --ke SECRET" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["--verb", "zones"])
