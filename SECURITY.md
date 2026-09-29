@@ -47,9 +47,14 @@ loopback interface.
 
 ## What it does not do
 
-- It never sends your plan, profile or credentials anywhere except Garmin
-  Connect and the AI provider you chose. With the `manual` provider, nothing
-  is sent to any AI service at all.
+- It sends your plan, profile and credentials only where you point it:
+  - Garmin Connect, when you push, sync or sign in;
+  - the AI provider you chose, which gets the profile and your request (with
+    the `manual` provider, nothing is sent to any AI service at all);
+  - intervals.icu, when you run `gpp icu`, which sends the plan with your
+    intervals.icu API key;
+  - Open-Meteo, when `gpp weather` or `gpp today --forecast` looks up a
+    forecast, which sends the latitude and longitude from your profile.
 - It does not phone home, collect telemetry, or check for updates.
 
 ## Reporting a vulnerability
