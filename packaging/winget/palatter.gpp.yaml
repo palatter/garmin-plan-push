@@ -1,11 +1,13 @@
-# winget installer manifest (template). Publishing means a PR to
-# microsoft/winget-pkgs with the version + locale manifests alongside this.
+# winget installer manifest (template, NOT submittable as written).
+# A "portable" installer copies one executable; a wheel is not one, so this
+# needs a real installer (e.g. a zip with a launcher) before it can go to
+# microsoft/winget-pkgs. See packaging/README.md.
 PackageIdentifier: palatter.gpp
-PackageVersion: 0.1.0
+PackageVersion: 0.2.1
 InstallerType: portable
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.1.0/garmin_plan_push-0.1.0-py3-none-any.whl
+    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.1/garmin_plan_push-0.2.1-py3-none-any.whl
     InstallerSha256: REPLACE_WITH_WHEEL_SHA256
     Commands:
       - gpp

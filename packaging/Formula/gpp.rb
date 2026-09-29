@@ -5,7 +5,7 @@ class Gpp < Formula
 
   desc "Turn AI-written running plans into structured Garmin workouts"
   homepage "https://github.com/palatter/garmin-plan-push"
-  url "https://github.com/palatter/garmin-plan-push/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/palatter/garmin-plan-push/archive/refs/tags/v0.2.1.tar.gz"
   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
   license "MIT"
 

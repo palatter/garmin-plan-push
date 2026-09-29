@@ -3,7 +3,11 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
-## [Unreleased]
+## [0.2.1] — 2026-09-29
+
+Pushing to Garmin works again, and signs in once instead of every time.
+If you use intervals.icu and pushed with 0.2.0, run
+`gpp icu plan.json --remove` once before pushing again.
 
 ### Fixed
 - Pushing to Garmin failed on every call with garminconnect 0.3.16 (the
@@ -71,6 +75,9 @@ the tag being released and puts it in the GitHub Release notes.
   dates it no longer uses.
 
 ### Changed
+- Version 0.2.1 everywhere, including the Homebrew and winget templates
+  (they still pointed at 0.1.0); a test now keeps them in step. The winget
+  template is marked as not submittable until there is a real installer.
 - `scripts/check.py` runs everything CI used to (ruff, ty, the tests with a
   75% coverage floor, pip-audit); `ty` is pinned in the dev extra.
 - anthropic 1.9.0 and openai 3.20.0 in the lock; both capped below their
