@@ -67,7 +67,6 @@ from ..receipts import save_receipt
 from ..recent import list_recent, load_recent, save_recent
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
-from ..timeline import workout_summary as _summary
 from ..units import format_duration, format_pace
 from .jobs import JobRegistry
 
@@ -673,34 +672,34 @@ class App:
         if store is None:
             return {"recaps": []}
         today = dt.date.today()
-        planned = [
-            {
-                "date": w.date.isoformat(),
-                "name": w.name,
-                "seconds": _summary(w, profile)["seconds"],
-                "metres": _summary(w, profile)["metres"],
-            }
-            for w in plan.sorted_workouts()
-            if w.date < today
-        ]
+        planned = []
+        for w in plan.sorted_workouts():
+            if w.date < today:
+                summary = workout_summary(w, profile)
+                planned.append(
+                    {
+                        "date": w.date.isoformat(),
+                        "name": w.name,
+                        "seconds": summary["seconds"],
+                        "metres": summary["metres"],
+                    }
+                )
         try:
             return {"recaps": store.recap(planned, profile.lthr)}
         finally:
             store.close()
 
     def recent(self, body: dict) -> dict:
-        """Recent plans (#165): list them, or open one by path."""
+        """Open a recent plan (#165) by its path; the list comes with the state."""
         path = body.get("path")
-        if path:
-            allowed = {str(r.path) for r in list_recent(self.recent_root)}
-            if str(path) not in allowed:
-                raise AppError("not a recent plan", status=404)
-            try:
-                plan = Plan.from_dict(load_recent(path))
-            except (PlanError, OSError, ValueError) as exc:
-                raise AppError(str(exc)) from exc
-            return self._describe(plan, self.profile())
-        return {"plans": [r.to_dict() for r in list_recent(self.recent_root)]}
+        allowed = {str(r.path) for r in list_recent(self.recent_root)}
+        if not path or str(path) not in allowed:
+            raise AppError("not a recent plan", status=404)
+        try:
+            plan = Plan.from_dict(load_recent(path))
+        except (PlanError, OSError, ValueError) as exc:
+            raise AppError(str(exc)) from exc
+        return self._describe(plan, self.profile())
 
     def job(self, body: dict) -> dict:
         job = self.jobs.get(body.get("id", ""))

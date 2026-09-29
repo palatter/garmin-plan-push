@@ -787,12 +787,6 @@ def find_profile(athlete: str | None = None) -> Path | None:
     return None
 
 
-def list_profiles() -> list[str]:
-    if not PROFILES_DIR.exists():
-        return []
-    return sorted(p.stem for p in PROFILES_DIR.glob("*.toml"))
-
-
 def default_save_path(athlete: str | None = None) -> Path:
     """Where a new profile goes: the same folder wherever gpp is started, so
     `gpp web` run from another folder finds it (and `gpp backup` saves it)."""

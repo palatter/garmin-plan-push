@@ -23,7 +23,6 @@ import datetime as dt
 import json
 import re
 import xml.etree.ElementTree as ET
-from copy import deepcopy
 from dataclasses import dataclass
 
 from .compile import resolve_pace_bounds
@@ -73,16 +72,6 @@ def _flatten(steps: list[Step]) -> list[Step]:
 
 
 # --- intervals.icu text -----------------------------------------------------
-
-_ICU_ZONE_BY_INTENSITY = {
-    "recovery": "Z1",
-    "easy": "Z2",
-    "steady": "Z3",
-    "marathon": "Z3",
-    "threshold": "Z4",
-    "interval": "Z5",
-    "repetition": "Z6",
-}
 
 
 def _icu_extent(step: Step) -> str:
@@ -573,7 +562,3 @@ def import_workout(text: str, date: dt.date, fmt: str | None = None) -> Workout:
     if fmt == "zwo" or (not fmt and stripped.startswith("<")):
         return import_zwo(text, date)
     return import_icu(text, date)
-
-
-def copy_with_dates(plan: Plan) -> Plan:
-    return deepcopy(plan)

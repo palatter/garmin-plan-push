@@ -47,7 +47,6 @@ HARD_SHARE_LIMIT = 0.30
 MIDDLE_GEAR_MIN_HARD = 0.15
 QUALITY_MINUTES = 10
 PROGRESSION_CAP = 1.30
-TAPER_DAYS = 14
 TAPER_MIN_CUT = 0.30
 TAPER_MAX_CUT = 0.60
 RACE_PROTECT_DAYS = 14
@@ -872,7 +871,3 @@ def _check_structure(report: Report, plan: Plan, weeks: list[WeekStats], profile
 def check(plan: Plan, profile: Profile, today: dt.date | None = None) -> Report:
     """Public entry point. Pass `today` to get the date checks (the tests do not)."""
     return check_plan(plan, profile, today)
-
-
-def week_of(day: dt.date) -> dt.date:
-    return week_start(day)

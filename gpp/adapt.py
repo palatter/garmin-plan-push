@@ -26,9 +26,7 @@ from .profile import Profile
 from .timeline import workout_summary
 from .units import (
     UnitError,
-    format_distance,
     format_duration,
-    parse_distance,
     parse_duration,
 )
 
@@ -311,19 +309,3 @@ def replan_missed(
     if not reasons:
         reasons.append("Nothing on those dates to replan.")
     return Adaptation(plan=new, reasons=reasons, dropped=dropped, moved=moved)
-
-
-def describe_workout_brief(workout: Workout, profile: Profile) -> str:
-    s = workout_summary(workout, profile)
-    return f"{workout.name}: {format_duration(s['seconds'])}, {format_distance(s['metres'], profile.imperial)}"
-
-
-def scale_summary(workout: Workout, factor: float) -> str:
-    """Human line for a scaled session, for the UI."""
-    parts = []
-    for step in workout.steps:
-        if step.duration and not step.is_repeat:
-            parts.append(format_duration(parse_duration(step.duration) * factor))
-        elif step.distance and not step.is_repeat:
-            parts.append(format_distance(parse_distance(step.distance) * factor))
-    return ", ".join(parts)

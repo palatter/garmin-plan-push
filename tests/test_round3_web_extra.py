@@ -6,6 +6,8 @@ import json
 import threading
 import urllib.request
 
+import pytest
+
 from gpp import analysis, education, formats
 from gpp.history import History
 from gpp.plan import Plan
@@ -143,6 +145,16 @@ def test_state_carries_education_recent_and_describe_carries_agenda(tmp_path):
     assert csv_out["mime"] == "text/csv" and csv_out["text"].count(chr(10)) >= len(PLAN["workouts"])
     # Excel on Windows reads a CSV as UTF-8 only when it starts with a BOM.
     assert csv_out["text"].startswith("\ufeffdate,day,name")
+
+
+def test_a_recent_plan_opens_only_by_a_listed_path(tmp_path):
+    app = app_with(tmp_path)
+    app.preview({"plan": PLAN})
+    (listed,) = app.state({})["recent"]
+    assert app.recent({"path": listed["path"]})["plan"] == PLAN["plan"]
+    for body in ({}, {"path": str(tmp_path / "profile.toml")}):
+        with pytest.raises(server.AppError, match="not a recent plan"):
+            app.recent(body)
 
 
 def test_manifest_and_service_worker_are_served_from_the_root(tmp_path):
