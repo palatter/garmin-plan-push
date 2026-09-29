@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import models
+from .textfile import TextError, read_text
 from .units import UnitError, format_pace, parse_distance, parse_duration, parse_pace
 
 # Multipliers applied to threshold pace (seconds per km).
@@ -433,14 +434,17 @@ class Profile:
         path = Path(path)
         if not path.exists():
             raise ProfileError(f"no profile at {path}")
-        with path.open("rb") as handle:
-            try:
-                data = tomllib.load(handle)
-            except tomllib.TOMLDecodeError as exc:
-                # The file invites hand-editing, so a typo here is expected.
-                # Callers recover from ProfileError; a raw TOMLDecodeError
-                # escaping would take the whole app down instead.
-                raise ProfileError(f"{path} is not valid TOML: {exc}") from exc
+        try:
+            text = read_text(path)
+        except TextError as exc:
+            raise ProfileError(str(exc)) from exc
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            # The file invites hand-editing, so a typo here is expected.
+            # Callers recover from ProfileError; a raw TOMLDecodeError
+            # escaping would take the whole app down instead.
+            raise ProfileError(f"{path} is not valid TOML: {exc}") from exc
         return cls.from_dict(data)
 
     # --- saving ---

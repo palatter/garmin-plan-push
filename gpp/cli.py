@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from . import REINSTALL, checks
+from .client import PushError
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
 from .plan import Plan, PlanError
@@ -29,6 +30,7 @@ from .providers import (
     sdk_installed,
 )
 from .render import render_plan
+from .textfile import TextError
 from .units import UnitError
 
 
@@ -235,7 +237,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             print(render_plan(plan, compiled, profile), end="")
             print(checks.check(plan, profile).text())
             if args.push:
-                from .client import PushError, sign_in_at_terminal
+                from .client import sign_in_at_terminal
 
                 email = args.email or os.environ.get("GARMIN_EMAIL")
                 if not email:
@@ -812,7 +814,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             ),
         )
     if args.ping and os.environ.get("GARMIN_EMAIL"):
-        from .client import PushError, sign_in
+        from .client import sign_in
 
         try:
             garmin = sign_in(os.environ["GARMIN_EMAIL"], os.environ.get("GARMIN_PASSWORD"))
@@ -980,7 +982,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
 
 
 def cmd_push(args: argparse.Namespace) -> int:
-    from .client import PushError, sign_in_at_terminal
+    from .client import sign_in_at_terminal
 
     profile, plan, compiled = _load(args)
 
@@ -1370,8 +1372,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"debug log: {LOG_PATH}", file=sys.stderr)
     try:
         return args.func(args)
-    except (PlanError, ProfileError, CompileError, ProviderError) as exc:
+    except (PlanError, ProfileError, CompileError, ProviderError, UnitError, TextError) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except PushError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        # A mistyped path, a folder instead of a file, a file open elsewhere.
+        where = f"{exc.filename}: " if exc.filename else ""
+        print(f"error: {where}{exc.strerror or exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print("\nAborted.", file=sys.stderr)

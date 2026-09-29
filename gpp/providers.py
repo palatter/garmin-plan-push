@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from .textfile import read_text
+
 log = logging.getLogger("gpp.providers")
 
 DEFAULT_MAX_TOKENS = 32000
@@ -546,7 +548,7 @@ class ManualProvider:
         input()
         if not self.response_path.exists():
             raise ProviderError(f"no response found at {self.response_path}")
-        return self.response_path.read_text(encoding="utf-8")
+        return read_text(self.response_path)
 
 
 # --- registry ---------------------------------------------------------------

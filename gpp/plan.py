@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .textfile import TextError, read_text
+
 EXECUTABLE_KINDS = ("warmup", "run", "recover", "rest", "cooldown", "stride", "exercise")
 SPORTS = ("running", "cycling", "swimming", "strength", "cardio")
 ROLES = ("easy", "long", "medium-long", "quality", "race", "recovery", "cross", "strength", "rest")
@@ -420,7 +422,10 @@ class Plan:
 
     @classmethod
     def load(cls, path: str | Path) -> Plan:
-        raw = Path(path).read_text(encoding="utf-8")
+        try:
+            raw = read_text(path)
+        except TextError as exc:
+            raise PlanError(str(exc)) from exc
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -450,7 +455,7 @@ class Plan:
         """
         path = Path(path)
         text = self.dumps()
-        if keep and path.exists() and path.read_text(encoding="utf-8") != text:
+        if keep and path.exists() and _existing_text(path) != text:
             for n in range(keep - 1, 0, -1):
                 older = path.with_name(f"{path.name}.{n}")
                 if older.exists():
@@ -581,3 +586,11 @@ def _check_step(step: dict, where: str, depth: int, sport: str) -> None:
             f"{where}: {target['type']} target high ({target['high']}) "
             f"must be greater than low ({target['low']})"
         )
+
+
+def _existing_text(path: Path) -> str | None:
+    """What a save would replace; a file that is not text counts as different."""
+    try:
+        return read_text(path)
+    except TextError:
+        return None

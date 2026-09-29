@@ -27,6 +27,7 @@ from .compile import compile_plan
 from .plan import Plan
 from .profile import Profile, ProfileError, find_profile
 from .render import render_plan, render_workout
+from .textfile import read_text
 from .units import format_duration, format_pace, parse_distance, parse_duration, parse_pace
 
 
@@ -211,7 +212,7 @@ def _import_fit(args) -> int:
 def cmd_import(args) -> int:
     if args.file.lower().endswith(".fit"):
         return _import_fit(args)
-    text = Path(args.file).read_text(encoding="utf-8")
+    text = read_text(args.file)
     start = _date(args.start) if args.start else None
     try:
         if text.lstrip().startswith("{"):
