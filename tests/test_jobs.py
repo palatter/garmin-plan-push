@@ -51,6 +51,27 @@ def test_failures_are_captured_not_raised(registry):
     assert "nope" in job.snapshot()["error"]
 
 
+def test_an_expected_error_reads_plainly_and_a_bug_names_its_kind(registry, caplog, capsys):
+    # A KeyError used to reach the page as just 'workoutId', and an ordinary
+    # "no saved sign-in" printed a traceback to the console.
+    from gpp.client import PushError
+
+    def bug(_):
+        raise KeyError("workoutId")
+
+    def expected(_):
+        raise PushError("no saved sign-in for me@example.com")
+
+    caplog.set_level("INFO", logger="gpp.web")
+    broken, refused = registry.start("push", bug), registry.start("push", expected)
+    assert wait_for(lambda: broken.snapshot()["status"] == refused.snapshot()["status"] == "error")
+    assert broken.snapshot()["error"] == "KeyError: 'workoutId'"
+    assert refused.snapshot()["error"] == "no saved sign-in for me@example.com"
+    traced = [r for r in caplog.records if r.exc_info]
+    assert [r.exc_info[0] for r in traced] == [KeyError]
+    assert "Traceback" not in capsys.readouterr().err
+
+
 def test_log_lines_reach_the_snapshot(registry):
     def work(job):
         job.say("one")

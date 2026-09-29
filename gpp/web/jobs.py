@@ -12,12 +12,14 @@ callback returns. No polling of Garmin, no re-login, no code in a config file.
 
 from __future__ import annotations
 
+import logging
 import threading
-import traceback
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger("gpp.web")
 
 # Jobs are kept so the UI can read the final result, but a long-lived browser
 # tab should not grow the registry without bound.
@@ -128,11 +130,17 @@ class JobRegistry:
             try:
                 result = work(job)
             except Exception as exc:
+                if type(exc).__module__.partition(".")[0] == "gpp":
+                    # gpp's own errors are written for the person reading them.
+                    message = str(exc) or exc.__class__.__name__
+                    log.info("%s job failed: %s", kind, message)
+                else:
+                    message = f"{exc.__class__.__name__}: {exc}"
+                    log.exception("%s job failed", kind)  # the traceback, for bug reports
                 with job._lock:
-                    job.error = str(exc) or exc.__class__.__name__
+                    job.error = message
                     job.status = "error"
                     job.log.append(f"error: {job.error}")
-                traceback.print_exc()
             else:
                 with job._lock:
                     job.result = result
