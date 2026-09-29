@@ -7,6 +7,7 @@ import pytest
 from test_round3_push import FakeGarmin, connected
 
 from gpp import cli
+from gpp.client import PushError
 from gpp.compile import plan_slug
 from gpp.plan import Plan
 from gpp.profile import Profile
@@ -68,3 +69,24 @@ def test_prune_with_yes_removes_and_reports_the_date_and_title(setup, capsys):
     (receipt,) = (tmp_path / "pushes").iterdir()
     rows = json.loads(receipt.read_text(encoding="utf-8"))["results"]
     assert {"removed"} <= {r["action"] for r in rows}
+
+
+def test_a_failed_calendar_read_after_the_push_still_saves_the_receipt(setup, capsys, monkeypatch):
+    # The read of the calendar for leftover sessions used to run between the
+    # writes and the receipt: a 503 there lost the receipt and ended in a
+    # traceback, with every workout already created.
+    argv, fake, tmp_path = setup
+
+    def flaky(method, path, **kw):
+        wrote = any(m == "POST" for m, _ in fake.calls)
+        if wrote and path.startswith("/calendar-service/"):
+            raise PushError(f"GET {path} failed: 503")
+        return fake(method, path, **kw)
+
+    monkeypatch.setattr("gpp.client.sign_in_at_terminal", lambda *a, **kw: connected(flaky))
+    monkeypatch.setattr("gpp.client.GarminClient._sleep", staticmethod(lambda _: None))
+    assert cli.main([*argv, "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert "could not look for sessions" in out and "2 pushed" in out
+    (receipt,) = (tmp_path / "pushes").iterdir()
+    assert len(json.loads(receipt.read_text(encoding="utf-8"))["results"]) == 2

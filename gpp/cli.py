@@ -1032,21 +1032,29 @@ def cmd_push(args: argparse.Namespace) -> int:
         device_id=args.device or _defaults(args).get("device"),
         log=lambda line: print(line),
     )
-    orphans = client.orphans(compiled)
-    if orphans:
-        print("\nStill on the calendar from an earlier version of this plan (moved or dropped):")
-        for old in orphans:
-            print(f"  {old['date']}  {old['title']}")
-        if not args.prune:
-            print("Push again with --prune to remove them.")
-        elif args.yes or _confirm(f"Remove these {len(orphans)} session(s)? [y/N] "):
-            results += client.remove_orphans(orphans, log=print)
     from .receipts import save_receipt
 
+    # The workouts are on the calendar now: whatever happens next, the
+    # receipt that lets `gpp unpush` find them is saved.
     try:
-        print(f"receipt: {save_receipt(plan.plan, results)}")
-    except OSError as exc:
-        print(f"warning: could not save the push receipt: {exc}")
+        orphans = client.orphans(compiled)
+        if orphans:
+            print(
+                "\nStill on the calendar from an earlier version of this plan (moved or dropped):"
+            )
+            for old in orphans:
+                print(f"  {old['date']}  {old['title']}")
+            if not args.prune:
+                print("Push again with --prune to remove them.")
+            elif args.yes or _confirm(f"Remove these {len(orphans)} session(s)? [y/N] "):
+                results += client.remove_orphans(orphans, log=print)
+    except PushError as exc:
+        print(f"warning: could not look for sessions this plan no longer uses: {exc}")
+    finally:
+        try:
+            print(f"receipt: {save_receipt(plan.plan, results)}")
+        except OSError as exc:
+            print(f"warning: could not save the push receipt: {exc}")
 
     failures = [r for r in results if r.action == "failed"]
     warnings = [r for r in results if r.detail and r.action != "failed"]
