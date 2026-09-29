@@ -671,6 +671,9 @@ initPalette();
 initPush();
 initSettings();
 boot().catch(err => {
-  document.body.insertAdjacentHTML('afterbegin',
-    `<p class="error" style="padding:1rem">Could not start: ${err.message}</p>`);
+  // Text, not markup: the message can quote the profile file.
+  const note = document.createElement('p');
+  note.className = 'error boot-error';
+  note.textContent = `Could not start: ${err.message}`;
+  document.body.prepend(note);
 });

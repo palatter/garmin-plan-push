@@ -130,6 +130,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .lede   { color: var(--text-soft); font-size: 1.03rem; max-width: 56ch; }
 .error  { color: var(--danger); font-size: .9rem; }
 .error:not([hidden]) { display: block; margin-top: .75rem; }
+.boot-error { padding: 1rem; }
 
 /* --- top bar --------------------------------------------------------------- */
 
