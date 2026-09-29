@@ -73,6 +73,9 @@ class CompiledWorkout:
     tag: str
     estimated_seconds: float
     source: Workout = field(repr=False)
+    # The slug gpp 0.2.1 and earlier gave this plan, for recognising the
+    # workouts they pushed.
+    legacy_slug: str = ""
 
 
 @dataclass
@@ -321,6 +324,28 @@ def _compile_repeat(
 # --- workouts ---------------------------------------------------------------
 
 
+def _letters(plan_name: str) -> str:
+    # ASCII only: the tag regex accepts [a-z0-9], so a plan called "Höst 10k"
+    # must not produce a slug that its own reader cannot match.
+    return "".join(c for c in plan_name.lower() if c.isascii() and c.isalnum())
+
+
+def plan_slug(plan_name: str) -> str:
+    """The plan's name in its tags: readable, and different for every name.
+
+    Up to ten letters and digits of the name, then six hex digits of a hash
+    of all of it. "Spring 2027 Half Marathon - strength" and "... - running"
+    once shared a slug, so pushing one rewrote and pruned the other.
+    """
+    digest = hashlib.sha256(plan_name.strip().lower().encode("utf-8")).hexdigest()[:6]
+    return f"{_letters(plan_name)[:10] or 'plan'}{digest}"
+
+
+def legacy_slug(plan_name: str) -> str:
+    """The slug gpp 0.2.1 and earlier used: the name's first 16 letters and digits."""
+    return _letters(plan_name)[:16] or "plan"
+
+
 def content_tag(plan_name: str, payload: dict[str, Any]) -> str:
     """A stable marker identifying this tool's workouts and their content.
 
@@ -331,10 +356,7 @@ def content_tag(plan_name: str, payload: dict[str, Any]) -> str:
     """
     skeleton = json.dumps(payload.get("workoutSegments", []), sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(skeleton.encode("utf-8")).hexdigest()[:8]
-    # ASCII only: the tag regex accepts [a-z0-9], so a plan called "Höst 10k"
-    # must not produce a slug that its own reader cannot match.
-    slug = "".join(c for c in plan_name.lower() if c.isascii() and c.isalnum())[:16] or "plan"
-    return f"[{TAG_PREFIX}:{slug}:{digest}]"
+    return f"[{TAG_PREFIX}:{plan_slug(plan_name)}:{digest}]"
 
 
 def _first_executable(steps: list[dict]) -> dict | None:
@@ -391,6 +413,7 @@ def compile_workout(workout: Workout, profile: Profile, plan_name: str = "plan")
         tag=tag,
         estimated_seconds=estimated,
         source=workout,
+        legacy_slug=legacy_slug(plan_name),
     )
 
 

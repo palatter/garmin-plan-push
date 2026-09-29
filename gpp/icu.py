@@ -25,7 +25,8 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .compile import compile_plan, content_tag
+from .compile import compile_plan, legacy_slug
+from .constants import TAG_PREFIX
 from .formats import FormatError, export_icu
 from .plan import Plan
 from .profile import Profile
@@ -87,8 +88,12 @@ def _headers(key: str) -> dict[str, str]:
 
 
 def tag_prefix(plan: Plan) -> str:
-    """The part of this plan's tag that does not depend on a session's content."""
-    return content_tag(plan.plan, {}).rsplit(":", 1)[0] + ":"
+    """The start of this plan's event ids on intervals.icu.
+
+    Still the slug gpp 0.2.1 used: the bulk endpoint upserts by id, so a new
+    slug would put a second copy of every session already sent.
+    """
+    return f"[{TAG_PREFIX}:{legacy_slug(plan.plan)}:"
 
 
 def events(plan: Plan, profile: Profile) -> list[dict]:

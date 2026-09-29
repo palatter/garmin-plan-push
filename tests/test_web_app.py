@@ -343,47 +343,80 @@ class _Calendar:
         return {"workoutId": 1} if method == "POST" else {}
 
 
+def _upcoming():
+    """PLAN moved to start tomorrow, and a free date inside it, since only
+    sessions from today on are offered for removal."""
+    import datetime as dt
+
+    start = dt.date.today() + dt.timedelta(days=1)
+    plan = deepcopy(PLAN)
+    for n, workout in enumerate(plan["workouts"]):
+        workout["date"] = (start + dt.timedelta(days=2 * n)).isoformat()
+    return plan, (start + dt.timedelta(days=1)).isoformat()
+
+
+def _old_copy(date, title="Old"):
+    from gpp.compile import plan_slug
+
+    return {
+        "workoutId": 9,
+        "date": date,
+        "title": title,
+        "description": f"[gpp:{plan_slug(PLAN['plan'])}:0000abcd]",
+    }
+
+
 def test_check_first_reads_the_calendar_and_writes_nothing(app, monkeypatch):
     from gpp import client as client_module
 
-    cal = _Calendar(
-        [
-            {
-                "workoutId": 9,
-                "date": "2026-09-30",
-                "title": "Old",
-                "description": "[gpp:testblock:0000abcd]",
-            }
-        ]
-    )
+    plan, free_day = _upcoming()
+    cal = _Calendar([_old_copy(free_day)])
     monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
-    job = app.push({"plan": PLAN, "email": "me@example.com", "mode": "preview", "prune": True})
+    job = app.push({"plan": plan, "email": "me@example.com", "mode": "preview", "prune": True})
     snap = _finish(app, job["job"])
     assert snap["status"] == "done" and snap["result"]["preview"] is True
-    actions = [r["action"] for r in snap["result"]["results"]]
-    assert actions == ["would-create", "would-create", "would-create", "would-remove"]
+    rows = [(r["action"], r["date"], r["name"]) for r in snap["result"]["results"]]
+    assert [a for a, _, _ in rows] == ["would-create"] * 3 + ["would-remove"]
+    assert rows[-1][1:] == (free_day, "Old")
     assert cal.writes == []
 
 
-def test_send_with_prune_removes_orphans(app, monkeypatch):
+def test_send_with_prune_removes_orphans_and_says_which(app, monkeypatch):
     from gpp import client as client_module
 
+    plan, free_day = _upcoming()
+    cal = _Calendar([_old_copy(free_day)])
+    monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
+    monkeypatch.setattr(server, "save_receipt", lambda *a: type("R", (), {"name": "r"})())
+    job = app.push({"plan": plan, "email": "me@example.com", "prune": True})
+    snap = _finish(app, job["job"])
+    assert snap["status"] == "done"
+    assert ("DELETE", "/workout-service/workout/9") in cal.writes
+    removed = [r for r in snap["result"]["results"] if r["action"] == "removed"]
+    assert [(r["date"], r["name"]) for r in removed] == [(free_day, "Old")]
+
+
+def test_a_session_of_another_plan_with_the_same_first_letters_is_left_alone(app, monkeypatch):
+    # Both plans used to share the slug "testblock": a send rewrote the other
+    # plan's session on a shared day, and prune deleted its sessions nearby.
+    from gpp import client as client_module
+    from gpp.compile import plan_slug
+
+    plan, free_day = _upcoming()
+    other = f"[gpp:{plan_slug(PLAN['plan'] + ' - strength')}:0000abcd]"
+    first_day = plan["workouts"][0]["date"]
     cal = _Calendar(
         [
-            {
-                "workoutId": 9,
-                "date": "2026-09-30",
-                "title": "Old",
-                "description": "[gpp:testblock:0000abcd]",
-            }
+            {"workoutId": 7, "date": first_day, "title": "Legs", "description": other},
+            {"workoutId": 8, "date": free_day, "title": "Core", "description": other},
         ]
     )
     monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
     monkeypatch.setattr(server, "save_receipt", lambda *a: type("R", (), {"name": "r"})())
-    job = app.push({"plan": PLAN, "email": "me@example.com", "prune": True})
-    snap = _finish(app, job["job"])
+    snap = _finish(app, app.push({"plan": plan, "email": "me@example.com", "prune": True})["job"])
     assert snap["status"] == "done"
-    assert ("DELETE", "/workout-service/workout/9") in cal.writes
+    assert [r["action"] for r in snap["result"]["results"]] == ["created"] * 3
+    assert not [w for w in cal.writes if w[0] in ("PUT", "DELETE")]
 
 
 def test_one_send_at_a_time(app, monkeypatch):

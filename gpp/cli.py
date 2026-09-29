@@ -1012,11 +1012,9 @@ def cmd_push(args: argparse.Namespace) -> int:
             )
         return 0
 
-    if not args.yes:
-        answer = input(f"Push {len(compiled)} workout(s) to Garmin Connect? [y/N] ").strip().lower()
-        if answer not in ("y", "yes"):
-            print("Aborted.")
-            return 1
+    if not args.yes and not _confirm(f"Push {len(compiled)} workout(s) to Garmin Connect? [y/N] "):
+        print("Aborted.")
+        return 1
 
     try:
         client = sign_in_at_terminal(args.email, args.token_dir)
@@ -1035,14 +1033,14 @@ def cmd_push(args: argparse.Namespace) -> int:
         log=lambda line: print(line),
     )
     orphans = client.orphans(compiled)
-    if orphans and args.prune:
-        ids = [o["workout_id"] for o in orphans if o["workout_id"]]
-        results += client.unpush_ids(ids, log=lambda line: print(line))
-    elif orphans:
+    if orphans:
         print("\nStill on the calendar from an earlier version of this plan (moved or dropped):")
         for old in orphans:
             print(f"  {old['date']}  {old['title']}")
-        print("Push again with --prune to remove them.")
+        if not args.prune:
+            print("Push again with --prune to remove them.")
+        elif args.yes or _confirm(f"Remove these {len(orphans)} session(s)? [y/N] "):
+            results += client.remove_orphans(orphans, log=print)
     from .receipts import save_receipt
 
     try:
@@ -1067,6 +1065,14 @@ def cmd_push(args: argparse.Namespace) -> int:
     if not failures:
         print("Sync your watch (or wait for the overnight sync) to pull them down.")
     return 1 if failures else 0
+
+
+def _confirm(question: str) -> bool:
+    try:
+        return input(question).strip().lower() in ("y", "yes")
+    except EOFError:  # nobody at the keyboard: the answer is no
+        print()
+        return False
 
 
 # --- wiring -----------------------------------------------------------------

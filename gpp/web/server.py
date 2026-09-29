@@ -413,8 +413,7 @@ class App:
                 return {"results": [r.to_dict() for r in results], "preview": True}
             results = client.push(compiled, replace=replace, verify=True, log=job.say)
             if orphans and prune:
-                ids = [o["workout_id"] for o in orphans if o["workout_id"]]
-                results += client.unpush_ids(ids, log=job.say)
+                results += client.remove_orphans(orphans, log=job.say)
             elif orphans:
                 job.say("still on the calendar from an earlier version of this plan:")
                 for old in orphans:

@@ -1,13 +1,14 @@
 """Round 3 push-path fixes: plan-scoped matching, double days, ASCII tags,
 a fuller verify, an MFA-safe connect, and read retries."""
 
+import datetime
 import sys
 import types
 
 import pytest
 
 from gpp.client import GarminClient, NeedsPassword, PushError, parse_tag
-from gpp.compile import STEP_NOTE_LIMIT, compile_plan
+from gpp.compile import STEP_NOTE_LIMIT, compile_plan, plan_slug
 from gpp.plan import Plan
 from gpp.profile import Profile
 
@@ -127,7 +128,8 @@ def test_unchanged_session_is_claimed_once_on_a_double_day():
 
 def test_non_ascii_plan_names_still_match_their_own_tag():
     compiled = compile_plan(plan("Höst 10k bygg", [session("Lugnt", "2026-09-22")]), PROFILE)
-    assert parse_tag(compiled[0].tag) == ("hst10kbygg", compiled[0].tag[-9:-1])
+    assert parse_tag(compiled[0].tag) == (plan_slug("Höst 10k bygg"), compiled[0].tag[-9:-1])
+    assert plan_slug("Höst 10k bygg").startswith("hst10kbygg")
     fake = FakeGarmin([calendar_item(31, compiled[0])])
     fake.workouts[31] = compiled[0].payload
     assert connected(fake).push(compiled)[0].action == "unchanged"
@@ -255,3 +257,80 @@ def test_step_notes_are_cut_to_what_the_watch_keeps():
     )[0]
     step = compiled.payload["workoutSegments"][0]["workoutSteps"][0]
     assert len(step["description"]) == STEP_NOTE_LIMIT
+
+
+# --- plans whose names start alike ------------------------------------------
+
+STRENGTH = "Spring 2027 Half Marathon - strength"
+RUNNING = "Spring 2027 Half Marathon - running"
+
+
+def _legacy(wid, compiled, title=None):
+    """A calendar row as gpp 0.2.1 tagged it: the name's first 16 letters."""
+    slug_hash = compiled.tag.strip("[]").split(":")[2]
+    return {
+        "workoutId": wid,
+        "title": title or compiled.name,
+        "description": f"[gpp:{compiled.legacy_slug}:{slug_hash}]",
+        "date": compiled.date,
+    }
+
+
+def test_plans_whose_names_start_alike_get_their_own_slugs():
+    assert plan_slug(STRENGTH) != plan_slug(RUNNING)
+    assert plan_slug(STRENGTH).startswith("spring2027")
+    assert len(plan_slug(STRENGTH)) == 16
+    assert parse_tag(f"[gpp:{plan_slug(STRENGTH)}:0123abcd]") == (plan_slug(STRENGTH), "0123abcd")
+
+
+def test_a_same_prefix_plan_is_neither_overwritten_nor_pruned():
+    strength = compile_plan(
+        plan(STRENGTH, [session("Legs", "2026-10-06"), session("Core", "2026-10-08")]), PROFILE
+    )
+    running = compile_plan(plan(RUNNING, [session("Easy run", "2026-10-06")]), PROFILE)
+    fake = FakeGarmin([calendar_item(1, strength[0]), calendar_item(2, strength[1])])
+    fake.workouts[1], fake.workouts[2] = strength[0].payload, strength[1].payload
+    client = connected(fake)
+    assert client.orphans(running, today=datetime.date(2026, 10, 1)) == []
+    assert [r.action for r in client.push(running)] == ["created"]
+    assert fake.workouts[1]["workoutName"] == "Legs"
+    assert not any(m in ("PUT", "DELETE") for m, _ in fake.calls)
+
+
+def test_a_session_pushed_by_0_2_1_is_updated_in_place_and_moves_to_the_new_tag():
+    old = compile_plan(plan(RUNNING, [session("Easy run", "2026-10-06", 40)]), PROFILE)
+    new = compile_plan(plan(RUNNING, [session("Easy run", "2026-10-06", 50)]), PROFILE)
+    fake = FakeGarmin([_legacy(5, old[0])])
+    fake.workouts[5] = old[0].payload
+    client = connected(fake)
+    assert client.conflicts(new) == []
+    results = client.push(new)
+    assert [(r.action, r.workout_id) for r in results] == [("updated", 5)]
+    assert parse_tag(fake.workouts[5]["description"])[0] == plan_slug(RUNNING)
+
+
+def test_a_0_2_1_session_of_another_plan_is_only_listed():
+    # The strength plan's session, tagged by 0.2.1 with the slug both plans
+    # shared then, on the day the running plan now uses.
+    strength = compile_plan(plan(STRENGTH, [session("Legs", "2026-10-06")]), PROFILE)
+    running = compile_plan(
+        plan(RUNNING, [session("Easy run", "2026-10-06"), session("Long", "2026-10-11")]), PROFILE
+    )
+    moved = dict(_legacy(3, strength[0]), date="2026-10-09", title="Core")
+    fake = FakeGarmin([_legacy(2, strength[0]), moved])
+    fake.workouts[2] = strength[0].payload
+    client = connected(fake)
+    assert [c["title"] for c in client.conflicts(running)] == ["Legs"]
+    assert client.orphans(running, today=datetime.date(2026, 10, 1)) == []
+    assert [r.action for r in client.unpush(running)] == []
+    assert [r.action for r in client.push(running)] == ["created", "created"]
+    assert 2 in fake.workouts, "the other plan's session was touched"
+
+
+def test_unpush_removes_this_plans_0_2_1_sessions_by_date_and_title():
+    compiled = compile_plan(plan(RUNNING, [session("Easy run", "2026-10-06")]), PROFILE)
+    fake = FakeGarmin([_legacy(5, compiled[0]), _legacy(6, compiled[0], title="Legs")])
+    fake.workouts[5] = fake.workouts[6] = compiled[0].payload
+    removed = connected(fake).unpush(compiled)
+    assert [(r.action, r.workout_id) for r in removed] == [("removed", 5)]
+    assert 6 in fake.workouts

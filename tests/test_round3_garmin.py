@@ -304,9 +304,11 @@ def test_orphans_are_this_plans_sessions_on_dates_it_no_longer_uses():
         ]
     )
     client = connected(fake)
-    assert client.orphans(compiled) == [
+    assert client.orphans(compiled, today=dt.date(2026, 9, 20)) == [
         {"date": "2026-09-26", "title": "Threshold 5 x 1k", "workout_id": 5}
     ]
+    # Once that day has passed, the old copy is history, not something to prune.
+    assert client.orphans(compiled, today=dt.date(2026, 9, 27)) == []
 
 
 def test_unpush_never_deletes_by_the_calendar_entry_id():

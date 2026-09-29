@@ -1,0 +1,70 @@
+"""`gpp push` end to end, against an in-memory Garmin calendar."""
+
+import datetime as dt
+import json
+
+import pytest
+from test_round3_push import FakeGarmin, connected
+
+from gpp import cli
+from gpp.compile import plan_slug
+from gpp.plan import Plan
+from gpp.profile import Profile
+
+START = dt.date.today() + dt.timedelta(days=1)
+PLAN = Plan.from_dict(
+    {
+        "plan": "Autumn 10k",
+        "workouts": [
+            {
+                "name": "Easy",
+                "date": (START + dt.timedelta(days=n)).isoformat(),
+                "steps": [{"kind": "run", "duration": "40m"}],
+            }
+            for n in (0, 2)
+        ],
+    }
+)
+FREE_DAY = (START + dt.timedelta(days=1)).isoformat()
+
+
+@pytest.fixture
+def setup(tmp_path, monkeypatch):
+    profile = Profile.from_dict({"name": "T", "pace": {"threshold": "4:30/km"}})
+    profile.save(tmp_path / "profile.toml")
+    PLAN.save(tmp_path / "plan.json")
+    monkeypatch.setattr("gpp.receipts.RECEIPTS_DIR", tmp_path / "pushes")
+    fake = FakeGarmin(
+        [
+            {
+                "workoutId": 77,
+                "date": FREE_DAY,
+                "title": "Tempo",
+                "description": f"[gpp:{plan_slug(PLAN.plan)}:0123abcd]",
+            }
+        ]
+    )
+    fake.workouts[77] = {}
+    monkeypatch.setattr("gpp.client.sign_in_at_terminal", lambda *a, **kw: connected(fake))
+    argv = ["--profile", str(tmp_path / "profile.toml"), "push", str(tmp_path / "plan.json")]
+    return argv, fake, tmp_path
+
+
+def test_prune_lists_what_it_would_remove_and_asks_first(setup, monkeypatch, capsys):
+    argv, fake, _ = setup
+    answers = iter(["y", "n"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    assert cli.main([*argv, "--prune"]) == 0
+    out = capsys.readouterr().out
+    assert f"{FREE_DAY}  Tempo" in out
+    assert 77 in fake.workouts, "removed without asking"
+
+
+def test_prune_with_yes_removes_and_reports_the_date_and_title(setup, capsys):
+    argv, fake, tmp_path = setup
+    assert cli.main([*argv, "--prune", "--yes"]) == 0
+    assert 77 not in fake.workouts
+    assert f"removed    {FREE_DAY}  Tempo" in capsys.readouterr().out
+    (receipt,) = (tmp_path / "pushes").iterdir()
+    rows = json.loads(receipt.read_text(encoding="utf-8"))["results"]
+    assert {"removed"} <= {r["action"] for r in rows}

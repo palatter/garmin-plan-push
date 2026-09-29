@@ -513,19 +513,26 @@ class GarminClient:
         title_wanted = item.name.strip()
         candidates = by_date.get(item.date, [])
         own: list[tuple[dict, str, str]] = []
+        legacy: list[dict] = []
         for candidate in candidates:
             title = (candidate.get("title") or "").strip()
             tag = parse_tag(candidate.get("description")) or parse_tag(title)
-            if tag is None or tag[0] != want_slug:
+            if tag is None:
                 continue
-            own.append((candidate, title, tag[1]))
+            if tag[0] == want_slug:
+                own.append((candidate, title, tag[1]))
+            elif tag[0] == item.legacy_slug and title == title_wanted:
+                # Pushed by 0.2.1 or earlier, whose slug other plans can share:
+                # only the same session on the same day is taken as this one,
+                # and updating it moves it to this plan's tag.
+                legacy.append(candidate)
         for candidate, title, digest in own:
             if digest == want_hash and title == title_wanted:
                 candidates.remove(candidate)
                 return candidate, []
         # A stale row with our title is ours to update; one titled like
         # ANOTHER session being pushed today belongs to that session.
-        mine = [c for c, title, _ in own if title == title_wanted]
+        mine = [c for c, title, _ in own if title == title_wanted] + legacy
         loose = [c for c, title, _ in own if title != title_wanted and title not in names_today]
         stale = mine + loose
         for c in stale:
@@ -621,6 +628,8 @@ class GarminClient:
             return []
         dates = [dt.date.fromisoformat(c.date) for c in compiled]
         slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
+        legacy = {c.legacy_slug for c in compiled}
+        sessions = {(c.date, c.name.strip()) for c in compiled}
         wanted = {c.date for c in compiled}
         out = []
         for item in self.scheduled_between(min(dates), max(dates)):
@@ -629,7 +638,9 @@ class GarminClient:
                 continue
             title = (item.get("title") or "").strip() or "(untitled)"
             tag = parse_tag(item.get("description")) or parse_tag(title)
-            if tag is not None and tag[0] in slugs:
+            if tag is not None and (
+                tag[0] in slugs or (tag[0] in legacy and (date, title) in sessions)
+            ):
                 continue
             if tag is not None:
                 source = f"another gpp plan ({tag[0]})"
@@ -640,13 +651,20 @@ class GarminClient:
             out.append({"date": date, "title": title, "source": source, "id": _id_of(item)})
         return out
 
-    def orphans(self, compiled: list[CompiledWorkout], margin_days: int = 28) -> list[dict]:
+    def orphans(
+        self,
+        compiled: list[CompiledWorkout],
+        margin_days: int = 28,
+        today: dt.date | None = None,
+    ) -> list[dict]:
         """This plan's own workouts on dates the plan no longer uses.
 
         Matching is per date, so a session moved to another day is pushed
         fresh and its old copy stays behind. These are those copies: tagged
-        with this plan's slug, on a date with no session in the plan, within
-        `margin_days` either side of it. Listed; `push(prune=True)` removes them.
+        with this plan's slug, on a date with no session in the plan, from
+        today on and within `margin_days` either side of the plan. Sessions
+        already past are history, never offered for removal. Listed; the
+        caller removes them with `unpush_ids` when asked to prune.
         """
         if not compiled:
             return []
@@ -654,11 +672,15 @@ class GarminClient:
         slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
         wanted = {c.date for c in compiled}
         margin = dt.timedelta(days=margin_days)
+        start = max(min(dates) - margin, today or dt.date.today())
+        end = max(dates) + margin
+        if start > end:
+            return []
         out = []
-        for item in self.scheduled_between(min(dates) - margin, max(dates) + margin):
+        for item in self.scheduled_between(start, end):
             date = (item.get("date") or "")[:10]
             tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
-            if tag is None or tag[0] not in slugs or date in wanted:
+            if tag is None or tag[0] not in slugs or date in wanted or date < start.isoformat():
                 continue
             out.append(
                 {
@@ -683,6 +705,24 @@ class GarminClient:
                 results.append(PushResult(str(workout_id), "", "failed", int(workout_id), str(exc)))
         return results
 
+    def remove_orphans(
+        self, orphans: list[dict], log: Callable[[str], None] = lambda _: None
+    ) -> list[PushResult]:
+        """Delete the sessions `orphans()` listed, reporting each by date and title."""
+        results = []
+        for old in orphans:
+            title, date, workout_id = old["title"], old["date"], old.get("workout_id")
+            if not workout_id:
+                results.append(PushResult(title, date, "failed", detail="no workout id on it"))
+                continue
+            try:
+                self.delete_workout(int(workout_id))
+                log(f"  removed    {date}  {title}")
+                results.append(PushResult(title, date, "removed", int(workout_id)))
+            except PushError as exc:
+                results.append(PushResult(title, date, "failed", int(workout_id), str(exc)))
+        return results
+
     def unpush(
         self, compiled: list[CompiledWorkout], log: Callable[[str], None] = lambda _: None
     ) -> list[PushResult]:
@@ -695,7 +735,9 @@ class GarminClient:
         if not compiled:
             return results
         dates = [dt.date.fromisoformat(c.date) for c in compiled]
+        # With the old slug too: the date and title still have to match.
         slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
+        slugs |= {c.legacy_slug for c in compiled}
         wanted = {(c.date, c.name.strip()) for c in compiled}
         for item in self.scheduled_between(min(dates), max(dates)):
             tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
