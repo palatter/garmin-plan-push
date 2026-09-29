@@ -264,7 +264,7 @@ picks a profile file; several athletes can share one install.
 | `gpp race-plan --distance half --time 1:45:00` | split targets (even, negative, 10-10-10) and, with `--workout DATE`, a race-day session |
 | `gpp export` / `gpp import` | JSON, share bundles, CSV, Markdown; one session as intervals.icu text, ZWO, MRC/ERG |
 | `gpp fit plan.json` | one Garmin FIT workout file per session, for USB sideload |
-| `gpp icu plan.json --athlete i12345` | push to an intervals.icu calendar, the partner route to Garmin (`--remove` takes it back) |
+| `gpp icu plan.json --athlete i12345` | push to an intervals.icu calendar, the partner route to Garmin (`--prune` clears sessions you moved, `--remove` takes it back) |
 | `gpp eval` / `gpp providers --bench` | plan quality across athlete cases (costs tokens) / measure a local model |
 | `gpp transpile` | pace targets to running power, or back |
 | `gpp predict` / `gpp cs` | race-time predictions with ranges / critical speed from two trials |

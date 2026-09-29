@@ -7,6 +7,8 @@ intervals.icu's own planning tools. Each event carries the text that
 ``gpp export --format icu`` produces, and an ``external_id`` made of the
 plan's tag prefix, the date and the session's place on that day, so a
 re-push -- edited or not -- updates the same event instead of adding one.
+A session moved to another day gets a new id, so the old event is found
+by the prefix and removed with ``--prune``.
 
 API reference: https://intervals.icu/api-docs.html -- HTTP Basic with the
 user name ``API_KEY`` and the athlete's key as the password. Athlete ids look
@@ -18,6 +20,7 @@ cover everything up to the socket.
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 import re
 import urllib.error
@@ -32,6 +35,9 @@ from .plan import Plan
 from .profile import Profile
 
 BASE_URL = "https://intervals.icu/api/v1"
+# How far either side of a plan's dates a session moved since a push is
+# looked for. Only from today on: past events are the record.
+MOVED_MARGIN_DAYS = 28
 KEY_ENV = "ICU_API_KEY"
 ATHLETE_ENV = "ICU_ATHLETE_ID"
 ATHLETE_ID = re.compile(r"^i\d+$")
@@ -191,33 +197,61 @@ def push(
     return results
 
 
-def remove(
+def find(
     plan: Plan,
-    profile: Profile,
+    athlete: str | None,
+    key: str | None,
+    *,
+    transport: Transport = http,
+    base_url: str = BASE_URL,
+    today: dt.date | None = None,
+) -> list[dict]:
+    """This plan's events on the calendar, matched by its tag prefix: over the
+    plan's dates and, from today on, four weeks either side of them."""
+    _check(athlete, key)
+    dates = sorted(w.date for w in plan.workouts)
+    if not dates:
+        return []
+    today = today or dt.date.today()
+    margin = dt.timedelta(days=MOVED_MARGIN_DAYS)
+    oldest = min(dates[0], max(dates[0] - margin, today))
+    newest = dates[-1] + margin
+    url = f"{base_url}/athlete/{athlete}/events?oldest={oldest}&newest={newest}"
+    status, raw = transport("GET", url, None, _headers(key or ""))
+    _raise_for(status, raw)
+    listed = _json(raw)
+    prefix = tag_prefix(plan)
+    found = []
+    for event in listed if isinstance(listed, list) else []:
+        if not isinstance(event, dict) or event.get("id") is None:
+            continue
+        if not str(event.get("external_id") or "").startswith(prefix):
+            continue
+        day = str(event.get("start_date_local") or "")[:10]
+        if dates[0].isoformat() <= day <= dates[-1].isoformat() or day >= today.isoformat():
+            found.append(event)
+    return found
+
+
+def stale(plan: Plan, profile: Profile, found: list[dict]) -> list[dict]:
+    """Found events the plan no longer has: sessions moved to another day or
+    dropped since they were sent. Upserting the plan never removes them."""
+    wanted = {e["external_id"] for e in events(plan, profile)}
+    return [e for e in found if e.get("external_id") not in wanted]
+
+
+def delete(
+    found: list[dict],
     athlete: str | None,
     key: str | None,
     *,
     transport: Transport = http,
     base_url: str = BASE_URL,
 ) -> list[IcuResult]:
-    """Delete this plan's events from the calendar, matched by the plan's tag
-    prefix so sessions edited since the push are still found."""
     _check(athlete, key)
-    dates = sorted(w.date for w in plan.workouts)
-    if not dates:
-        return []
     headers = _headers(key or "")
-    url = f"{base_url}/athlete/{athlete}/events?oldest={dates[0]}&newest={dates[-1]}"
-    status, raw = transport("GET", url, None, headers)
-    _raise_for(status, raw)
-    listed = _json(raw)
-    prefix = tag_prefix(plan)
     out = []
-    for event in listed if isinstance(listed, list) else []:
-        if not isinstance(event, dict) or event.get("id") is None:
-            continue
-        if not str(event.get("external_id") or "").startswith(prefix):
-            continue
+    for event in found:
         status, raw = transport(
             "DELETE", f"{base_url}/athlete/{athlete}/events/{event['id']}", None, headers
         )

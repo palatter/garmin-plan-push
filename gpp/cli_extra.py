@@ -148,7 +148,15 @@ def cmd_icu(args) -> int:
         key = getpass.getpass("intervals.icu API key (not stored): ").strip() or None
     try:
         if args.remove:
-            results = icu.remove(plan, profile, athlete, key)
+            found = icu.find(plan, athlete, key)
+            if not found:
+                print("none of this plan's events are on the intervals.icu calendar")
+                return 0
+            _list_events(found)
+            if not (args.yes or _ask(f"Remove these {len(found)} event(s)? [y/N] ")):
+                print("Aborted.")
+                return 1
+            results = icu.delete(found, athlete, key)
         else:
             results = icu.push(plan, profile, athlete, key, dry_run=args.dry_run)
     except icu.IcuError as exc:
@@ -158,11 +166,41 @@ def cmd_icu(args) -> int:
         print(r.describe())
     if args.remove:
         print(f"{len(results)} event(s) removed from intervals.icu")
-    elif args.dry_run:
+        return 0
+    if args.dry_run:
         print(f"{len(results)} session(s) would be sent; nothing was")
-    else:
-        print(f"{len(results)} session(s) on the intervals.icu calendar; Garmin syncs from there")
+        return 0
+    print(f"{len(results)} session(s) on the intervals.icu calendar; Garmin syncs from there")
+    # Upserting updates the sessions the plan still has; one moved to another
+    # day, or dropped, is still on the calendar under its old id.
+    try:
+        leftover = icu.stale(plan, profile, icu.find(plan, athlete, key))
+        if leftover:
+            print(
+                "\nStill on the calendar from an earlier version of this plan (moved or dropped):"
+            )
+            _list_events(leftover)
+            if not args.prune:
+                print("Send again with --prune to remove them.")
+            elif args.yes or _ask(f"Remove these {len(leftover)} event(s)? [y/N] "):
+                for r in icu.delete(leftover, athlete, key):
+                    print(r.describe())
+    except icu.IcuError as exc:
+        print(f"warning: could not look for sessions this plan no longer has: {exc}")
     return 0
+
+
+def _list_events(found: list[dict]) -> None:
+    for event in found:
+        print(f"  {str(event.get('start_date_local', ''))[:10]}  {event.get('name', '')}")
+
+
+def _ask(question: str) -> bool:
+    try:
+        return input(question).strip().lower() in ("y", "yes")
+    except EOFError:  # nobody at the keyboard: the answer is no
+        print()
+        return False
 
 
 def cmd_export(args) -> int:
@@ -488,7 +526,13 @@ def register(sub: argparse._SubParsersAction) -> None:
         help="intervals.icu API key; better: set ICU_API_KEY, or leave both out to be asked",
     )
     ic.add_argument("--dry-run", action="store_true", help="list what would be sent")
+    ic.add_argument(
+        "--prune",
+        action="store_true",
+        help="also remove this plan's sessions it no longer has (moved or dropped); asks first",
+    )
     ic.add_argument("--remove", action="store_true", help="delete this plan's events instead")
+    ic.add_argument("--yes", action="store_true", help="skip the confirmation prompts")
     ic.set_defaults(func=cmd_icu)
 
     imp = sub.add_parser("import", help="read a share bundle, intervals.icu text or a ZWO file")
