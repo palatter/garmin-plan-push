@@ -66,6 +66,16 @@ def test_distance_reps_and_race_paces():
     assert w.steps[3].kind == "cooldown"
 
 
+def test_the_documented_example_with_warm_up_and_cool_down_as_two_words():
+    # The README, the edit dialog's placeholder and the empty-box hint all give it.
+    w = parse_workout("15m warm up, 5 x 1km @ T w/ 2m jog, 10m cool down")
+    assert [s.kind for s in w.steps] == ["warmup", "repeat", "cooldown"]
+    assert w.steps[0].duration == "15m" and w.steps[0].target.zone == "easy"
+    assert w.steps[1].reps == 5 and w.steps[1].steps[0].distance == "1km"
+    assert w.steps[2].duration == "10m" and w.steps[2].target.zone == "easy"
+    assert parse_workout("10m Warm  Down").steps[0].kind == "cooldown"
+
+
 def test_semicolons_and_then_also_separate():
     w = parse_workout("10m wu; 20m @ MP then 5m cd")
     assert [s.kind for s in w.steps] == ["warmup", "run", "cooldown"]

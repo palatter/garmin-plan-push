@@ -10,7 +10,8 @@ Grammar, informally: comma-separated segments, each
 
   extent   20min | 20m (under 100 = minutes) | 800m (100+ = metres) | 1km |
            5k | 1mi | 30s | lap
-  kind     warmup/wu, cooldown/cd, recovery/recover/jog/rest, strides, run
+  kind     warmup/warm up/wu, cooldown/cool down/cd, recovery/recover/jog/rest,
+           strides, run
   target   a zone name or alias (easy, T, MP, 5k, 10k, HM ...), an explicit
            pace like 4:00/km, an HR zone like Z2, watts like 280w, RPE 7,
            or a range 4:00-4:10/km
@@ -45,6 +46,12 @@ _KIND_WORDS = {
     "tempo": "run",
     "hard": "run",
     "easy": "run",
+}
+# Two-word spellings of a kind word ("15m warm up") read as the one word.
+_KIND_PHRASES = {
+    re.compile(r"\bwarm\s+up\b", re.I): "warmup",
+    re.compile(r"\bcool\s+down\b", re.I): "cooldown",
+    re.compile(r"\bwarm\s+down\b", re.I): "cooldown",
 }
 _RACE_PACES = {
     "5k": "interval",
@@ -175,6 +182,8 @@ def _parse_segment(text: str) -> list[dict]:
 
 def _parse_simple(text: str, default_kind: str) -> dict:
     t = text.strip()
+    for phrase, word in _KIND_PHRASES.items():
+        t = phrase.sub(word, t)
     target_text = None
     if "@" in t:
         t, target_text = (x.strip() for x in t.split("@", 1))
