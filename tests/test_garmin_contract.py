@@ -17,7 +17,7 @@ import pytest
 
 garminconnect = pytest.importorskip("garminconnect")
 
-from gpp.client import NeedsPassword, saved_login, sign_in  # noqa: E402
+from gpp.client import NeedsPassword, PushError, saved_login, sign_in  # noqa: E402
 
 API = "https://connectapi.garmin.com"
 
@@ -128,6 +128,43 @@ def test_no_saved_login_asks_for_the_password_up_front(tmp_path, stub, sso):
         "me@example.com", None, str(tmp_path / "t"), ask_password=lambda: asked.append(1) or "pw"
     )
     assert asked == [1]
+
+
+@pytest.fixture
+def saved(tmp_path, stub, sso, monkeypatch):
+    """A login saved by an earlier push; the library's retry pauses skipped."""
+    monkeypatch.setattr(garminconnect.time, "sleep", lambda seconds: None)
+    folder = str(tmp_path / "tokens")
+    sign_in("me@example.com", "pw", folder)
+    return folder
+
+
+def test_no_internet_is_not_mistaken_for_an_expired_login(saved, stub, sso):
+    import requests
+
+    def offline(method, url, headers=None, **kw):
+        raise requests.ConnectionError("Max retries exceeded (Caused by NameResolutionError)")
+
+    stub.request = offline
+    asked = []
+    with pytest.raises(PushError, match="could not reach Garmin Connect") as err:
+        sign_in("me@example.com", None, saved, ask_password=lambda: asked.append(1) or "pw")
+    assert not isinstance(err.value, NeedsPassword)
+    assert asked == [] and len(sso) == 1 and saved_login(saved) is not None
+
+
+def test_garmin_having_trouble_is_not_mistaken_for_an_expired_login(saved, stub):
+    stub.request = lambda method, url, headers=None, **kw: StubResponse(503, {"message": "down"})
+    with pytest.raises(PushError, match="having trouble") as err:
+        sign_in("me@example.com", None, saved)
+    assert not isinstance(err.value, NeedsPassword)
+
+
+def test_a_saved_login_garmin_rejects_asks_for_the_password(saved, stub, monkeypatch):
+    monkeypatch.setattr(garminconnect.client.Client, "_refresh_session", lambda self: None)
+    stub.request = lambda method, url, headers=None, **kw: StubResponse(401, {"message": "no"})
+    with pytest.raises(NeedsPassword, match="expired"):
+        sign_in("me@example.com", None, saved)
 
 
 def test_each_account_signs_in_with_its_own_saved_login(tmp_path, stub, sso, monkeypatch):

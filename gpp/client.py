@@ -197,6 +197,43 @@ def parse_tag(description: str | None) -> tuple[str, str] | None:
     return (match.group(1), match.group(2)) if match else None
 
 
+# Local file errors are the token store's, not the network's.
+_LOCAL_ERRORS = (FileNotFoundError, PermissionError, IsADirectoryError, NotADirectoryError)
+
+
+def _unreachable(exc: BaseException) -> str | None:
+    """What to tell the user when a failed sign-in was really Garmin being
+    unreachable or refusing for now, or None when it was the login itself.
+
+    Walks the exception chain: garminconnect wraps a dropped connection or a
+    5xx while loading the profile as an authentication error. Both requests'
+    and curl_cffi's network errors are OSErrors; an HTTP error carries a
+    response with a status instead.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status = getattr(getattr(current, "response", None), "status_code", None)
+        text = str(current)
+        if (
+            type(current).__name__ == "GarminConnectTooManyRequestsError"
+            or status == 429
+            or "API Error 429" in text
+        ):
+            return "Garmin Connect is limiting sign-ins right now; wait a few minutes and try again"
+        if (isinstance(status, int) and status >= 500) or re.search(r"API Error 5\d\d", text):
+            return "Garmin Connect is having trouble right now; try again in a few minutes"
+        if (
+            isinstance(current, OSError)
+            and status is None
+            and not isinstance(current, _LOCAL_ERRORS)
+        ):
+            return "could not reach Garmin Connect; check the internet connection and try again"
+        current = current.__cause__ or current.__context__
+    return None
+
+
 class GarminClient:
     """Thin adapter over python-garminconnect with an explicit transport probe."""
 
@@ -248,6 +285,12 @@ class GarminClient:
         try:
             self._api.login(str(store))
         except Exception as exc:
+            # The library reports "cannot reach Garmin" as a failed sign-in
+            # too; asking for the password then only sends someone through a
+            # full sign-in (and a two-factor code) that cannot work either.
+            trouble = _unreachable(exc)
+            if trouble:
+                raise PushError(trouble) from exc
             if not self._password:
                 raise NeedsPassword(
                     "your Garmin sign-in has expired; enter your Garmin password to sign in again"
