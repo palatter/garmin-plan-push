@@ -23,6 +23,7 @@ httpx2 = pytest.importorskip("httpx2")
 from gpp.providers import (  # noqa: E402
     AnthropicProvider,
     ProviderConfig,
+    ProviderError,
 )
 
 Responder = Callable[[dict], "httpx2.Response"]
@@ -52,7 +53,11 @@ def claude_stream(text: str, stop: str = "end_turn") -> httpx2.Response:
                     "content": [],
                     "stop_reason": None,
                     "stop_sequence": None,
-                    "usage": {"input_tokens": 10, "output_tokens": 1},
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 1,
+                        "cache_read_input_tokens": 3,
+                    },
                 },
             },
         ),
@@ -164,3 +169,31 @@ def test_rewriting_one_workout_through_claude(wire):
     wire.answers.append(lambda body: claude_stream(json.dumps(rewritten)))
     result = regenerate_workout(claude(), profile, plan, "2026-10-01", "make it shorter")
     assert [w.name for w in result.workouts] == ["Shorter"]
+
+
+def claude_error(status: int, kind: str, message: str) -> httpx2.Response:
+    return httpx2.Response(
+        status, json={"type": "error", "error": {"type": kind, "message": message}}
+    )
+
+
+def test_a_schema_claude_rejects_falls_back_to_plain_json_once(wire):
+    wire.answers += [
+        lambda body: claude_error(
+            400, "invalid_request_error", "output_config.format: too complex"
+        ),
+        lambda body: claude_stream('{"ok": true}'),
+    ]
+    provider = claude()
+    assert provider.complete("s", "u", {"type": "object"}) == '{"ok": true}'
+    assert ["output_config" in body for body in wire.bodies] == [True, False]
+    assert provider.last_mode == "plain"
+    assert wire.bodies[-1]["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert provider.last_usage.cache_read_tokens == 3
+
+
+def test_a_rejected_claude_key_is_reported_once_not_retried(wire):
+    wire.answers.append(lambda body: claude_error(401, "authentication_error", "invalid x-api-key"))
+    with pytest.raises(ProviderError, match="rejected the API key"):
+        claude().complete("s", "u", {"type": "object"})
+    assert len(wire.bodies) == 1

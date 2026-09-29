@@ -218,7 +218,7 @@ class AnthropicProvider:
         self.model = config.model or "claude-opus-5"
         self.last_usage: Usage | None = None
         self.last_stop: str | None = None
-        self.last_mode: str | None = None  # schema | schema-beta | plain
+        self.last_mode: str | None = None  # schema | plain
 
     def complete(
         self,
@@ -255,22 +255,13 @@ class AnthropicProvider:
                         on_delta(text)
                 return stream.get_final_message()
 
-        # Structured outputs, then the older beta spelling, then prompt-only
-        # JSON. Each step is only taken when the API rejects the request
-        # shape; anything else is a real failure and is reported as such.
+        # Structured outputs, then prompt-only JSON. The second step is only
+        # taken when the API rejects the request shape; anything else is a
+        # real failure and is reported as such.
         variants: list[tuple[str, dict[str, Any]]] = []
         if schema and self.config.strict_schema:
             variants.append(
                 ("schema", {"output_config": {"format": {"type": "json_schema", "schema": schema}}})
-            )
-            variants.append(
-                (
-                    "schema-beta",
-                    {
-                        "output_format": {"type": "json_schema", "schema": schema},
-                        "extra_headers": {"anthropic-beta": "structured-outputs-2025-11-13"},
-                    },
-                )
             )
         variants.append(("plain", {}))
         response = None

@@ -152,54 +152,6 @@ def test_usage_adds_up_and_prices_cache_reads():
     assert cached == pytest.approx(full * 0.1)
 
 
-def test_anthropic_ladder_falls_back_to_plain_when_schema_kwargs_are_rejected(monkeypatch):
-    seen = []
-
-    class Stream:
-        def __init__(self, message):
-            self.message = message
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def get_final_message(self):
-            return self.message
-
-    class Messages:
-        def stream(self, **req):
-            seen.append(sorted(req))
-            if "output_config" in req:
-                raise TypeError("unexpected keyword argument 'output_config'")
-            if "output_format" in req:
-                raise RuntimeError("Error code: 400 - invalid_request_error: output_format")
-            return Stream(
-                SimpleNamespace(
-                    content=[SimpleNamespace(type="text", text='{"ok": true}')],
-                    usage=SimpleNamespace(
-                        input_tokens=5, output_tokens=2, cache_read_input_tokens=3
-                    ),
-                    stop_reason="end_turn",
-                )
-            )
-
-    class Anthropic:
-        def __init__(self, **kw):
-            self.messages = Messages()
-
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=Anthropic))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    provider = providers.AnthropicProvider(
-        providers.ProviderConfig(name="claude", kind="anthropic")
-    )
-    assert provider.complete("sys", "user", {"type": "object"}) == '{"ok": true}'
-    assert provider.last_mode == "plain" and len(seen) == 3
-    assert provider.last_usage.cache_read_tokens == 3
-    assert isinstance(seen[0], list) and "system" in seen[-1]
-
-
 def test_openai_ladder_steps_down_from_json_schema_to_json_object(monkeypatch):
     seen = []
 
