@@ -13,7 +13,8 @@ before and after it gets there.
 ```
 
 Runs as a local app in your browser. Nothing is hosted, no account to make,
-and your Garmin password never leaves your machine.
+and your Garmin password goes only to Garmin's own sign-in, never to a disk
+or to any other service.
 
 **New here?** The [guide](https://palatter.github.io/garmin-plan-push/) walks
 through the install, the first plan and sending it to the watch, in plain
@@ -38,9 +39,10 @@ gpp web
 That opens the app. It asks for a recent race time, works out your training
 paces, and you're ready. There is nothing else to configure.
 
-To update later: `uv tool upgrade garmin-plan-push`. Tagged releases with the
-wheel attached are on the
-[releases page](https://github.com/palatter/garmin-plan-push/releases).
+To update later: `uv tool upgrade garmin-plan-push`. Once versions are
+tagged, each gets a release with the wheel attached on the
+[releases page](https://github.com/palatter/garmin-plan-push/releases);
+until then, installing from GitHub gives you the latest `main`.
 
 To try it without installing anything permanently:
 
@@ -141,9 +143,10 @@ Ollama) are good enough to hold the schema and which are not.
 
 **From another assistant**: `gpp mcp` runs the tool as an MCP server, so
 Claude, ChatGPT, Gemini or a local model can check, preview, adapt and push
-plans conversationally. Push is a dry run unless you have set
-`GARMIN_EMAIL` and `GARMIN_PASSWORD` (or signed in before); the assistant
-never sees either. It needs the MCP library, installed with:
+plans conversationally. Push is a dry run unless you ask for a real one, and
+a real push needs `GARMIN_EMAIL` set in the MCP server's environment, even
+after a sign-in has been saved, plus `GARMIN_PASSWORD` the first time; the
+assistant never sees either. It needs the MCP library, installed with:
 
 ```bash
 uv tool install --python 3.12 --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
@@ -345,7 +348,7 @@ uv run python scripts/check.py   # before every push: ruff, ty, tests (coverage 
 uv run gpp web
 ```
 
-There is no CI; `scripts/check.py` is the gate. `ty check` covers `gpp/`
+No CI runs the tests; `scripts/check.py` is the gate. `ty check` covers `gpp/`
 (the tests are left out: fakes and monkeypatching are not worth typing).
 
 ```
@@ -398,7 +401,7 @@ gpp/web/            Local server, background jobs, and the browser UI
                     (no build step: index.html, app.js, review.js, two CSS files).
 ```
 
-446 tests cover units, zones, the models, the compiler (step ordering, repeat
+The tests cover units, zones, the models, the compiler (step ordering, repeat
 groups, target units), the validator, the sanity rules, adaptation, the
 formats, FIT encoding and decoding, the library, the history store, the web
 endpoints and the HTTP layer, the MCP tools, the job registry's input
@@ -406,13 +409,14 @@ handshake, and the intervals.icu client up to the socket. Property-based tests
 (hypothesis) cover the unit parsers and the compile round trip; an
 accessibility test audits the real HTML (labels, headings, duplicate ids) and
 a contrast test measures the design tokens against WCAG AA in both themes.
-None touch the network. CI runs the suite on Linux, macOS and Windows on
-Python 3.12 and 3.14 with a coverage floor, lints, type-checks (advisory),
-runs CodeQL, dependency review and an OpenSSF Scorecard, and checks that the
-web assets shipped in the wheel. Actions are pinned to commit SHAs; Dependabot
-keeps them fresh. Tagging a release runs the tests, builds the wheel, takes
-the notes from [CHANGELOG.md](CHANGELOG.md) and can publish to PyPI with
-trusted publishing.
+None touch the network, and a contract test drives the real garminconnect
+library offline; nothing here has been run against a live Garmin account.
+There is no CI for the tests: `scripts/check.py` runs them with a coverage
+floor, lint, format and type checks, and pip-audit, before every push.
+GitHub still runs CodeQL and an OpenSSF Scorecard on pushes to main and
+weekly, with actions pinned to commit SHAs. Tagging a release runs the
+tests, builds the wheel, takes the notes from [CHANGELOG.md](CHANGELOG.md)
+and can publish to PyPI with trusted publishing.
 
 ## Security notes
 
