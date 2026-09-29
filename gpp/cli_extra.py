@@ -54,6 +54,15 @@ def _write_or_print(text: str, output: str | None) -> None:
         sys.stdout.write(text)
 
 
+def _write_plan(plan: Plan, output: str | None) -> None:
+    """A plan to stdout, or to a file whose earlier version is kept as .1 to .5."""
+    if output:
+        plan.save(output)
+        print(f"wrote {output}")
+    else:
+        sys.stdout.write(plan.dumps())
+
+
 # --- library ----------------------------------------------------------------
 
 
@@ -87,12 +96,10 @@ def cmd_library(args) -> int:
         profile = _profile(args)
         workout = library.load_workout(args.name, _date(args.date))
         plan = Plan(plan=workout.name, workouts=[workout])
-        _write_or_print(
-            plan.dumps()
-            if args.output
-            else render_plan(plan, compile_plan(plan, profile), profile),
-            args.output,
-        )
+        if args.output:
+            _write_plan(plan, args.output)
+        else:
+            sys.stdout.write(render_plan(plan, compile_plan(plan, profile), profile))
         return 0
     return 2
 
@@ -103,7 +110,7 @@ def cmd_template(args) -> int:
         race = _date(args.race) if args.race else None
         monday = start - dt.timedelta(days=start.weekday())
         plan = library.apply_plan(args.name, monday, race, allow_path=True)
-        _write_or_print(plan.dumps(), args.output)
+        _write_plan(plan, args.output)
         return 0
     if args.action == "return":
         if args.tier == "resume":
@@ -111,7 +118,7 @@ def cmd_template(args) -> int:
             print(f"resume: {adapt.TIER_ADVICE['resume']} No plan written.")
             return 0
         plan = library.return_to_run(_date(args.start), args.tier)
-        _write_or_print(plan.dumps(), args.output)
+        _write_plan(plan, args.output)
         return 0
     return 2
 
@@ -130,7 +137,7 @@ def cmd_oneline(args) -> int:
         return 2
     plan = Plan(plan=workout.name, workouts=[workout])
     if args.output:
-        _write_or_print(plan.dumps(), args.output)
+        _write_plan(plan, args.output)
     else:
         print(render_workout(compile_plan(plan, profile)[0], profile))
     return 0
@@ -216,7 +223,7 @@ def cmd_export(args) -> int:
         _write_or_print(formats.export_share(plan, profile, args.note), args.output)
         return 0
     if fmt == "json":
-        _write_or_print(plan.dumps(), args.output)
+        _write_plan(plan, args.output)
         return 0
     if fmt == "csv":
         _write_or_print(formats.export_csv(plan, profile), args.output)
@@ -248,7 +255,7 @@ def _import_fit(args) -> int:
     date = _date(args.start) if args.start else dt.date.today()
     workout = workout_from_fit(Path(args.file).read_bytes(), date, profile)
     plan = Plan(plan=workout.name, workouts=[workout])
-    _write_or_print(plan.dumps(), args.output)
+    _write_plan(plan, args.output)
     return 0
 
 
@@ -281,7 +288,7 @@ def cmd_import(args) -> int:
     except formats.FormatError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    _write_or_print(plan.dumps(), args.output)
+    _write_plan(plan, args.output)
     return 0
 
 
@@ -300,7 +307,7 @@ def cmd_transpile(args) -> int:
         if args.to == "power"
         else transpile.to_pace(plan, profile)
     )
-    _write_or_print(out.dumps(), args.output)
+    _write_plan(out, args.output)
     return 0
 
 
@@ -315,7 +322,7 @@ def cmd_pause(args) -> int:
         print(f"  {r}", file=sys.stderr)
     for d in result.dropped:
         print(f"  dropped: {d}", file=sys.stderr)
-    _write_or_print(result.plan.dumps(), args.output)
+    _write_plan(result.plan, args.output)
     return 0
 
 
@@ -325,7 +332,7 @@ def cmd_missed(args) -> int:
     result = adapt.replan_missed(plan, [_date(d) for d in args.dates], profile)
     for r in result.reasons:
         print(f"  {r}", file=sys.stderr)
-    _write_or_print(result.plan.dumps(), args.output)
+    _write_plan(result.plan, args.output)
     return 0
 
 

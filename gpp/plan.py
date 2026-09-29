@@ -453,16 +453,7 @@ class Plan:
 
         `gpp diff plan.json plan.json.1` shows what the last save changed.
         """
-        path = Path(path)
-        text = self.dumps()
-        if keep and path.exists() and _existing_text(path) != text:
-            for n in range(keep - 1, 0, -1):
-                older = path.with_name(f"{path.name}.{n}")
-                if older.exists():
-                    older.replace(path.with_name(f"{path.name}.{n + 1}"))
-            path.replace(path.with_name(f"{path.name}.1"))
-        path.write_text(text, encoding="utf-8")
-        return path
+        return write_keeping(path, self.dumps(), keep)
 
     # Convenience the checks and UI lean on.
     @property
@@ -586,6 +577,19 @@ def _check_step(step: dict, where: str, depth: int, sport: str) -> None:
             f"{where}: {target['type']} target high ({target['high']}) "
             f"must be greater than low ({target['low']})"
         )
+
+
+def write_keeping(path: str | Path, text: str, keep: int = 5) -> Path:
+    """Write a plan file; an existing, different file is kept as `.1` (then `.2`...)."""
+    path = Path(path)
+    if keep and path.exists() and _existing_text(path) != text:
+        for n in range(keep - 1, 0, -1):
+            older = path.with_name(f"{path.name}.{n}")
+            if older.exists():
+                older.replace(path.with_name(f"{path.name}.{n + 1}"))
+        path.replace(path.with_name(f"{path.name}.1"))
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 def _existing_text(path: Path) -> str | None:

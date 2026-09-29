@@ -16,7 +16,7 @@ from . import REINSTALL, checks
 from .client import PushError
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
-from .plan import Plan, PlanError
+from .plan import Plan, PlanError, write_keeping
 from .profile import Profile, ProfileError, default_save_path, find_profile
 from .prompt import build_prompt
 from .providers import (
@@ -941,7 +941,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     text = dump_plan(result.data)
     if args.output:
-        Path(args.output).write_text(text, encoding="utf-8")
+        write_keeping(args.output, text)
         print(f"\nwrote {args.output}")
     else:
         print()
