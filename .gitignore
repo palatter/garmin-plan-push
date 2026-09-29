@@ -7,8 +7,16 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 
+.hypothesis/
+dist/
+
 # Personal config and generated artefacts
 /profile.toml
 plan-prompt.txt
 plan-response.json
 *.plan.json
+# `gpp backup` (profile, history, receipts; logins with --with-tokens),
+# `gpp doctor --bundle`, and the folder `gpp fit` writes into by default
+gpp-backup-*.zip
+gpp-diagnostics.json
+/fit/
