@@ -16,7 +16,8 @@ def test_the_version_is_the_same_everywhere():
     ]
     assert gpp.__version__ == version
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    first = re.search(r"^## \[([^\]]+)\]", changelog, re.M)
+    # The newest numbered section; an "## [Unreleased]" one may sit above it.
+    first = re.search(r"^## \[(\d[^\]]*)\]", changelog, re.M)
     assert first and first.group(1) == version
     assert f"Garmin Plan Push {version}<" in (ROOT / "docs" / "index.html").read_text(
         encoding="utf-8"
