@@ -22,11 +22,12 @@ def test_the_version_is_the_same_everywhere():
     assert f"Garmin Plan Push {version}<" in (ROOT / "docs" / "index.html").read_text(
         encoding="utf-8"
     )
-    for template in (
-        "packaging/Formula/garmin-plan-push.rb",
-        "packaging/winget/palatter.gpp.installer.yaml",
-    ):
-        text = (ROOT / template).read_text(encoding="utf-8")
-        assert f"v{version}" in text and not re.search(
-            r"v0\.\d+\.\d+", text.replace(f"v{version}", "")
-        )
+    text = (ROOT / "packaging/Formula/garmin-plan-push.rb").read_text(encoding="utf-8")
+    assert f"v{version}" in text and not re.search(r"v0\.\d+\.\d+", text.replace(f"v{version}", ""))
+    manifests = sorted((ROOT / "packaging/winget").glob("*.yaml"))
+    assert len(manifests) == 3
+    for manifest in manifests:
+        text = manifest.read_text(encoding="utf-8")
+        assert f"PackageVersion: {version}\n" in text, manifest.name
+        # Any other 0.x version in it (a download or notes link) is stale.
+        assert not re.search(r"\b0\.\d+\.\d+", text.replace(version, "")), manifest.name

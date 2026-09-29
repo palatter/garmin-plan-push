@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: palatter.GarminPlanPush
+PackageVersion: 0.2.2
+PackageLocale: en-US
+Publisher: Patrick Latter
+PublisherUrl: https://github.com/palatter
+PackageName: Garmin Plan Push
+PackageUrl: https://palatter.github.io/garmin-plan-push/
+License: MIT
+LicenseUrl: https://github.com/palatter/garmin-plan-push/blob/main/LICENSE
+ShortDescription: Turn an AI-written training plan into structured workouts on your Garmin calendar.
+Description: |-
+  gpp checks a training plan written by an AI assistant (runs, rides, swims and
+  strength sessions), turns it into Garmin structured workouts, and schedules
+  them on your Garmin Connect calendar. It also has a small web app on your own
+  computer for reviewing and sending a plan.
+Moniker: gpp
+Tags:
+  - garmin
+  - running
+  - training
+  - workouts
+ReleaseNotesUrl: https://github.com/palatter/garmin-plan-push/releases/tag/v0.2.2
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
