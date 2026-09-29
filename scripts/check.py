@@ -18,6 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COVERAGE_FLOOR = 75
+# Pinned like ty, as media-courier pins it: a new release of the auditor
+# should not fail a push by itself. Raise it by hand.
+PIP_AUDIT = "pip-audit==2.10.1"
 
 
 def run(title: str, *command: str) -> None:
@@ -38,7 +41,7 @@ def audit() -> None:
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
         handle.write(exported)
     try:
-        run("audit", "uvx", "pip-audit", "-r", handle.name, "--disable-pip", "--no-deps")
+        run("audit", "uvx", PIP_AUDIT, "-r", handle.name, "--disable-pip", "--no-deps")
     finally:
         Path(handle.name).unlink()
 
