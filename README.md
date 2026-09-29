@@ -23,7 +23,9 @@ language. The rest of this README is the reference.
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (one
 command on any OS — the link has it; it fetches Python 3.12+ for you if
-needed). Then:
+needed) and [Git](https://git-scm.com/downloads), which uv uses to download
+from GitHub. Windows does not come with Git (`winget install --id Git.Git -e
+--source winget` adds it); on a Mac, `xcode-select --install` does. Then:
 
 ```bash
 uv tool install git+https://github.com/palatter/garmin-plan-push

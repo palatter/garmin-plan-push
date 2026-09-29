@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="What Garmin Plan Push is, how to install it in three commands, and how to write, review and send a training plan to a Garmin watch.">
+<meta name="description" content="What Garmin Plan Push is, how to install it, and how to write, review and send a training plan to a Garmin watch.">
 <meta name="theme-color" content="#d1471a">
 <meta property="og:title" content="Garmin Plan Push Guide">
-<meta property="og:description" content="What Garmin Plan Push is, how to install it in three commands, and how to write, review and send a training plan to a Garmin watch.">
+<meta property="og:description" content="What Garmin Plan Push is, how to install it, and how to write, review and send a training plan to a Garmin watch.">
 <meta property="og:url" content="https://palatter.github.io/garmin-plan-push/">
 <meta property="og:type" content="website">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -360,6 +360,7 @@
       <li><span><strong>A Garmin that accepts structured workouts.</strong> Fenix 6, 7 or 8, Epix, Forerunner 255, 265, 955 or 965, Edge 530 and newer. Older models like the Forerunner 235 or Vivoactive 3 cannot run structured workouts at all, so this will not help there.</span></li>
       <li><span><strong>Your Garmin Connect login.</strong> The same email and password you use in the Connect app. If you have two-factor turned on, the app asks for the code when it sends.</span></li>
       <li><span><strong>A computer.</strong> Windows, macOS or Linux, and about ten minutes for the install and first plan.</span></li>
+      <li><span><strong>Git on that computer.</strong> The installer uses it to download the app. Many Macs and most Linux machines have it already; the install steps below add it if not.</span></li>
       <li class="opt"><span><strong>An AI key, if you have one.</strong><span class="tag">optional</span> Claude, ChatGPT or Gemini keys make plan writing automatic. Without one, pick <em>paste</em>: the app gives you the prompt, you drop it into whichever assistant you already use, and paste the answer back. Same checks, same watch.</span></li>
       <li><span><strong>A recent hard race or time trial.</strong> Any distance, any date in the last few months. That one time is what the app uses to work out your training paces.</span></li>
     </ul>
@@ -368,8 +369,8 @@
   <section id="install">
     <header>
       <span class="eyebrow">Install</span>
-      <h2>Three commands, then it opens by itself</h2>
-      <p class="lede">The app is installed with <strong>uv</strong>, a small tool that also fetches the right Python for you. You never touch Python directly.</p>
+      <h2>A few commands, then it opens by itself</h2>
+      <p class="lede">The app is installed with <strong>uv</strong>, a small tool that also fetches the right Python for you. You never touch Python directly. uv downloads the app with <strong>Git</strong>, so Git comes first if the computer does not have it.</p>
     </header>
     <div class="steps">
       <div class="step">
@@ -384,6 +385,21 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
           <div class="cmd" id="cmd-mac" role="tabpanel" aria-labelledby="tab-mac" hidden><pre><span class="c"># in Terminal</span>
 curl -LsSf https://astral.sh/uv/install.sh | sh</pre><button type="button" class="copy" aria-label="Copy the uv install command">Copy</button></div>
           <p>Then close the terminal window and open a new one, so it knows where uv lives.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Install Git, if you don't have it</h3>
+          <p>Type <code>git --version</code> first. If it prints a version number, skip to the next step.</p>
+          <div class="tabs" role="tablist" aria-label="Operating system">
+            <button type="button" role="tab" id="tab-git-win" aria-selected="true" aria-controls="git-win" data-os="win">Windows</button>
+            <button type="button" role="tab" id="tab-git-mac" aria-selected="false" aria-controls="git-mac" data-os="mac">macOS and Linux</button>
+          </div>
+          <div class="cmd" id="git-win" role="tabpanel" aria-labelledby="tab-git-win"><pre><span class="c"># in PowerShell</span>
+winget install --id Git.Git -e --source winget</pre><button type="button" class="copy" aria-label="Copy the Git install command">Copy</button></div>
+          <div class="cmd" id="git-mac" role="tabpanel" aria-labelledby="tab-git-mac" hidden><pre><span class="c"># in Terminal</span>
+xcode-select --install</pre><button type="button" class="copy" aria-label="Copy the Git install command">Copy</button></div>
+          <p>On a Mac, a window then offers to install Apple's command line developer tools, which include Git. On Linux, use the package manager, for example <code>sudo apt install git</code>. Then close the terminal window and open a new one.</p>
         </div>
       </div>
       <div class="step">
