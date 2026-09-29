@@ -131,6 +131,14 @@ def forget_login(folder: str | None = None) -> bool:
     return removed
 
 
+# An empty answer to the password prompt: easy to give by accident, since
+# the password does not show as it is typed.
+NO_PASSWORD = (
+    "no password was entered; type your Garmin password and press Enter "
+    "(nothing shows as you type it)"
+)
+
+
 def sign_in(
     email: str,
     password: str | None,
@@ -154,6 +162,8 @@ def sign_in(
     stored = None if typed else keychain.garmin_password(email)
     if not (typed or stored) and saved_login(token_folder, email) is None and ask_password:
         typed = ask_password() or None
+        if typed is None:  # with nothing saved, there is nothing to try
+            raise NeedsPassword(NO_PASSWORD)
     client = GarminClient(email, typed or stored, token_dir=token_folder)
     try:
         client.connect(prompt_mfa=prompt_mfa)
@@ -171,6 +181,8 @@ def sign_in(
                 "enter your Garmin password"
             ) from exc
         typed = ask_password() or None
+        if typed is None:
+            raise NeedsPassword(NO_PASSWORD) from exc
         client = GarminClient(email, typed, token_dir=token_folder)
         client.connect(prompt_mfa=prompt_mfa)
     if remember and typed:

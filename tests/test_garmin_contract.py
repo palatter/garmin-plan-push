@@ -359,3 +359,24 @@ def test_with_no_terminal_the_password_is_not_asked_for(
     with pytest.raises(NeedsPassword, match="no saved Garmin sign-in yet; there is no terminal"):
         sign_in_at_terminal("me@example.com", str(tmp_path / "tokens"))
     assert garmin_password["logins"] == []
+
+
+def test_an_empty_password_stops_at_once_and_says_so(tmp_path, stub, garmin_password):
+    # It used to ask twice and then say there was no saved sign-in, which
+    # read as if the password typed had gone missing.
+    asked = []
+    with pytest.raises(NeedsPassword, match="no password was entered"):
+        sign_in(
+            "me@example.com",
+            None,
+            str(tmp_path / "tokens"),
+            ask_password=lambda: asked.append(1) or "",
+        )
+    assert asked == [1] and garmin_password["logins"] == []
+    # An expired login asks once; nothing typed stops there too.
+    asked.clear()
+    with pytest.raises(NeedsPassword, match="no password was entered"):
+        sign_in(
+            "me@example.com", None, _expired(tmp_path), ask_password=lambda: asked.append(1) or ""
+        )
+    assert asked == [1]
