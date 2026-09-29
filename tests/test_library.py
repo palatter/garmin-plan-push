@@ -91,3 +91,21 @@ def test_return_to_run_ramps():
     assert library.return_to_run(dt.date.today(), "resume").workouts == []
     with pytest.raises(library.LibraryError):
         library.return_to_run(dt.date.today(), "sideways")
+
+
+def test_a_template_file_path_works_from_the_command_line_only(tmp_path, capsys):
+    from gpp import cli
+
+    path = tmp_path / "block.json"
+    Plan.from_dict(
+        {
+            "plan": "Block",
+            "workouts": [
+                {"name": "A", "date": "2026-02-18", "steps": [{"kind": "run", "duration": "30m"}]}
+            ],
+        }
+    ).save(path)
+    assert cli.main(["template", "apply", str(path), "--start", "2026-09-21"]) == 0
+    assert '"date": "2026-09-23"' in capsys.readouterr().out
+    with pytest.raises(library.LibraryError, match="no plan template named"):
+        library.apply_plan(str(path), dt.date(2026, 9, 21), root=tmp_path / "library")

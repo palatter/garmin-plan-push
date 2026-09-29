@@ -130,15 +130,23 @@ def apply_plan(
     start_monday: dt.date,
     race_date: dt.date | None = None,
     root: Path | None = None,
+    *,
+    allow_path: bool = False,
 ) -> Plan:
     """Re-base a template so its first week begins on `start_monday`.
 
     With `race_date`, the template's A race is moved there instead and the
     workouts shift by the same amount -- "this 12-week plan, ending on my
     race" -- which is how people actually think about it.
+
+    A file path is used as it is only with `allow_path` (the command line);
+    the web app names library templates, never files elsewhere on disk.
     """
     candidate = Path(name_or_path)
-    path = candidate if candidate.exists() else _dir("plans", root) / f"{_slug(name_or_path)}.json"
+    if allow_path and candidate.exists():
+        path = candidate
+    else:
+        path = _dir("plans", root) / f"{_slug(name_or_path)}.json"
     if not path.exists():
         raise LibraryError(f"no plan template named {name_or_path!r}")
     try:

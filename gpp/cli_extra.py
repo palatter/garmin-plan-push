@@ -101,7 +101,8 @@ def cmd_template(args) -> int:
     if args.action == "apply":
         start = _date(args.start)
         race = _date(args.race) if args.race else None
-        plan = library.apply_plan(args.name, start - dt.timedelta(days=start.weekday()), race)
+        monday = start - dt.timedelta(days=start.weekday())
+        plan = library.apply_plan(args.name, monday, race, allow_path=True)
         _write_or_print(plan.dumps(), args.output)
         return 0
     if args.action == "return":

@@ -197,6 +197,11 @@ def test_library_endpoint_round_trip(app):
 
     with pytest.raises(AppError, match="no workout named"):
         app.library_action({"action": "workout", "name": "nope", "date": "2026-10-06"})
+    # The page names library templates only: a path elsewhere on disk is not read.
+    elsewhere = app.profile_path.parent / "elsewhere.json"
+    elsewhere.write_text(json.dumps(PLAN), encoding="utf-8")
+    with pytest.raises(AppError, match="no plan template named"):
+        app.library_action({"action": "plan", "name": str(elsewhere), "start": "2026-10-05"})
     with pytest.raises(AppError, match="unknown library action"):
         app.library_action({"action": "dance"})
 
