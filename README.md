@@ -420,8 +420,8 @@ None touch the network, and a contract test drives the real garminconnect
 library offline; nothing here has been run against a live Garmin account.
 There is no CI for the tests: `scripts/check.py` runs them with a coverage
 floor, lint, format and type checks, and pip-audit, before every push.
-GitHub still runs CodeQL and an OpenSSF Scorecard on pushes to main and
-weekly, with actions pinned to commit SHAs. Tagging a release runs the
+GitHub still runs CodeQL on pushes to main and weekly, with its actions
+pinned to commit SHAs. Tagging a release runs the
 tests, builds the wheel, takes the notes from [CHANGELOG.md](CHANGELOG.md)
 and can publish to PyPI with trusted publishing.
 

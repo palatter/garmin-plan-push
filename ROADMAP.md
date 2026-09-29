@@ -28,8 +28,9 @@ with it, and moved type checking and the coverage floor (#190, #191) into
 - **#174** — `--json` is on `check`, `report`, `zones`, `next`, `week`,
   `plans`, `why`, `recap`, `profile` and `eval`; the history and Garmin
   commands still print text.
-- **#193** — CodeQL and the OpenSSF Scorecard still run; the dependency
-  review workflow went with CI.
+- **#193** — CodeQL still runs; the dependency review workflow went with
+  CI, and the OpenSSF Scorecard was dropped because it grades the branch
+  protection and dependency updates this repository gave up on purpose.
 - **#194** (gone) — the web smoke test ran on every OS in the CI matrix; the
   matrix went with CI, and `scripts/check.py` runs the tests on one machine.
 
@@ -362,7 +363,7 @@ All reverse-engineered; all subject to breaking without notice.
 
 | # | Feature | Tier | Effort |
 |---|---|---|---|
-| 97 | ✅ **Pin GitHub Actions to commit SHAs** — supply-chain hygiene now that the repo is public. The remaining workflows (CodeQL, Scorecard, release) are pinned; with Dependabot gone since 2026-09-25, nothing refreshes the pins. | 1 | S |
+| 97 | ✅ **Pin GitHub Actions to commit SHAs** — supply-chain hygiene now that the repo is public. The remaining workflows (CodeQL, release) are pinned; with Dependabot gone since 2026-09-25, nothing refreshes the pins. | 1 | S |
 | 98 | ✅ **Release workflow**: tag → build wheel → GitHub Release with notes, so `uv tool install` can target a version instead of `main`. | 1 | S |
 | 99 | ◐ **Homebrew tap and winget manifest**. Package managers don't dodge SmartScreen (see the stack assessment) but they do make install one familiar command. | 3 | M |
 | 100 | ✅ **`gpp doctor --bundle`**: write a local diagnostics file for bug reports — versions, profile shape, last error — and never upload it. | 2 | S |
@@ -542,7 +543,7 @@ the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encodin
 | 190 | ✅ Type checking (`ty`, Astral's checker, in beta). It ran in CI as an advisory job; since CI was dropped, `scripts/check.py` runs it and it must pass. | 2 | S |
 | 191 | ✅ Coverage with a floor: in CI until it was dropped, in `scripts/check.py` since. | 2 | S |
 | 192 | ✅ Property-based tests (hypothesis) for the unit parsers and the compile round trip. | 2 | M |
-| 193 | ◐ CodeQL, dependency review and an OpenSSF Scorecard workflow, all pinned. The dependency review went with CI. | 2 | S |
+| 193 | ◐ CodeQL, dependency review and an OpenSSF Scorecard workflow, all pinned. The dependency review went with CI; the Scorecard was dropped. | 2 | S |
 | 194 | ✗ The web smoke test runs on every OS in the matrix, not only Linux. Gone with CI. | 2 | S |
 
 ### Coaching content
