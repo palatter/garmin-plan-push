@@ -524,7 +524,7 @@ the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encodin
 
 | # | Feature | Tier | Effort |
 |---|---|---|---|
-| 179 | ✅ **intervals.icu push**: send the plan to an intervals.icu calendar over its API, the approved-partner route to Garmin for anyone who would rather not use the unofficial one. | 2 | M |
+| 179 | ✅ **intervals.icu push**: send the plan to an intervals.icu calendar over its API, the approved-partner route to Garmin for anyone who would rather not use the unofficial one. From the command line (`gpp icu`) and the web app's **Send to intervals.icu**. | 2 | M |
 | 180 | ✅ CSV export, one row per session. | 3 | S |
 | 181 | ✅ Markdown export — the plan as a document for Notion, Obsidian or email. | 3 | S |
 | 182 | ✅ `gpp schema` prints the DSL's JSON Schema and a one-page reference, for other tools and assistants. | 3 | S |

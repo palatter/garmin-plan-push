@@ -152,7 +152,7 @@ def events(plan: Plan, profile: Profile) -> list[dict]:
     return out
 
 
-def _check(athlete: str | None, key: str | None) -> None:
+def check_credentials(athlete: str | None, key: str | None) -> None:
     if not ATHLETE_ID.match(athlete or ""):
         raise IcuError(
             'the athlete id looks like "i12345" (intervals.icu -> Settings -> Developer); '
@@ -199,7 +199,7 @@ def push(
     body = events(plan, profile)
     if dry_run:
         return [IcuResult(e["start_date_local"][:10], e["name"], None, "would-send") for e in body]
-    _check(athlete, key)
+    check_credentials(athlete, key)
     url = f"{base_url}/athlete/{athlete}/events/bulk?upsert=true"
     status, raw = transport("POST", url, body, _headers(key or ""))
     _raise_for(status, raw)
@@ -231,7 +231,7 @@ def find(
 ) -> list[dict]:
     """This plan's events on the calendar, matched by its tag prefix: over the
     plan's dates and, from today on, four weeks either side of them."""
-    _check(athlete, key)
+    check_credentials(athlete, key)
     dates = sorted(w.date for w in plan.workouts)
     if not dates:
         return []
@@ -271,7 +271,7 @@ def delete(
     transport: Transport = http,
     base_url: str = BASE_URL,
 ) -> list[IcuResult]:
-    _check(athlete, key)
+    check_credentials(athlete, key)
     headers = _headers(key or "")
     out = []
     for event in found:

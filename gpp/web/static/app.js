@@ -24,6 +24,8 @@ const state = {
   education: {},        // session type -> explanation, from the server
   providers: [],
   keychain: null,       // what this computer's keychain is called; null when there is none
+  icu: {},              // intervals.icu: the athlete id known, where its key comes from
+  icuSending: false,
   polls: new Map(),  // log selector -> the poll writing to it
 };
 
@@ -603,7 +605,13 @@ async function runPush(mode) {
 }
 
 function renderPushResults(results, preview = false) {
-  const list = $('#p-results');
+  renderResults('p', results, preview, 'Done. Sync your watch to pull them down.');
+}
+
+// The rows a send or a check came back with, under the dialog's log; `prefix`
+// names the dialog's elements (#p-results, #i-results).
+function renderResults(prefix, results, preview, doneLine) {
+  const list = $(`#${prefix}-results`);
   list.innerHTML = '';
   for (const r of results) {
     const li = document.createElement('li');
@@ -625,10 +633,82 @@ function renderPushResults(results, preview = false) {
   const ok = results.every(r => r.action !== 'failed');
   const last = preview
     ? 'That is what Send would do. Nothing was sent.'
-    : ok ? 'Done. Sync your watch to pull them down.' : 'Finished with errors.';
-  appendLog('#p-log', last, !ok);
-  $('#p-progress').hidden = false;
-  $('.spinner', $('#p-progress')).style.display = 'none';
+    : ok ? doneLine : 'Finished with errors.';
+  appendLog(`#${prefix}-log`, last, !ok);
+  $(`#${prefix}-progress`).hidden = false;
+  $('.spinner', $(`#${prefix}-progress`)).style.display = 'none';
+}
+
+/* ------------------------------------------------------- intervals.icu --- */
+
+function initIcu() {
+  $('#r-icu').addEventListener('click', async () => {
+    if (state.icuSending) { $('#icu-dialog').showModal(); return; }
+    setError('#icu-error', '');
+    for (const sel of ['#i-results', '#i-log']) $(sel).innerHTML = '';
+    $('#i-results').hidden = true;
+    $('#i-progress').hidden = true;
+    $('#i-go').disabled = false;
+    $('#i-preview').disabled = false;
+    $('#i-prune').checked = false;  // removing sessions is chosen each time, never remembered
+    $('#i-key').value = '';
+    // What is already known comes from the server each time: a key saved
+    // under Keys since the page loaded counts.
+    try {
+      const s = await api('/api/state');
+      state.icu = s.icu || {};
+      state.keychain = s.keychain || null;
+    } catch (err) {
+      setError('#icu-error', err.message);
+    }
+    const icu = state.icu || {};
+    if (icu.athlete && !$('#i-athlete').value) $('#i-athlete').value = icu.athlete;
+    $('#i-key-hint').textContent = {
+      environment: 'Leave it blank: ICU_API_KEY is set in the environment.',
+      keychain: `Leave it blank: a key is kept in ${state.keychain}.`,
+    }[icu.key_source] || 'Needed the first time.';
+    $('#i-remember-row').hidden = !state.keychain;
+    if (state.keychain) $('#i-remember-label').textContent = `Keep the key in ${state.keychain}`;
+    $('#icu-dialog').showModal();
+  });
+  $('#i-cancel').addEventListener('click', () => $('#icu-dialog').close());
+  $('#i-go').addEventListener('click', () => runIcu('send'));
+  $('#i-preview').addEventListener('click', () => runIcu('preview'));
+}
+
+async function runIcu(mode) {
+  if (!state.plan) return;
+  setError('#icu-error', '');
+  $('#i-go').disabled = true;
+  $('#i-preview').disabled = true;
+  $('#i-progress').hidden = false;
+  $('.spinner', $('#i-progress')).style.display = '';
+  $('#i-log').innerHTML = '';
+  $('#i-results').hidden = true;
+  state.icuSending = true;
+  try {
+    const request = api('/api/icu', {
+      plan: state.plan.json,
+      athlete: $('#i-athlete').value.trim(),
+      key: $('#i-key').value.trim(),
+      remember: Boolean(state.keychain) && $('#i-remember').checked,
+      prune: $('#i-prune').checked,
+      mode,
+    });
+    $('#i-key').value = '';  // sent; never left in the page
+    const { job } = await request;
+    const done = await pollJob(job, '#i-log');
+    renderResults('i', done.result.results, mode === 'preview',
+      'Done. intervals.icu passes them on to Garmin Connect; then sync your watch.');
+    $('#i-go').disabled = mode !== 'preview';
+  } catch (err) {
+    setError('#icu-error', err.message);
+    $('#i-go').disabled = false;
+    $('#i-progress').hidden = true;
+  } finally {
+    state.icuSending = false;
+    $('#i-preview').disabled = false;
+  }
 }
 
 /* ------------------------------------------------------------ settings --- */
@@ -731,6 +811,7 @@ async function boot() {
   state.providers = s.providers;
   state.garminSaved = Boolean(s.garmin_saved_login || s.garmin_saved_password);
   state.keychain = s.keychain || null;
+  state.icu = s.icu || {};
 
   const chip = $('#profile-chip');
   chip.hidden = false;
@@ -772,6 +853,7 @@ initRelay();
 initReview();
 initPalette();
 initPush();
+initIcu();
 initSettings();
 boot().catch(err => {
   // Text, not markup: the message can quote the profile file.

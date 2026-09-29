@@ -36,7 +36,7 @@ from typing import Any
 from .. import adapt, checks, icu, keychain, library, oneline
 from ..agenda import week_view
 from ..client import forget_login, saved_logins
-from ..compile import compile_plan
+from ..compile import CompileError, compile_plan
 from ..diff import diff_plans
 from ..education import ENTRIES as EDUCATION
 from ..environment import combined_band, dew_point_c, heat_slowdown_spk
@@ -115,6 +115,7 @@ class App:
         self.history_path: Path | None = None
         self._lock = threading.Lock()
         self._garmin_job: str | None = None  # the send or check running, if any
+        self._icu_job: str | None = None  # the same, for intervals.icu
 
     # --- profile ---
 
@@ -178,6 +179,10 @@ class App:
             ],
             "default_provider": pick_default(configs, default),
             "keys": _keys_of(configs),
+            "icu": {
+                "athlete": icu.athlete_id(None, profile),
+                "key_source": keychain.source(icu.KEY_ENV),
+            },
             "garmin_saved_login": bool(saved_logins()),
             "garmin_saved_password": bool(keychain.garmin_accounts()),
             # What the page calls the keychain; None when there is none.
@@ -484,6 +489,112 @@ class App:
             job = self.jobs.start("push", work)
             self._garmin_job = job.id
         return {"job": job.id}
+
+    def icu_send(self, body: dict) -> dict:
+        """Send the plan to an intervals.icu calendar, or check what that would do.
+
+        intervals.icu passes planned workouts on to Garmin Connect, so this is
+        a way to the watch with no Garmin password at all. A key typed here is
+        kept in the keychain, and the athlete id in the profile, once
+        intervals.icu has accepted them.
+        """
+        profile = self.profile()
+        plan = _plan_of(body.get("plan"))
+        typed_athlete = str(body.get("athlete") or "").strip() or None
+        athlete = icu.athlete_id(typed_athlete, profile)
+        typed_key = str(body.get("key") or "").strip() or None
+        key = icu.api_key(typed_key)
+        remember = bool(body.get("remember", False))
+        prune = bool(body.get("prune", False))
+        preview = body.get("mode") == "preview"
+        try:
+            icu.check_credentials(athlete, key)
+            wanted = icu.events(plan, profile)
+        except icu.IcuError as exc:
+            raise AppError(str(exc)) from exc
+        except CompileError as exc:
+            raise AppError(str(exc)) from exc
+        assert athlete is not None and key is not None  # checked just above
+
+        def row(event: dict, action: str, event_id: Any = None, detail: str = "") -> dict:
+            day = str(event.get("start_date_local", ""))[:10]
+            name = str(event.get("name", ""))
+            return {
+                "name": name,
+                "date": day,
+                "action": action,
+                "workout_id": event_id,
+                "detail": detail,
+            }
+
+        def work(job) -> dict:
+            job.say(f"reading the intervals.icu calendar of {athlete}")
+            found = icu.find(plan, athlete, key)
+            self._keep_icu(job, profile, athlete, typed_athlete, typed_key, remember)
+            known = {e.get("external_id") for e in found}
+            stale = icu.stale(plan, profile, found)
+            gone = "this plan, on a date it no longer uses"
+            if preview:
+                job.say("checked the calendar; nothing was sent")
+                rows = [
+                    row(e, "would-update" if e["external_id"] in known else "would-create")
+                    for e in wanted
+                ]
+                rows += [
+                    row(e, "would-remove" if prune else "left", e.get("id"), gone) for e in stale
+                ]
+                return {"results": rows, "preview": True}
+            sent = icu.push(plan, profile, athlete, key)
+            rows = [
+                row(e, "updated" if e["external_id"] in known else "created", r.event_id)
+                for e, r in zip(wanted, sent, strict=True)
+            ]
+            job.say(f"{len(sent)} session(s) on the intervals.icu calendar")
+            if stale and prune:
+                for event, _ in zip(stale, icu.delete(stale, athlete, key), strict=True):
+                    rows.append(row(event, "removed", event.get("id"), gone))
+            elif stale:
+                job.say("still on the calendar from an earlier version of this plan:")
+                for event in stale:
+                    job.say(f"  {row(event, 'left')['date']}  {event.get('name', '')}")
+                rows += [row(e, "left", e.get("id"), gone) for e in stale]
+            return {"results": rows}
+
+        with self._lock:
+            running = self.jobs.get(self._icu_job) if self._icu_job else None
+            if running and running.snapshot()["status"] in ("running", "awaiting_input"):
+                raise AppError(
+                    "a send to intervals.icu is already running from this app; "
+                    "wait for it to finish, then try again",
+                    status=409,
+                )
+            job = self.jobs.start("icu", work)
+            self._icu_job = job.id
+        return {"job": job.id}
+
+    def _keep_icu(self, job, profile, athlete, typed_athlete, typed_key, remember) -> None:
+        """After intervals.icu has accepted them: the typed key into the
+        keychain, a new athlete id into the profile."""
+        if typed_key and remember:
+            try:
+                keychain.put(icu.KEY_ENV, typed_key)
+                job.say(f"your intervals.icu key is kept in {keychain.where()}")
+            except keychain.KeychainError as exc:
+                job.say(f"your intervals.icu key was not kept: {exc}")
+        section = profile.raw.get(icu.PROFILE_SECTION)
+        section = section if isinstance(section, dict) else {}
+        if typed_athlete and typed_athlete != section.get("athlete"):
+            data = deepcopy(profile.raw)
+            data[icu.PROFILE_SECTION] = {
+                **section,
+                "athlete": athlete,
+            }
+            path = self.profile_path or find_profile() or default_save_path()
+            try:
+                Profile.from_dict(data).save(path)
+                job.say("athlete id saved in your profile")
+            except (OSError, ProfileError) as exc:
+                job.say(f"the athlete id was not saved in your profile: {exc}")
 
     def garmin_signout(self, _: dict) -> dict:
         """Forget the saved Garmin login on this computer."""
@@ -891,6 +1002,7 @@ ROUTES = {
     "/api/push": "push",
     "/api/garmin-signout": "garmin_signout",
     "/api/keys": "save_key",
+    "/api/icu": "icu_send",
     "/api/job": "job",
     "/api/job-input": "job_input",
     "/api/oneline": "oneline",

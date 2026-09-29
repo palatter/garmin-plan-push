@@ -312,6 +312,7 @@
         <button class="btn ghost" id="r-back">Start over</button>
         <button class="btn ghost" id="r-library">Library</button>
         <button class="btn ghost" id="r-export">Export</button>
+        <button class="btn ghost" id="r-icu">Send to intervals.icu</button>
         <button class="btn primary" id="r-push">Send to Garmin</button>
       </div>
     </div>
@@ -430,6 +431,48 @@
       <button type="button" class="btn ghost" id="p-cancel">Close</button>
       <button type="button" class="btn" id="p-preview">Check first</button>
       <button type="button" class="btn primary" id="p-go">Send</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== INTERVALS.ICU DIALOG ===================== -->
+<dialog id="icu-dialog">
+  <form method="dialog" class="dialog-body" id="icu-form">
+    <h2>Send to intervals.icu</h2>
+    <p class="hint">intervals.icu puts the sessions on its calendar and passes them on to
+      Garmin Connect when your intervals.icu account is linked to Garmin, with no Garmin
+      password involved. The athlete id and API key are on intervals.icu under
+      Settings, in the Developer section.</p>
+
+    <label class="field">
+      <span class="field-label">Athlete id</span>
+      <input type="text" id="i-athlete" placeholder="i12345" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="field">
+      <span class="field-label">API key</span>
+      <input type="password" id="i-key" autocomplete="off">
+      <span class="hint" id="i-key-hint"></span>
+    </label>
+    <label class="check" id="i-remember-row" hidden>
+      <input type="checkbox" id="i-remember" checked>
+      <span id="i-remember-label">Keep the key on this computer</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="i-prune">
+      <span>Remove this plan's sessions left on dates it no longer uses</span>
+    </label>
+
+    <div class="progress inline-progress" id="i-progress" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <ul class="log" id="i-log" aria-live="polite" aria-atomic="false"></ul>
+    </div>
+    <ul class="results" id="i-results" aria-live="polite" hidden></ul>
+    <p class="error" id="icu-error" role="alert" hidden></p>
+
+    <div class="dialog-foot">
+      <button type="button" class="btn ghost" id="i-cancel">Close</button>
+      <button type="button" class="btn" id="i-preview">Check first</button>
+      <button type="button" class="btn primary" id="i-go">Send</button>
     </div>
   </form>
 </dialog>

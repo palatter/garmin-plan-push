@@ -464,6 +464,7 @@ dialog[open] { animation: pop .22s var(--ease) both; }
 .results .tag { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em;
                 padding: .1rem .4rem; border-radius: 4px; flex: none; }
 .results .tag.created, .results .tag.replaced { background: var(--accent-soft); color: var(--accent); }
+.results .tag.would-send, .results .tag.sent { background: var(--accent-soft); color: var(--accent); }
 .results .tag.unchanged, .results .tag.left { background: var(--surface-2); color: var(--text-faint); }
 .results .tag.would-create, .results .tag.would-update, .results .tag.updated,
 .results .tag.removed, .results .tag.would-remove { background: var(--accent-soft); color: var(--accent); }

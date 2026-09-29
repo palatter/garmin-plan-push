@@ -605,3 +605,82 @@ def test_saving_a_key_with_no_keychain_says_so(app):
     keyring.set_keyring(fail.Keyring())
     with pytest.raises(AppError, match="no keychain"):
         app.save_key({"name": "ANTHROPIC_API_KEY", "value": "sk"})
+
+
+# --- intervals.icu ----------------------------------------------------------------
+
+
+@pytest.fixture
+def icu_calendar(monkeypatch):
+    from test_icu import FakeCalendar
+
+    fake = FakeCalendar()
+    monkeypatch.setattr("gpp.icu.urllib.request.urlopen", fake.urlopen)
+    monkeypatch.delenv("ICU_API_KEY", raising=False)
+    monkeypatch.delenv("ICU_ATHLETE_ID", raising=False)
+    return fake
+
+
+def _icu(app, plan, **body):
+    job = app.icu_send({"plan": plan, **body})
+    return _finish(app, job["job"])
+
+
+def test_intervals_icu_check_first_then_send_keeps_the_key_and_the_athlete(
+    app, icu_calendar, keychain_backend
+):
+    plan, _ = _upcoming()
+    first = {"athlete": "i12345", "key": "icu-typed", "remember": True}
+    checked = _icu(app, plan, mode="preview", **first)
+    assert checked["status"] == "done" and checked["result"]["preview"] is True
+    assert [r["action"] for r in checked["result"]["results"]] == ["would-create"] * 3
+    assert icu_calendar.events == {}
+    # Accepted once, so kept: the next send needs neither.
+    assert keychain_backend.entries[("garmin-plan-push", "ICU_API_KEY")] == "icu-typed"
+    assert 'athlete = "i12345"' in app.profile_path.read_text(encoding="utf-8")
+    state = app.state({})["icu"]
+    assert state == {"athlete": "i12345", "key_source": "keychain"}
+    sent = _icu(app, plan)
+    assert [r["action"] for r in sent["result"]["results"]] == ["created"] * 3
+    assert len(icu_calendar.events) == 3
+    again = _icu(app, plan)
+    assert [r["action"] for r in again["result"]["results"]] == ["updated"] * 3
+    assert len(icu_calendar.events) == 3
+
+
+def test_intervals_icu_lists_a_moved_session_and_removes_it_when_asked(app, icu_calendar):
+    plan, free_day = _upcoming()
+    creds = {"athlete": "i12345", "key": "k"}
+    _icu(app, plan, **creds)
+    moved = deepcopy(plan)
+    moved["workouts"][0]["date"] = free_day
+    left = _icu(app, moved, **creds)["result"]["results"]
+    assert [r["action"] for r in left].count("left") == 1 and len(icu_calendar.events) == 4
+    pruned = _icu(app, moved, prune=True, **creds)["result"]["results"]
+    assert [r["action"] for r in pruned] == ["updated", "updated", "updated", "removed"]
+    assert len(icu_calendar.events) == 3
+
+
+def test_intervals_icu_needs_an_athlete_id_and_a_key_before_starting(app, icu_calendar):
+    plan, _ = _upcoming()
+    with pytest.raises(AppError, match="athlete id"):
+        app.icu_send({"plan": plan, "key": "k"})
+    with pytest.raises(AppError, match="no API key"):
+        app.icu_send({"plan": plan, "athlete": "i1"})
+    with pytest.raises(AppError, match="athlete id"):
+        app.icu_send({"plan": plan, "athlete": "12345", "key": "k"})
+
+
+def test_a_key_intervals_icu_refuses_is_not_kept(app, monkeypatch, keychain_backend):
+    import io
+    import urllib.error
+
+    def refuse(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 401, "no", {}, io.BytesIO(b"{}"))
+
+    monkeypatch.setattr("gpp.icu.urllib.request.urlopen", refuse)
+    plan, _ = _upcoming()
+    snap = _icu(app, plan, athlete="i12345", key="bad", remember=True)
+    assert snap["status"] == "error" and "rejected the key" in snap["error"]
+    assert keychain_backend.entries == {}
+    assert "intervals_icu" not in app.profile_path.read_text(encoding="utf-8")

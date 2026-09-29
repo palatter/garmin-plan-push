@@ -106,6 +106,10 @@ start date.
 
 **Send to Garmin**, enter your Connect login, and sync your watch. Re-sending
 an edited plan updates the workouts in place, so Garmin keeps their IDs.
+**Send to intervals.icu** puts the plan on an intervals.icu calendar instead,
+which passes it on to Garmin Connect through Garmin's official partner route,
+with no Garmin password involved (an intervals.icu athlete id and API key
+instead; both are remembered after the first send).
 
 ### Which AI writes the plan
 
@@ -491,6 +495,7 @@ roadmap says why, with sources.
 ## Alternative
 
 [Intervals.icu](https://intervals.icu) is free, is an approved Garmin partner,
-and pushes planned workouts through the official API. If you'd rather not run
-any of this, `gpp export plan.json --format icu` writes plans in its text syntax — you
-lose the automation and gain a supported integration.
+and pushes planned workouts through the official API. **Send to
+intervals.icu** in the web app, or `gpp icu`, puts a plan on its calendar;
+`gpp export plan.json --format icu` writes one session at a time in its
+text syntax for pasting by hand.
