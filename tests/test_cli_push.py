@@ -11,6 +11,7 @@ from gpp.client import PushError
 from gpp.compile import plan_slug
 from gpp.plan import Plan
 from gpp.profile import Profile
+from gpp.recent import list_recent
 
 START = dt.date.today() + dt.timedelta(days=1)
 PLAN = Plan.from_dict(
@@ -90,3 +91,10 @@ def test_a_failed_calendar_read_after_the_push_still_saves_the_receipt(setup, ca
     assert "could not look for sessions" in out and "2 pushed" in out
     (receipt,) = (tmp_path / "pushes").iterdir()
     assert len(json.loads(receipt.read_text(encoding="utf-8"))["results"]) == 2
+
+
+def test_a_pushed_plan_joins_the_recent_plans(setup, capsys):
+    argv, _, _ = setup
+    assert cli.main([*argv, "--yes"]) == 0
+    (recent,) = list_recent()
+    assert (recent.name, recent.label) == ("Autumn 10k", "pushed")

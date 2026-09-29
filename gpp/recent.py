@@ -8,6 +8,7 @@ compose screen list them.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -63,6 +64,12 @@ def save_recent(plan: dict, label: str = "edited", root: Path | None = None) -> 
     path.write_text(json.dumps(envelope, indent=2) + "\n", encoding="utf-8")
     _prune(root)
     return path
+
+
+def remember(plan: dict, label: str) -> None:
+    """Keep a plan a command wrote or pushed; never the reason a command fails."""
+    with contextlib.suppress(OSError):
+        save_recent(plan, label)
 
 
 def _prune(root: Path) -> None:

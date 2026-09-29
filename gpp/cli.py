@@ -31,6 +31,7 @@ from .providers import (
     sdk_for,
     sdk_installed,
 )
+from .recent import remember
 from .render import render_plan
 from .textfile import TextError
 from .units import UnitError
@@ -946,6 +947,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     else:
         print()
         print(text, end="")
+    remember(result.data, "generated")
 
     if args.show:
         print()
@@ -1063,6 +1065,7 @@ def cmd_push(args: argparse.Namespace) -> int:
             print(f"receipt: {save_receipt(plan.plan, results)}")
         except OSError as exc:
             print(f"warning: could not save the push receipt: {exc}")
+        remember(plan.to_dict(), "pushed")
 
     failures = [r for r in results if r.action == "failed"]
     warnings = [r for r in results if r.detail and r.action != "failed"]
