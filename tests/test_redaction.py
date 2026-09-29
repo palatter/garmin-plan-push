@@ -77,3 +77,17 @@ def test_bundle_scrubs_secrets_from_the_log_tail(tmp_path, monkeypatch):
     cli.write_bundle(out, profile, configs)
     tail = "\n".join(json.loads(out.read_text(encoding="utf-8"))["log_tail"])
     assert "abc123secret" not in tail and "sk-ant-verysecret" not in tail
+
+
+def test_doctor_bundle_needs_no_file_name(tmp_path, monkeypatch, capsys):
+    # The guide and the README both say `gpp doctor --bundle`, with no file name.
+    from gpp.profile import Profile
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "LOG_PATH", tmp_path / "gpp.log")
+    monkeypatch.setattr("gpp.client.saved_logins", lambda: [])
+    profile = Profile.from_dict({"pace": {"threshold": "4:30/km"}}).save(tmp_path / "p.toml")
+    cli.main(["--profile", str(profile), "doctor", "--bundle"])
+    written = tmp_path / "gpp-diagnostics.json"
+    assert json.loads(written.read_text(encoding="utf-8"))["profile"]["has_lthr"] is False
+    assert f"diagnostics written to {written}" in capsys.readouterr().out

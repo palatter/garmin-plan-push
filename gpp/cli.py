@@ -893,7 +893,7 @@ def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
         "log_tail": [scrub(line, _secret_values(configs)) for line in _log_tail()],
     }
     path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
-    print(f"diagnostics written to {path} (credentials removed, no plan contents)")
+    print(f"diagnostics written to {path.resolve()} (credentials removed, no plan contents)")
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -1272,7 +1272,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="actually call each configured AI provider (costs a few tokens)",
     )
-    doctor.add_argument("--bundle", help="write a diagnostics JSON file here for a bug report")
+    doctor.add_argument(
+        "--bundle",
+        nargs="?",
+        const="gpp-diagnostics.json",
+        metavar="FILE",
+        help="write a diagnostics JSON file for a bug report (default: gpp-diagnostics.json)",
+    )
     doctor.set_defaults(func=cmd_doctor)
 
     generate = sub.add_parser("generate", help="have an AI write a plan")

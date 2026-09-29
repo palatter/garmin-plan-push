@@ -420,9 +420,9 @@ The local server handles your Garmin password, so it:
 - uses the password for one login and never writes it to disk. Garmin's own
   OAuth token cache is the only thing that persists.
 
-`gpp doctor --bundle` writes a diagnostics file for bug reports with versions
-and the shape of your profile — no credentials, no plan contents — and never
-uploads it.
+`gpp doctor --bundle` writes a diagnostics file for bug reports,
+gpp-diagnostics.json in the current folder, with versions and the shape of
+your profile — no credentials, no plan contents — and never uploads it.
 
 ## Caveats, honestly
 
