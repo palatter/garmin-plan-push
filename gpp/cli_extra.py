@@ -228,7 +228,8 @@ def cmd_import(args) -> int:
             plan = bundle.plan
             print(
                 f"shared by {bundle.shared_by} at {bundle.exported_at}"
-                + (f": {bundle.note}" if bundle.note else "")
+                + (f": {bundle.note}" if bundle.note else ""),
+                file=sys.stderr,
             )
         else:
             workout = formats.import_workout(text, _date(args.start), args.format)
@@ -265,10 +266,11 @@ def cmd_transpile(args) -> int:
 def cmd_pause(args) -> int:
     plan = Plan.load(args.plan)
     result = adapt.pause_plan(plan, _date(args.start), args.days, args.reason)
+    # The plan may go to stdout, so what changed goes to stderr.
     for r in result.reasons:
-        print(f"  {r}")
+        print(f"  {r}", file=sys.stderr)
     for d in result.dropped:
-        print(f"  dropped: {d}")
+        print(f"  dropped: {d}", file=sys.stderr)
     _write_or_print(result.plan.dumps(), args.output)
     return 0
 
@@ -278,7 +280,7 @@ def cmd_missed(args) -> int:
     plan = Plan.load(args.plan)
     result = adapt.replan_missed(plan, [_date(d) for d in args.dates], profile)
     for r in result.reasons:
-        print(f"  {r}")
+        print(f"  {r}", file=sys.stderr)
     _write_or_print(result.plan.dumps(), args.output)
     return 0
 

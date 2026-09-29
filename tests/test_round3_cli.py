@@ -229,3 +229,22 @@ def test_restored_tokens_are_owner_only_and_logs_are_not_backed_up(tmp_path):
     if os.name == "posix":
         assert stat.S_IMODE(token.stat().st_mode) == 0o600
         assert stat.S_IMODE(restored.stat().st_mode) == 0o700
+
+
+def test_pause_missed_and_import_keep_stdout_to_the_plan(tmp_path, capsys):
+    # `gpp pause plan.json ... > paused.json` used to mix the reasons into the JSON.
+    path = PROFILE.save(tmp_path / "profile.toml")
+    plan_path = tmp_path / "plan.json"
+    TWO_WEEKS.save(plan_path)
+    base = ["--profile", str(path)]
+    assert cli.main([*base, "pause", str(plan_path), "--start", "2026-09-23", "--days", "5"]) == 0
+    out, err = capsys.readouterr()
+    assert Plan.from_dict(json.loads(out)).plan == "Block" and err.strip()
+    assert cli.main([*base, "missed", str(plan_path), "2026-09-24"]) == 0
+    out, err = capsys.readouterr()
+    assert Plan.from_dict(json.loads(out)).plan == "Block" and err.strip()
+    bundle = tmp_path / "plan.share.json"
+    bundle.write_text(formats.export_share(TWO_WEEKS, PROFILE, "have fun"), encoding="utf-8")
+    assert cli.main([*base, "import", str(bundle)]) == 0
+    out, err = capsys.readouterr()
+    assert Plan.from_dict(json.loads(out)).plan == "Block" and "have fun" in err
