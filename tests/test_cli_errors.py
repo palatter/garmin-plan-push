@@ -93,3 +93,19 @@ def _plan_with(duration: str) -> bytes:
     step = {"kind": "run", "duration": duration}
     plan = {**PLAN, "workouts": [{**PLAN["workouts"][0], "steps": [step]}]}
     return json.dumps(plan).encode()
+
+
+def test_text_the_code_page_cannot_show_does_not_crash_the_output(
+    tmp_path, profile_path, monkeypatch
+):
+    # A redirected stdout on Windows uses the ANSI code page (cp1252 here).
+    import io
+
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({**PLAN, "plan": "Base → build 🏃"}), encoding="utf-8")
+    raw = io.BytesIO()
+    stdout = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr("sys.stdout", stdout)
+    assert cli.main(["--profile", str(profile_path), "show", str(plan)]) == 0
+    stdout.flush()
+    assert "Base ? build ?" in raw.getvalue().decode("cp1252")

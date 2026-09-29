@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import os
@@ -1356,6 +1357,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows writes a redirected stdout in its ANSI code page, which has no
+    # "→" or emoji; a plan's own text must not crash the output.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
     if getattr(args, "verbose", False):
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
