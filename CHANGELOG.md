@@ -3,7 +3,7 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
-## [Unreleased]
+## [0.2.2] — 2026-09-29
 
 After upgrading, each Garmin account signs in with its password once more:
 logins are now kept per account. None of this has been run against a live
@@ -107,7 +107,8 @@ offline against the real garminconnect library.
   Homebrew draft is renamed `garmin-plan-push`, since homebrew-core
   already has a `gpp`; both packaging files are marked as drafts.
 - Development: `scripts/check.py` installs every extra and fails on a
-  stale lock; ty 0.0.84; the lock is refreshed.
+  stale lock; ty 0.0.84 and pip-audit 2.10.1 are pinned; the lock is
+  refreshed.
 
 ### Removed
 - `gpp suggestion`: garminconnect has no call for Garmin's daily suggested

@@ -39,10 +39,10 @@ gpp web
 That opens the app. It asks for a recent race time, works out your training
 paces, and you're ready. There is nothing else to configure.
 
-To update later: `uv tool upgrade garmin-plan-push`. Once versions are
-tagged, each gets a release with the wheel attached on the
-[releases page](https://github.com/palatter/garmin-plan-push/releases);
-until then, installing from GitHub gives you the latest `main`.
+To update later: `uv tool upgrade garmin-plan-push`. Installing from GitHub
+gives you the latest `main`; each tagged version also has a release, with
+the wheel attached and its changes listed, on the
+[releases page](https://github.com/palatter/garmin-plan-push/releases).
 
 To try it without installing anything permanently:
 

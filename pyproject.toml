@@ -1,6 +1,6 @@
 [project]
 name = "garmin-plan-push"
-version = "0.2.1"
+version = "0.2.2"
 description = "Compile AI-generated running plans into Garmin structured workouts and push them to Garmin Connect."
 readme = "README.md"
 license = "MIT"

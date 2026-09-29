@@ -6,7 +6,7 @@
 # this one (palatter.gpp.yaml, palatter.gpp.locale.en-US.yaml). See
 # packaging/README.md.
 PackageIdentifier: palatter.gpp
-PackageVersion: 0.2.1
+PackageVersion: 0.2.2
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
@@ -14,7 +14,7 @@ NestedInstallerFiles:
     PortableCommandAlias: gpp
 Installers:
   - Architecture: neutral
-    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.1/gpp-0.2.1-windows.zip
+    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.2/gpp-0.2.2-windows.zip
     InstallerSha256: REPLACE_WITH_ZIP_SHA256
 Dependencies:
   PackageDependencies:
