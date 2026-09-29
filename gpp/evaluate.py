@@ -20,52 +20,71 @@ from .load import plan_dashboard
 from .profile import Profile
 from .providers import Provider, ProviderError
 
-# Three athletes the BMB study says AI plans fail to tell apart, plus the
-# short case the bench uses. Profiles are complete enough for every check.
-DEFAULT_CASES: list[dict] = [
-    {
-        "name": "beginner-10k",
-        "profile": {
-            "name": "Beginner",
-            "pace": {"threshold": "5:45/km"},
-            "athlete": {"longest_recent_run_km": 8, "recent_weekly_km": 20},
-            "availability": {"days": ["tue", "thu", "sat", "sun"], "sessions_per_week": 4},
-            "goal_race": {"name": "Park 10k", "date": "2026-11-15", "distance": "10k"},
-        },
-        "request": "Eight weeks to my first 10k on 15 November 2026. Four runs a week, nothing scary.",
-    },
-    {
-        "name": "intermediate-half",
-        "profile": {
-            "name": "Intermediate",
-            "pace": {"threshold": "4:30/km"},
-            "athlete": {"longest_recent_run_km": 16, "recent_weekly_km": 45},
-            "goal_race": {
-                "name": "City half",
-                "date": "2026-11-22",
-                "distance": "half marathon",
-                "goal_time": "1:40:00",
-            },
-        },
-        "request": "Nine weeks to a half marathon on 22 November 2026, five runs a week, two quality sessions, a long run on Sundays.",
-    },
-    {
-        "name": "experienced-marathon",
-        "profile": {
-            "name": "Experienced",
-            "pace": {"threshold": "3:50/km"},
-            "athlete": {"longest_recent_run_km": 24, "recent_weekly_km": 75},
-            "goal_race": {
-                "name": "Marathon",
-                "date": "2026-12-06",
-                "distance": "marathon",
-                "goal_time": "2:55:00",
-            },
-        },
-        "request": "Eleven weeks to a marathon on 6 December 2026, six runs a week, Pfitzinger-style with a midweek medium-long run and a proper taper.",
-    },
-]
 
+def _race_day(today: dt.date, weeks: int) -> dt.date:
+    """The first Sunday at least this many weeks from today."""
+    day = today + dt.timedelta(weeks=weeks)
+    return day + dt.timedelta(days=(6 - day.weekday()) % 7)
+
+
+def _spoken(day: dt.date) -> str:
+    return f"{day.day} {day:%B %Y}"
+
+
+def default_cases(today: dt.date | None = None) -> list[dict]:
+    """Three athletes the BMB study says AI plans fail to tell apart.
+
+    Profiles are complete enough for every check. The races are dated from
+    today, so a run never asks for a plan to a race that is already over.
+    """
+    today = today or dt.date.today()
+    ten_k, half, marathon = (_race_day(today, weeks) for weeks in (8, 9, 11))
+    return [
+        {
+            "name": "beginner-10k",
+            "profile": {
+                "name": "Beginner",
+                "pace": {"threshold": "5:45/km"},
+                "athlete": {"longest_recent_run_km": 8, "recent_weekly_km": 20},
+                "availability": {"days": ["tue", "thu", "sat", "sun"], "sessions_per_week": 4},
+                "goal_race": {"name": "Park 10k", "date": ten_k.isoformat(), "distance": "10k"},
+            },
+            "request": f"Eight weeks to my first 10k on {_spoken(ten_k)}. Four runs a week, nothing scary.",
+        },
+        {
+            "name": "intermediate-half",
+            "profile": {
+                "name": "Intermediate",
+                "pace": {"threshold": "4:30/km"},
+                "athlete": {"longest_recent_run_km": 16, "recent_weekly_km": 45},
+                "goal_race": {
+                    "name": "City half",
+                    "date": half.isoformat(),
+                    "distance": "half marathon",
+                    "goal_time": "1:40:00",
+                },
+            },
+            "request": f"Nine weeks to a half marathon on {_spoken(half)}, five runs a week, two quality sessions, a long run on Sundays.",
+        },
+        {
+            "name": "experienced-marathon",
+            "profile": {
+                "name": "Experienced",
+                "pace": {"threshold": "3:50/km"},
+                "athlete": {"longest_recent_run_km": 24, "recent_weekly_km": 75},
+                "goal_race": {
+                    "name": "Marathon",
+                    "date": marathon.isoformat(),
+                    "distance": "marathon",
+                    "goal_time": "2:55:00",
+                },
+            },
+            "request": f"Eleven weeks to a marathon on {_spoken(marathon)}, six runs a week, Pfitzinger-style with a midweek medium-long run and a proper taper.",
+        },
+    ]
+
+
+# The short cases the bench uses.
 BENCH_CASES: list[dict] = [
     {
         "name": "one-week",
@@ -156,9 +175,9 @@ def evaluate(
     return results
 
 
-def load_cases(path: str | None) -> list[dict]:
+def load_cases(path: str | None, today: dt.date | None = None) -> list[dict]:
     if not path:
-        return DEFAULT_CASES
+        return default_cases(today)
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     cases = data["cases"] if isinstance(data, dict) else data

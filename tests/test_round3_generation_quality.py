@@ -357,3 +357,15 @@ def test_eval_runs_cases_and_reports_a_verdict():
     assert evaluate.verdict(results) == "good"
     assert "2/2 plans passed" in evaluate.table(results)
     assert evaluate.load_cases(None)[0]["name"] == "beginner-10k"
+
+
+def test_the_default_eval_races_are_always_ahead():
+    # They named fixed dates in November and December 2026, so within weeks
+    # every run asked for plans to races already over.
+    cases = evaluate.load_cases(None, today=dt.date(2027, 3, 2))
+    races = [dt.date.fromisoformat(c["profile"]["goal_race"]["date"]) for c in cases]
+    assert races == [dt.date(2027, 5, 2), dt.date(2027, 5, 9), dt.date(2027, 5, 23)]
+    assert all(r.weekday() == 6 for r in races)
+    assert "2 May 2027" in cases[0]["request"] and "23 May 2027" in cases[2]["request"]
+    first = evaluate.load_cases(None)[0]["profile"]["goal_race"]["date"]
+    assert dt.date.fromisoformat(first) >= dt.date.today() + dt.timedelta(weeks=8)
