@@ -270,35 +270,47 @@ def test_pages_refuse_to_be_framed_and_bad_lengths_are_rejected(app):
         httpd.server_close()
 
 
+def test_the_page_cannot_change_provider_settings(app):
+    # Provider settings name an environment variable and a URL; a request
+    # that could set them could send a key to any server. The page never
+    # sends them, so a request that does is refused and nothing is written.
+    before = app.profile_path.read_text(encoding="utf-8")
+    entry = {"kind": "openai-compatible", "base_url": "https://evil.example/v1"}
+    with pytest.raises(AppError, match=r"profile\.toml"):
+        app.save_profile({"name": "X", "providers": {"providers": {"x": entry}}})
+    assert app.profile_path.read_text(encoding="utf-8") == before
+
+
 @pytest.mark.parametrize(
-    ("entry", "message"),
+    "body",
     [
-        ({"kind": "openai-compatible", "api_key_env": "AWS_SECRET_ACCESS_KEY"}, "api_key_env"),
-        ({"kind": "openai-compatible", "base_url": "http://evil.example/v1"}, "base_url"),
+        {"goal_race": {"name": "R", "date": "2026-11-01", "priority": 'A"\n[ai.providers.x]'}},
+        {"availability": {"days": ["sat"], "long_run_day": 'x"\n[ai]'}},
     ],
 )
-def test_profile_providers_cannot_aim_a_secret_at_another_host(app, entry, message):
-    from gpp.providers import ProviderError
+def test_settings_that_are_not_a_priority_or_a_weekday_are_refused_before_writing(app, body):
+    before = app.profile_path.read_text(encoding="utf-8")
+    with pytest.raises(AppError):
+        app.save_profile(body)
+    assert app.profile_path.read_text(encoding="utf-8") == before
 
-    with pytest.raises(ProviderError, match=message):
-        app.save_profile({"providers": {"providers": {"x": entry}}})
 
+def test_every_response_carries_a_content_policy_that_blocks_inline_script(app):
+    import http.client
 
-def test_profile_providers_accept_https_and_local_models(app):
-    app.save_profile(
-        {
-            "providers": {
-                "providers": {
-                    "hosted": {
-                        "kind": "openai-compatible",
-                        "base_url": "https://api.example.com/v1",
-                        "api_key_env": "EXAMPLE_API_KEY",
-                    },
-                    "local": {"kind": "ollama", "base_url": "http://localhost:11434/v1"},
-                }
-            }
-        }
-    )
+    httpd = server.QuietServer(("127.0.0.1", 0), server.make_handler(app))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        for path in ("/", "/static/app.js", "/nope"):
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=5)
+            conn.request("GET", path)
+            policy = conn.getresponse().getheader("Content-Security-Policy") or ""
+            conn.close()
+            assert "default-src 'self'" in policy and "frame-ancestors 'none'" in policy
+            assert "unsafe-inline" not in policy
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def _finish(app, job_id):

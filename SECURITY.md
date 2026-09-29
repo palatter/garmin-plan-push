@@ -32,9 +32,14 @@ Garmin password, it:
 - refuses to be framed by another site (`X-Frame-Options: DENY` and
   `frame-ancestors 'none'`), so its buttons cannot be clicked through a
   disguised page;
-- only accepts AI provider settings whose key variable is named `*_API_KEY`
-  and whose URL is https (plain http only to this machine), so no request
-  can point another secret at someone else's server.
+- sends a Content-Security-Policy that lets only its own files run, so text
+  that reaches the page (an error quoting the profile, say) cannot run script;
+- never changes AI provider settings from the page. They name an environment
+  variable and a URL, so they are edited in `profile.toml` only.
+
+The token keeps other websites out, not other programs: anything running on
+this machine can open the page and drive the app while `gpp web` runs. On a
+computer you share with other accounts, stop it when you are done.
 
 There is no TLS because there is no network hop — traffic never leaves the
 loopback interface.

@@ -56,7 +56,6 @@ from ..profile import Profile, ProfileError, default_save_path, find_profile
 from ..providers import (
     ProviderError,
     build_provider,
-    check_ai_block,
     is_manual,
     key_present,
     load_providers,
@@ -76,6 +75,13 @@ log = logging.getLogger("gpp.web")
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 MAX_BODY_BYTES = 1_000_000
+# Only the app's own files run or load: markup that reaches the page by
+# mistake (an error quoting the profile, say) cannot run script or reach
+# another host, and no other site may frame the app.
+CSP = (
+    "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -239,9 +245,10 @@ class App:
                 else:
                     hr.pop(name, None)
         _put(data, "hr", hr)
-        if body.get("providers"):
-            check_ai_block(body["providers"])
-            data["ai"] = body["providers"]
+        if "providers" in body:
+            # The page never sends this. Provider settings name environment
+            # variables and URLs, so they are only edited in profile.toml.
+            raise AppError("AI provider settings are edited in profile.toml, not from the page")
 
         athlete = dict(raw.get("athlete") or {})
         for key in ("injuries", "constraints"):
@@ -835,7 +842,7 @@ def make_handler(app: App):
             self.send_header("X-Content-Type-Options", "nosniff")
             # No other site may frame the app and steer clicks into it.
             self.send_header("X-Frame-Options", "DENY")
-            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+            self.send_header("Content-Security-Policy", CSP)
             self.end_headers()
             self.wfile.write(body)
 

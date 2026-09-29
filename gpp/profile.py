@@ -68,6 +68,7 @@ DEFAULT_HR_ZONES: dict[int, tuple[float, float]] = {
 ZONE_MODELS = ("threshold", "cs", "vdot")
 INTENSITY_DISTRIBUTIONS = ("pyramidal", "polarized", "singles")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+RACE_PRIORITIES = ("A", "B", "C")
 
 # Zone used to estimate the duration of a distance-based step that has no
 # pace target of its own.
@@ -364,6 +365,10 @@ class Profile:
             if bad:
                 raise ProfileError(f"[availability] days must be mon..sun, got {bad}")
             long_day = avail_cfg.get("long_run_day")
+            if long_day and str(long_day).lower()[:3] not in WEEKDAYS:
+                raise ProfileError(
+                    f"[availability] long_run_day must be mon..sun, got {long_day!r}"
+                )
             availability = Availability(
                 days=days,
                 weekday_max_minutes=avail_cfg.get("weekday_max_minutes"),
@@ -374,13 +379,16 @@ class Profile:
 
         goal = None
         goal_cfg = data.get("goal_race") or {}
+        priority = str(goal_cfg.get("priority", "A")).upper()
+        if priority not in RACE_PRIORITIES:
+            raise ProfileError(f"[goal_race] priority must be A, B or C, got {priority!r}")
         if goal_cfg.get("date"):
             try:
                 goal = GoalRace(
                     name=goal_cfg.get("name", "Goal race"),
                     date=dt.date.fromisoformat(str(goal_cfg["date"])),
                     distance=goal_cfg.get("distance"),
-                    priority=str(goal_cfg.get("priority", "A")).upper(),
+                    priority=priority,
                     goal_time=goal_cfg.get("goal_time"),
                 )
             except ValueError as exc:
