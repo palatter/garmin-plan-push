@@ -13,8 +13,8 @@ before and after it gets there.
 ```
 
 Runs as a local app in your browser. Nothing is hosted, no account to make,
-and your Garmin password goes only to Garmin's own sign-in, never to a disk
-or to any other service.
+and your Garmin password goes only to Garmin's own sign-in and, if you keep
+it, to your computer's keychain; never to a file or to any other service.
 
 **New here?** The [guide](https://palatter.github.io/garmin-plan-push/) walks
 through the install, the first plan and sending it to the watch, in plain
@@ -118,8 +118,12 @@ model, anything — and paste the reply back. Same validation, same charts, same
 push to Garmin. Costs nothing, and the app tells you it's the way out whenever
 a key is missing.
 
-**With a key**, set it once and generation is automatic. Only the one you use
-is needed:
+**With a key**, paste it once under **Keys** in the profile dialog (the chip
+in the top bar) and generation is automatic. Only the one you use is needed.
+It is kept in Windows Credential Manager or the macOS Keychain and works at
+once; from a terminal, `gpp keys set ANTHROPIC_API_KEY` does the same.
+
+An environment variable works too, and comes first when both are set:
 
 ```powershell
 # Windows PowerShell: run the one line for your key and paste the key when
@@ -434,8 +438,12 @@ The local server handles your Garmin password, so it:
 - requires a per-run token on every API call, injected into the page at load,
   so another site in your browser cannot drive it;
 - checks the `Host` header, which is what actually stops DNS rebinding;
-- uses the password for one login and never writes it to disk. Garmin's own
-  OAuth token cache is the only thing that persists.
+- writes the password to no file. It goes to Garmin's sign-in and, when you
+  keep it, to the OS keychain, so a sign-in Garmin expires is renewed without
+  asking; Garmin's own token cache is the only other thing that persists.
+  `gpp signout` removes both;
+- never sends a key or a password back to the page, and can save only the
+  keys the app reads.
 
 `gpp doctor --bundle` writes a diagnostics file for bug reports,
 gpp-diagnostics.json in the current folder, with versions and the shape of

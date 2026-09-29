@@ -323,7 +323,7 @@
     <div class="facts">
       <span>Works with Fenix, Epix, Forerunner 255/265/955/965, Edge 530 and up</span>
       <span>No account to create</span>
-      <span>Your Garmin password goes only to Garmin</span>
+      <span>Your Garmin password goes only to Garmin and your own computer</span>
     </div>
   </section>
 
@@ -443,9 +443,13 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
     </div>
     <dl class="rows" style="margin-top:1rem">
       <div class="row"><dt>Paste</dt><dd>No key needed. The app builds the full prompt with your paces, dates and rules. Copy it into ChatGPT, Claude, Gemini, Copilot, anything. Paste the reply back. The app validates it and shows the plan.</dd></div>
-      <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), start the app again from a new terminal window, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
+      <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Add the one key you have once (see below) and the app preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
       <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine, for the technically minded. It is not in the menu until you add a few lines to your profile file, as the <a href="https://github.com/palatter/garmin-plan-push#ai-providers">README</a> shows. Then <code>gpp providers --bench</code> in the terminal measures whether the model can follow the plan format before you rely on it.</dd></div>
     </dl>
+    <div class="prose" style="margin-top:1rem">
+      <p><strong>Adding the key.</strong> Click the profile chip in the top bar, paste the key into its field under <strong>Keys</strong> and press <strong>Save</strong>. It works straight away, and it is kept in Windows Credential Manager (the Keychain on a Mac), not in a file. <strong>Remove</strong> takes it out again.</p>
+      <p>If you would rather keep keys in environment variables, or the app says this computer has no keychain, set it in a terminal instead:</p>
+    </div>
     <div class="tabs" role="tablist" aria-label="Operating system" style="margin-top:1rem">
       <button type="button" role="tab" id="tab-key-win" aria-selected="true" aria-controls="key-win" data-os="win">Windows</button>
       <button type="button" role="tab" id="tab-key-mac" aria-selected="false" aria-controls="key-mac" data-os="mac">macOS and Linux</button>
@@ -462,7 +466,7 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
       <div class="cmd"><pre>printf 'ChatGPT key: ' &amp;&amp; read -rs k &amp;&amp; echo &amp;&amp; echo "export OPENAI_API_KEY='$k'" &gt;&gt; ~/.${SHELL##*/}rc; unset k</pre><button type="button" class="copy" aria-label="Copy the ChatGPT key command">Copy</button></div>
       <div class="cmd"><pre>printf 'Gemini key: ' &amp;&amp; read -rs k &amp;&amp; echo &amp;&amp; echo "export GEMINI_API_KEY='$k'" &gt;&gt; ~/.${SHELL##*/}rc; unset k</pre><button type="button" class="copy" aria-label="Copy the Gemini key command">Copy</button></div>
     </div>
-    <p class="note" style="margin-top:1rem">Then close the terminal window, which closes the app too, open a new one and run <code>gpp web</code>. A key set this way only reaches windows opened after it.</p>
+    <p class="note" style="margin-top:1rem">A key set in a terminal only reaches windows opened after it: close the terminal window, which closes the app too, open a new one and run <code>gpp web</code>.</p>
     <p class="note" style="margin-top:1rem">Whatever writes it, the plan is treated the same way: it must fit the plan format, and it goes through the checks. When a check finds something blocking, the app sends the finding back to the AI as a correction and asks again, up to a few times, before showing you the result.</p>
   </section>
 
@@ -543,7 +547,7 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
       <p>Press <strong>Send to Garmin</strong>, enter your Garmin Connect email and password, and type the two-factor code if Garmin asks for one. The app signs in, uploads each session as a structured workout, schedules it on your Connect calendar on the right day, and reads each one back to make sure Garmin stored exactly what was sent. <strong>Check first</strong> signs in and shows what Send would create, update or leave alone, without sending anything.</p>
       <p>Then sync your watch as usual, with the Connect app on your phone or Garmin Express. Each session appears on the day it is planned, with the steps, the pace or heart-rate targets and your cues, and the watch guides you through it like any Garmin workout.</p>
       <p>Change the plan later and send again: the app updates the existing workouts in place rather than creating duplicates. If you moved a session to another day, the old copy stays on its old date; the app lists it, and ticking <strong>Remove this plan's sessions left on dates it no longer uses</strong> before sending clears it (<code>gpp push plan.json --prune</code> in the terminal does the same).</p>
-      <p>The password is used for that one sign-in and is not written to disk. What persists is Garmin's own login token, kept in a folder on your computer for each Garmin account, so the next send for the same account needs only the email.</p>
+      <p>The password is written to no file. Garmin's own login token is kept in a folder on your computer for each Garmin account, so the next send for the same account needs only the email. With <strong>Keep the password</strong> ticked, the password itself is kept in Windows Credential Manager (the Keychain on a Mac), so when Garmin expires its sign-in the app signs in again without asking.</p>
       <p>To take a sent plan off your calendar, open a terminal and run <code>gpp pushes</code>. It lists each send with the file that records it. <code>gpp unpush --receipt</code> followed by that file's path, in quotes, removes exactly the workouts of that send after asking you first; nothing else on your calendar is touched.</p>
     </div>
   </section>
@@ -589,7 +593,8 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
         <ul>
           <li>There is no server and no account. The app runs on your machine and only your own browser can talk to it.</li>
           <li>Your paces, plans, history and settings live in a folder in your user profile. Nothing is uploaded anywhere, and nothing is collected.</li>
-          <li>Your Garmin password is used to sign in and never saved. Only Garmin's login token is kept, so later sends skip the password; <strong>Sign out of Garmin on this computer</strong> in the send dialog (or <code>gpp signout</code>) deletes it.</li>
+          <li>Your Garmin password goes to Garmin's sign-in and, if you keep it, to your computer's keychain; never to a file. Garmin's login token is kept so later sends skip the password; <strong>Sign out of Garmin on this computer</strong> in the send dialog (or <code>gpp signout</code>) deletes the token and the kept password.</li>
+          <li>AI keys you add in the app are kept in the same keychain, and the page never sees them again once saved.</li>
           <li>If you use an AI key, the prompt goes to that provider and nowhere else. With the paste option, nothing leaves the app at all.</li>
           <li>Sharing a plan with a friend sends zone names, not your paces. They get the same plan at their own paces.</li>
         </ul>
@@ -612,7 +617,7 @@ xcode-select --install</pre><button type="button" class="copy" aria-label="Copy 
     <dl class="qa">
       <div><dt>"gpp is not recognized" right after installing</dt><dd>Open a new terminal window; the old one does not know about uv yet. On Windows, run <code>uv tool update-shell</code> once if it still does not work.</dd></div>
       <div><dt>Not sure what is set up</dt><dd><code>gpp doctor</code> checks the profile, each AI key and the Garmin token, and says what to fix. <code>gpp doctor --ping</code> proves each AI key and model actually answer.</dd></div>
-      <div><dt>Garmin asks for the password again</dt><dd>Garmin expires its saved sign-in now and then. Type the password (and the two-factor code if asked) and send again; the new sign-in is saved for next time.</dd></div>
+      <div><dt>Garmin asks for the password again</dt><dd>Garmin expires its saved sign-in now and then. With the password kept, the app signs in again by itself; otherwise, or if you changed the password on Garmin since, type it (and the two-factor code if asked) and send again. The new sign-in is saved for next time.</dd></div>
       <div><dt>The AI's answer is rejected</dt><dd>It happens with the paste option when the reply is not the plan format. Paste the app's message about what was wrong back into the same chat and ask for a corrected version; the app accepts the fixed reply.</dd></div>
       <div><dt>Sessions do not show on the watch</dt><dd>Check they are on the calendar in the Connect app first. If they are, sync the watch again; if they are not, the send did not finish, and the log in the send dialog says where it stopped.</dd></div>
       <div><dt>Reporting a bug</dt><dd><code>gpp doctor --bundle</code> writes a diagnostics file, gpp-diagnostics.json, with versions and the shape of your profile, and no credentials or plan contents. It says where it put it. Attach it to an issue on GitHub.</dd></div>
