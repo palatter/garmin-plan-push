@@ -141,6 +141,8 @@ def test_state_carries_education_recent_and_describe_carries_agenda(tmp_path):
     assert md["filename"].endswith(".md") and md["text"].startswith("# ")
     csv_out = app.export({"plan": PLAN, "format": "csv"})
     assert csv_out["mime"] == "text/csv" and csv_out["text"].count(chr(10)) >= len(PLAN["workouts"])
+    # Excel on Windows reads a CSV as UTF-8 only when it starts with a BOM.
+    assert csv_out["text"].startswith("\ufeffdate,day,name")
 
 
 def test_manifest_and_service_worker_are_served_from_the_root(tmp_path):

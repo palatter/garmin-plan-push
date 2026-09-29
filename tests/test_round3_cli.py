@@ -248,3 +248,16 @@ def test_pause_missed_and_import_keep_stdout_to_the_plan(tmp_path, capsys):
     assert cli.main([*base, "import", str(bundle)]) == 0
     out, err = capsys.readouterr()
     assert Plan.from_dict(json.loads(out)).plan == "Block" and "have fun" in err
+
+
+def test_csv_file_starts_with_the_bom_excel_needs(tmp_path, capsys):
+    path = PROFILE.save(tmp_path / "profile.toml")
+    plan_path = tmp_path / "plan.json"
+    TWO_WEEKS.save(plan_path)
+    out = tmp_path / "plan.csv"
+    base = ["--profile", str(path), "export", str(plan_path), "--format", "csv"]
+    assert cli.main([*base, "-o", str(out)]) == 0
+    assert out.read_bytes().startswith(b"\xef\xbb\xbfdate,day,name")
+    capsys.readouterr()
+    assert cli.main(base) == 0  # the terminal gets no BOM
+    assert capsys.readouterr().out.startswith("date,day,name")

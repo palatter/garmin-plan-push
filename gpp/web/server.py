@@ -534,7 +534,9 @@ class App:
             }
         if fmt == "csv":
             return {
-                "text": export_csv(plan, profile),
+                # The byte-order mark is how Excel knows the file is UTF-8;
+                # without it, a name with "Å" in it comes out as mojibake.
+                "text": "\ufeff" + export_csv(plan, profile),
                 "filename": f"{base}.csv",
                 "mime": "text/csv",
             }

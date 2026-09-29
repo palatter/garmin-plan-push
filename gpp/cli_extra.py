@@ -47,9 +47,9 @@ def _date(text: str | None, default: dt.date | None = None) -> dt.date:
     return dt.date.fromisoformat(text)
 
 
-def _write_or_print(text: str, output: str | None) -> None:
+def _write_or_print(text: str, output: str | None, encoding: str = "utf-8") -> None:
     if output:
-        Path(output).write_text(text, encoding="utf-8")
+        Path(output).write_text(text, encoding=encoding)
         print(f"wrote {output}")
     else:
         sys.stdout.write(text)
@@ -231,7 +231,8 @@ def cmd_export(args) -> int:
         _write_plan(plan, args.output, "exported")
         return 0
     if fmt == "csv":
-        _write_or_print(formats.export_csv(plan, profile), args.output)
+        # A file gets the byte-order mark Excel needs to read it as UTF-8.
+        _write_or_print(formats.export_csv(plan, profile), args.output, encoding="utf-8-sig")
         return 0
     if fmt == "md":
         _write_or_print(formats.export_markdown(plan, profile), args.output)
