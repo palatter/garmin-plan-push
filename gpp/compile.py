@@ -324,7 +324,7 @@ def _compile_repeat(
     # by position in the parent's `workoutSteps`, not by this field.
     # Observed Connect payloads only ever show one level of nesting, so if a
     # two-level workout renders oddly on the watch this is the first place to
-    # look -- `gpp push --verify` will report what Garmin actually stored.
+    # look -- `gpp push` reads each workout back and reports what Garmin stored.
     del parent_child_id
     return group
 

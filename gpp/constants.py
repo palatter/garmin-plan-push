@@ -9,9 +9,9 @@ authoritative.
 
 This is deliberately the only module that knows the magic numbers. If Garmin
 renumbers something, or a value below turns out to be wrong for your account,
-this file is the single place to fix it -- and `gpp push --verify` will tell
-you, because it re-reads the workout back from Garmin after upload and diffs
-it against what we sent.
+this file is the single place to fix it -- and `gpp push` will tell you,
+because it re-reads each workout from Garmin after upload (unless given
+`--no-verify`) and diffs it against what we sent.
 
 Confidence notes are inline. HIGH = seen identically in several independent
 sources. MEDIUM = seen once, or inferred from adjacent values.

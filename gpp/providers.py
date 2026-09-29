@@ -1,8 +1,9 @@
 """Pluggable AI providers for writing the plan.
 
 Deliberately provider-neutral: the plan DSL is the contract, and any model that
-can emit JSON can fill it. Each provider lazily imports its own vendor SDK, so
-you only install what you actually use.
+can emit JSON can fill it. Both vendor SDKs come with every install (the guide's
+one-line install has to be enough); each provider imports its own lazily, so a
+command that writes no plan does not pay for loading them.
 
     kind = "anthropic" / "claude"   official anthropic SDK
     kind = "openai" / "chatgpt"     official openai SDK (api.openai.com)
