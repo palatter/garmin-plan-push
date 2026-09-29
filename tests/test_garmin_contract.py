@@ -226,3 +226,16 @@ def test_signout_deletes_the_saved_login(tmp_path, stub, sso, capsys):
     assert main(["signout", "--token-dir", folder]) == 0
     assert saved_login(folder) is None
     assert "Signed out" in capsys.readouterr().out
+
+
+def test_every_garmin_method_the_sync_asks_for_exists():
+    # sync.py looks methods up by name and quietly skips missing ones, which
+    # is how a lookup of `get_hr_zones` (never in garminconnect) went unseen.
+    import inspect
+    import re
+
+    from gpp import sync
+
+    names = set(re.findall(r'_call\(\s*api,\s*"(\w+)"', inspect.getsource(sync)))
+    assert "get_heart_rate_zones" in names
+    assert [n for n in sorted(names) if not callable(getattr(garminconnect.Garmin, n, None))] == []

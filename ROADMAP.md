@@ -49,8 +49,9 @@ below: ✅ built · ◐ partial · ✗ not built, each with the reason.
   used as a volume ceiling when generating.
 - **#72** — `gpp today` nudges toward an easier day after a bad night; it
   does not move sessions on its own.
-- **#83** — `gpp suggestion` shows Garmin's Daily Suggested Workout beside the
-  plan's session; push does not yet warn about the clash automatically.
+- **#83** — `gpp suggestion` was removed: garminconnect has no call for
+  Garmin's Daily Suggested Workout, so it could only ever say there was none.
+  Push lists what else is on the plan's days before it sends.
 - **#86** — ZWO, MRC and ERG export are done; FIT workout files are not. The
   binary format needs a library or a careful encoder, and USB sideload is the
   fallback nobody needs once push works.

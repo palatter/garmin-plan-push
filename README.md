@@ -295,7 +295,7 @@ picks a profile file; several athletes can share one install.
 | `gpp devices` / `gpp exercises goblet` | your devices / search Garmin's strength exercise names (works offline) |
 | `gpp sync` | pull runs and daily metrics into local history |
 | `gpp history` / `gpp compliance` / `gpp reestimate` / `gpp shape` / `gpp today` / `gpp advice` | see *After the plan* |
-| `gpp garmin-predict` / `gpp suggestion` | Garmin's race predictor and HR zones vs your profile / its Daily Suggested Workout |
+| `gpp garmin-predict` | Garmin's race predictor and HR zones vs your profile |
 | `gpp pause` / `gpp missed` / `gpp layoff` / `gpp log` / `gpp pain` | adaptation and the logs |
 
 ## AI providers

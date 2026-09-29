@@ -406,18 +406,6 @@ class GarminClient:
                 )
         return out
 
-    def daily_suggestion(self, day: dt.date) -> dict | None:
-        """Garmin's Daily Suggested Workout for a day, if the library exposes it (#83)."""
-        fn = getattr(self.api, "get_daily_suggested_workout", None) or getattr(
-            self.api, "get_workout_suggestion", None
-        )
-        if not callable(fn):
-            return None
-        try:
-            return fn(day.isoformat())
-        except Exception:  # purely advisory
-            return None
-
     # --- writes ---
 
     def create_workout(self, payload: dict) -> int:

@@ -244,7 +244,7 @@ def race_predictions(api) -> dict[str, float]:
 
 def hr_zones(api) -> list[tuple[int, int]] | None:
     """Garmin's configured HR zones as [(low, high), ...], if exposed."""
-    raw = _call(api, "get_heart_rate_zones") or _call(api, "get_hr_zones")
+    raw = _call(api, "get_heart_rate_zones")
     if not raw:
         return None
     entries = raw if isinstance(raw, list) else raw.get("zones") if isinstance(raw, dict) else None

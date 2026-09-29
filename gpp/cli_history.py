@@ -392,23 +392,6 @@ def cmd_garmin_predict(args) -> int:
     return 0
 
 
-def cmd_suggestion(args) -> int:
-    client = _connect(args)
-    if client is None:
-        return 2
-    raw = client.daily_suggestion(
-        dt.date.fromisoformat(args.date) if args.date else dt.date.today()
-    )
-    if not raw:
-        print("no Daily Suggested Workout available (or the library does not expose it)")
-        return 1
-    print(
-        "Garmin's suggestion for the day exists. If you also push a plan, the two compete for the same day;"
-    )
-    print("turn suggestions off on the watch or let the pushed workout win.")
-    return 0
-
-
 # --- registration -----------------------------------------------------------
 
 
@@ -513,14 +496,6 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     garmin_args(gp)
     gp.set_defaults(func=cmd_garmin_predict)
-
-    su = sub.add_parser(
-        "suggestion",
-        help="does Garmin have a Daily Suggested Workout that will compete with the plan?",
-    )
-    su.add_argument("--date")
-    garmin_args(su)
-    su.set_defaults(func=cmd_suggestion)
 
 
 _ = analysis  # analysis is used through History; keep the import explicit for readers
