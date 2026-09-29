@@ -1258,7 +1258,11 @@ def build_parser() -> argparse.ArgumentParser:
     bk = sub.add_parser(
         "backup", help="zip the profile, library, history, receipts and recent plans"
     )
-    bk.add_argument("-o", "--output", help="zip file to write (default: gpp-backup-<date>.zip)")
+    bk.add_argument(
+        "-o",
+        "--output",
+        help="zip file to write (default: gpp-backup-<date>.zip, then -2, -3 the same day)",
+    )
     bk.add_argument("--with-tokens", action="store_true", help="include the Garmin login tokens")
     bk.set_defaults(func=cmd_backup)
 

@@ -32,7 +32,7 @@ def backup(
     profile.toml, which is where a restore puts it back."""
     config_dir = config_dir or CONFIG_DIR
     token_dir = token_dir or TOKEN_DIR
-    target = target or Path(f"gpp-backup-{dt.date.today().isoformat()}.zip")
+    target = target or _free_name(f"gpp-backup-{dt.date.today().isoformat()}")
     outside = None
     if profile is not None and profile.is_file():
         inside = config_dir.resolve() in profile.resolve().parents
@@ -52,6 +52,15 @@ def backup(
                 if path.is_file():
                     archive.write(path, f"tokens/{path.relative_to(token_dir).as_posix()}")
     return target
+
+
+def _free_name(stem: str) -> Path:
+    """`stem`.zip, or -2, -3 and on: a second backup the same day keeps the first."""
+    path, n = Path(f"{stem}.zip"), 1
+    while path.exists():
+        n += 1
+        path = Path(f"{stem}-{n}.zip")
+    return path
 
 
 def _inside(root: Path, rel: str) -> Path | None:

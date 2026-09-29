@@ -276,3 +276,15 @@ def test_eval_takes_the_global_json_flag_and_keeps_stdout_to_json(tmp_path, monk
         out = capsys.readouterr()
         assert json.loads(out.out)["results"] == []
         assert "case 1 of 3" in out.err
+
+
+def test_a_second_backup_the_same_day_keeps_the_first(tmp_path, monkeypatch):
+    source = tmp_path / "config"
+    source.mkdir()
+    (source / "profile.toml").write_text("name = 'T'\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    first = backup.backup(config_dir=source, token_dir=tmp_path / "none")
+    second = backup.backup(config_dir=source, token_dir=tmp_path / "none")
+    day = dt.date.today().isoformat()
+    assert (first.name, second.name) == (f"gpp-backup-{day}.zip", f"gpp-backup-{day}-2.zip")
+    assert first.exists() and second.exists()
