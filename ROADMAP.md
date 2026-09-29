@@ -16,9 +16,11 @@ evidence, and we should not ship them.
 ## Status
 
 **Items 101–200** (the third hundred, marked in their tables below): as of
-2026-09-22, **98 are built** and covered by tests and **2 are partial**.
-Nothing was dropped, because every item in that batch was chosen to be
-buildable here.
+2026-09-29, **96 are built** and covered by tests, **3 are partial** and
+**1 is gone**. All 100 were built by 2026-09-22; dropping CI on 2026-09-25
+took the dependency review (#193) and the cross-platform smoke test (#194)
+with it, and moved type checking and the coverage floor (#190, #191) into
+`scripts/check.py`.
 
 - **#161** — a print stylesheet strips the chrome and prints the current
   view (the calendar view gives a week per row, the list view gives the
@@ -26,6 +28,10 @@ buildable here.
 - **#174** — `--json` is on `check`, `report`, `zones`, `next`, `week`,
   `plans`, `why`, `recap`, `profile` and `eval`; the history and Garmin
   commands still print text.
+- **#193** — CodeQL and the OpenSSF Scorecard still run; the dependency
+  review workflow went with CI.
+- **#194** (gone) — the web smoke test ran on every OS in the CI matrix; the
+  matrix went with CI, and `scripts/check.py` runs the tests on one machine.
 
 Built, but only provable against a live account: the push-time conflict
 listing (#145), the read retries (#147), zone import (#149), reverse compile
@@ -34,8 +40,8 @@ intervals.icu push (#179, which also needs an API key). The manifest and
 service worker (#162) are served and tested; the browser's install prompt
 itself was not exercised.
 
-**Items 1–100**: as of 2026-09-21, **86 of the 100 items are built** and covered by tests,
-**7 are partial** and **7 are deliberately not built**. Marks in the tables
+**Items 1–100**: as of 2026-09-29, **87 of the 100 items are built** and covered by tests,
+**5 are partial** and **8 are not built**. Marks in the tables
 below: ✅ built · ◐ partial · ✗ not built, each with the reason.
 
 **Partial**
@@ -49,12 +55,6 @@ below: ✅ built · ◐ partial · ✗ not built, each with the reason.
   used as a volume ceiling when generating.
 - **#72** — `gpp today` nudges toward an easier day after a bad night; it
   does not move sessions on its own.
-- **#83** — `gpp suggestion` was removed: garminconnect has no call for
-  Garmin's Daily Suggested Workout, so it could only ever say there was none.
-  Push lists what else is on the plan's days before it sends.
-- **#86** — ZWO, MRC and ERG export are done; FIT workout files are not. The
-  binary format needs a library or a careful encoder, and USB sideload is the
-  fallback nobody needs once push works.
 - **#99** — a Homebrew formula and a winget manifest sit in `packaging/` as
   drafts, untested and not submitted to a tap or to winget-pkgs.
 
@@ -72,13 +72,19 @@ below: ✅ built · ◐ partial · ✗ not built, each with the reason.
   nobody builds on a guess.
 - **#91 lap-alert text** — a watch setting, not a field on a workout; there
   is nothing to push.
+- **#83 Daily Suggested Workout warning** — removed on 2026-09-29:
+  garminconnect has no call for Garmin's suggestions, so `gpp suggestion`
+  could only ever say there was none. Push lists what else is on the plan's
+  days before it sends (#145).
 
 **Built, but only provable against a live Garmin account** — the network
-layer is written against the documented calls and probed at runtime, and none
+layer goes through garminconnect's own client, which a contract test drives
+offline against the real library, and none
 of the tests touch the network: #2 unpush, #11 activity sync, #14 compliance,
 #15 re-estimation, #28 HR zones, #29 the race predictor, #64 marathon shape,
 #67 / #68 the readiness nudge, #77–#80 metrics, in-place update,
-push-to-device and the exercise catalog, #83 suggestions.
+and push-to-device. The exercise catalog (#80) ships with garminconnect, so
+it works offline; that Garmin accepts every name in it is still unproven.
 
 ---
 
@@ -324,10 +330,10 @@ All reverse-engineered; all subject to breaking without notice.
 | 77 | ✅ **Read training status / readiness / HRV / VO₂ / tolerance** — the keystone alongside #11; everything in the previous table depends on it. | 2 | L |
 | 78 | ✅ **In-place workout editing** (`update_workout`) instead of delete-and-recreate — keeps Garmin's IDs and any history attached to them. | 1 | S |
 | 79 | ✅ **Push to device** (`push_workout_to_device`) so a workout lands on the watch now, not at the next sync. | 1 | S |
-| 80 | ✅ **Exercise catalog search** for strength sessions — needed for #22. | 2 | M |
+| 80 | ✅ **Exercise catalog search** for strength sessions — needed for #22. Uses the catalog that ships with garminconnect, offline: `gpp exercises goblet`, and compile sends Garmin's own category and name. | 2 | M |
 | 81 | ✗ **Push a block as a Garmin training-plan object** rather than loose workouts; schema unverified, so this is L not M. | 3 | L |
 | 82 | ✅ **Per-step cues on the watch** — the Fenix displays optional step notes during a workout ([Garmin manual](https://www8.garmin.com/manuals/webhelp/GUID-C001C335-A8EC-4A41-AB0E-BAC434259F92/EN-US/GUID-54A017B7-95D1-4C96-A39F-AEA91B7ACE29.html)). We send `description`; verify it renders, then let the UI author cues like "tall posture". | 1 | S |
-| 83 | ◐ **Daily Suggested Workout conflict warning** — a pushed plan and Garmin's own suggestions compete for the same day. | 2 | S |
+| 83 | ✗ **Daily Suggested Workout conflict warning** — a pushed plan and Garmin's own suggestions compete for the same day. Removed: garminconnect has no call for the suggestions. | 2 | S |
 | 84 | ~~**Python-floor watch**~~ **done** — turned out not to be hypothetical; see below. The project now requires Python 3.12, matching `python-garminconnect` 0.3.16. | — | — |
 
 ### Interoperability
@@ -335,7 +341,7 @@ All reverse-engineered; all subject to breaking without notice.
 | # | Feature | Tier | Effort |
 |---|---|---|---|
 | 85 | ✅ **Import and export intervals.icu's text workout syntax** — the closest free tool, 160k athletes, and its plain-text format is a natural sibling of our DSL ([intervals.icu](https://www.intervals.icu/features/workout-builder/)). | 2 | M |
-| 86 | ◐ **Export FIT workout files** (the USB sideload path from the very first conversation), plus ZWO/MRC/ERG for cross-training on a bike. | 2 | M |
+| 86 | ✅ **Export FIT workout files** (the USB sideload path from the very first conversation), plus ZWO/MRC/ERG for cross-training on a bike. FIT came with #144 (`gpp fit`). | 2 | M |
 | 87 | ✅ **One-line workout generator** — TrainingPeaks lets coaches type `20min warmup, 6x3m @ threshold w/ 2min recovery, 10 min cooldown` and get a structured workout ([TrainingPeaks](https://www.trainingpeaks.com/learn/articles/introducing-trainingpeaks-workout-builder/)). A fast path for people who know exactly what they want. | 1 | S |
 | 88 | ✅ **An MCP server** exposing generate / preview / push, so *any* assistant — Claude, ChatGPT, Gemini, a local model — can drive the tool conversationally. IcuSync already does this for intervals.icu; `garmin_mcp` exists for the read-side. Directly serves "runs generated by any AI". | 2 | M |
 | 89 | ✅ **RPE targets** (TrainingPeaks supports perceived exertion). Garmin has no RPE target type, so compile to "no target" plus a step note — honest, and still useful for runners without a HR strap. | 3 | S |
@@ -356,7 +362,7 @@ All reverse-engineered; all subject to breaking without notice.
 
 | # | Feature | Tier | Effort |
 |---|---|---|---|
-| 97 | ✅ **Pin GitHub Actions to commit SHAs** — supply-chain hygiene now that the repo is public and Dependabot will keep the pins fresh. | 1 | S |
+| 97 | ✅ **Pin GitHub Actions to commit SHAs** — supply-chain hygiene now that the repo is public. The remaining workflows (CodeQL, Scorecard, release) are pinned; with Dependabot gone since 2026-09-25, nothing refreshes the pins. | 1 | S |
 | 98 | ✅ **Release workflow**: tag → build wheel → GitHub Release with notes, so `uv tool install` can target a version instead of `main`. | 1 | S |
 | 99 | ◐ **Homebrew tap and winget manifest**. Package managers don't dodge SmartScreen (see the stack assessment) but they do make install one familiar command. | 3 | M |
 | 100 | ✅ **`gpp doctor --bundle`**: write a local diagnostics file for bug reports — versions, profile shape, last error — and never upload it. | 2 | S |
@@ -413,7 +419,7 @@ the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encodin
 | 102 | ✅ **Double days re-push safely.** The calendar snapshot was taken once, so two sessions on one date both matched the same stale workout: the second overwrote the first in place, then tried to delete ids already gone. Matched candidates are consumed per item, same-title first. | 1 | S |
 | 103 | ✅ **ASCII-only tag slugs.** `str.isalnum()` kept "ö", the tag regex only accepts `[a-z0-9]`, so a plan named "Höst 10k" was never recognised as ours on re-push and duplicated forever. | 1 | S |
 | 104 | ✅ **Verify what matters.** Read-back now compares end-condition type and value, both target bounds, iteration counts and sport, not just step type and one bound. | 1 | S |
-| 105 | ✅ **MFA-safe connect.** The `TypeError` fallback re-created the client without `prompt_mfa`/`tokenstore`; MFA accounts got a baffling failure. Also: a login failure now names the token cache and suggests clearing it, because garth tokens go stale silently. | 1 | S |
+| 105 | ✅ **MFA-safe connect.** The `TypeError` fallback re-created the client without `prompt_mfa`/`tokenstore`; MFA accounts got a baffling failure. Also: a login failure now names the token cache and suggests clearing it, because garth tokens go stale silently. Since 0.2.1 the sign-in goes through garminconnect 0.3.x's own client and saves one login per account; a login Garmin rejects asks for the password again. | 1 | S |
 | 106 | ✅ **Constraint parsing that understands "No running Mondays".** The old regex turned that into keyword "running" and blocked every session. Day-of-week rules become availability rules; generic words are ignored; "for 6 weeks" bounds the rule in time. | 1 | M |
 | 107 | ✅ **Race day is not taper volume.** A marathon in race week made every taper look shallow; race-role sessions are excluded from taper and ramp arithmetic. | 1 | S |
 | 108 | ✅ **Rest days are distinct dates.** A double day plus a rest day was flagged as "no rest day". | 2 | S |
@@ -468,7 +474,7 @@ the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encodin
 |---|---|---|---|
 | 143 | ✅ **Load Focus preview**: the plan's minutes bucketed the way the watch does it — low aerobic, high aerobic, anaerobic — so the four-week distribution is known before it is run. | 2 | M |
 | 144 | ✅ **FIT workout export** with a built-in encoder (file_id, workout, workout_step, repeat steps, targets, notes, CRC) for USB sideload; no dependency, round-trip tested. | 2 | L |
-| 145 | ✅ **Push-time conflict check**: the calendar's next scheduled and suggested workouts on the plan's dates are listed before anything is sent, completing #83. | 2 | S |
+| 145 | ✅ **Push-time conflict check**: the calendar's other workouts on the plan's dates (hand-made, from a Garmin training plan, or from another gpp plan) are listed before anything is sent. | 2 | S |
 | 146 | ✅ **Token health in `gpp doctor`**: cache age, a cheap authenticated call, and the fix when it is stale. | 1 | S |
 | 147 | ✅ **Retry with backoff** on 429/5xx for reads, and a "Garmin changed something" message naming the library version when the transport probe fails — the March 2026 breakage shape. | 2 | S |
 | 148 | ✅ **Push receipts**: every push writes a local record (ids, hashes, dates, plan) so `gpp pushes` lists them and `gpp unpush --receipt` removes exactly those, even if names changed since. | 1 | M |
@@ -533,11 +539,11 @@ the [FIT SDK workout cookbook](https://developer.garmin.com/fit/cookbook/encodin
 | 187 | ✅ **PyPI via trusted publishing** — separate build and publish jobs, OIDC, no stored token — in the release workflow, so `uv tool install garmin-plan-push` works once the project name is claimed. | 1 | S |
 | 188 | ✅ `gpp --version`, and `uvx` / `pipx` install lines in the README. | 3 | S |
 | 189 | ✅ CHANGELOG.md, and release notes assembled from it by the release workflow. | 2 | S |
-| 190 | ✅ Type checking in CI (`ty`, Astral's checker, in beta) as an advisory job until it is stable. | 2 | S |
-| 191 | ✅ Coverage in CI with a floor. | 2 | S |
+| 190 | ✅ Type checking (`ty`, Astral's checker, in beta). It ran in CI as an advisory job; since CI was dropped, `scripts/check.py` runs it and it must pass. | 2 | S |
+| 191 | ✅ Coverage with a floor: in CI until it was dropped, in `scripts/check.py` since. | 2 | S |
 | 192 | ✅ Property-based tests (hypothesis) for the unit parsers and the compile round trip. | 2 | M |
-| 193 | ✅ CodeQL, dependency review and an OpenSSF Scorecard workflow, all pinned. | 2 | S |
-| 194 | ✅ The web smoke test runs on every OS in the matrix, not only Linux. | 2 | S |
+| 193 | ◐ CodeQL, dependency review and an OpenSSF Scorecard workflow, all pinned. The dependency review went with CI. | 2 | S |
+| 194 | ✗ The web smoke test runs on every OS in the matrix, not only Linux. Gone with CI. | 2 | S |
 
 ### Coaching content
 
@@ -556,7 +562,8 @@ Measured, not assumed.
 
 ### Keep: stdlib HTTP server
 
-22 installed packages total; `gpp --help` runs in 278 ms. FastAPI or Litestar
+31 installed packages total (22 when this was measured, before both AI
+libraries came with every install); `gpp --help` runs in 278 ms. FastAPI or Litestar
 would add dependencies and startup cost to serve ~8 endpoints to one user on
 loopback. There is no concurrency story we need — `ThreadingHTTPServer` plus
 the job registry already handles the only two slow operations. **No change.**
@@ -564,7 +571,8 @@ the job registry already handles the only two slow operations. **No change.**
 ### Keep: no-build frontend
 
 The assets must ship inside a Python wheel and work offline with no CDN; CI
-already asserts they're in the wheel. A Vite/React toolchain would add a Node
+asserted they were in the wheel until it was dropped, so a look inside a
+`uv build` wheel is the check now. A Vite/React toolchain would add a Node
 build step to a Python project for a three-file UI. If the frontend grows past
 roughly double its current size, revisit with Preact via ESM import maps
 (no bundler) before reaching for a full framework. **No change.**
@@ -580,12 +588,15 @@ we need the validator only inside `validate()`. **Move the import.**
 No linter or formatter is configured. Ruff is the 2026 default, one
 dependency, fast. **Add.**
 
-### Added already: CI
+### Had, then dropped: CI
 
-Cross-platform matrix (3 OSes × Python 3.11/3.13), CLI smoke tests, a token-gate
-assertion, and a wheel-contents check — the web assets live outside `.py`
+CI ran a cross-platform matrix (3 OSes), CLI smoke tests, a token-gate
+assertion and a wheel-contents check (the web assets live outside `.py`
 files, so a packaging regression would pass every unit test and break every
-fresh install.
+fresh install). It was dropped on 2026-09-25 so everything merges straight
+to main. `scripts/check.py` runs the tests, lint, types and audit on one
+machine before every push; the other operating systems and the wheel check
+have no replacement.
 
 ### Do not adopt: a desktop framework
 
