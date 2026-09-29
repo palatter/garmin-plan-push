@@ -84,6 +84,34 @@ def test_icu_import_reads_percent_and_hr_zones():
     assert w.steps[1].steps[1].kind == "recover"
 
 
+def test_icu_metres_are_mtr_and_minutes_stay_minutes():
+    # intervals.icu reads "400m" as 400 minutes; its metres are "mtr".
+    reps = Plan.from_dict(
+        {
+            "plan": "Reps",
+            "workouts": [
+                {
+                    "name": "6 x 400",
+                    "date": "2026-09-22",
+                    "steps": [
+                        {"kind": "run", "distance": "400m", "target": {"type": "none"}},
+                        {"kind": "run", "distance": "1600m", "target": {"type": "none"}},
+                        {"kind": "run", "duration": "120m", "target": {"type": "none"}},
+                    ],
+                }
+            ],
+        }
+    ).workouts[0]
+    text = formats.export_icu(reps, PROFILE)
+    assert "- 400mtr" in text and "- 1.6km" in text and "- 120m" in text
+    back = formats.import_icu(text, dt.date(2026, 9, 22))
+    assert [(s.distance, s.duration) for s in back.steps] == [
+        ("400m", None),
+        ("1.6km", None),
+        (None, "120m"),
+    ]
+
+
 def test_icu_import_rejects_garbage():
     with pytest.raises(formats.FormatError):
         formats.import_icu("- ??? bananas\n", dt.date.today())

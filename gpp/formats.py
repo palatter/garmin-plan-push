@@ -91,7 +91,8 @@ def _icu_extent(step: Step) -> str:
         return f"{secs / 60:g}m" if secs % 60 == 0 else f"{secs:g}s"
     if step.distance is not None:
         m = parse_distance(step.distance)
-        return f"{m / 1000:g}km" if m >= 1000 else f"{m:g}m"
+        # intervals.icu reads "m" as minutes; metres are "mtr".
+        return f"{m / 1000:g}km" if m >= 1000 else f"{m:g}mtr"
     return "lap"
 
 
@@ -132,13 +133,29 @@ def export_icu(workout: Workout, profile: Profile) -> str:
     return "\n".join(lines) + "\n"
 
 
+_ICU_MINUTES = re.compile(r"^(\d+(?:\.\d+)?)m$", re.I)
+_ICU_METRES = re.compile(r"^(\d+(?:\.\d+)?)mtr$", re.I)
+
+
+def _icu_extent_from(text: str) -> dict:
+    """intervals.icu's "m" is always minutes and "mtr" metres; the one-line
+    syntax guesses from the size of the number instead."""
+    from .oneline import parse_extent
+
+    if minutes := _ICU_MINUTES.match(text):
+        return {"duration": f"{float(minutes.group(1)):g}m"}
+    if metres := _ICU_METRES.match(text):
+        return {"distance": f"{float(metres.group(1)):g}m"}
+    return parse_extent(text)
+
+
 _ICU_LINE = re.compile(r"^\s*-\s*(?P<extent>\S+)\s*(?P<target>.*?)\s*(?:#\s*(?P<note>.*))?$")
 _ICU_REPEAT = re.compile(r"^\s*(\d+)\s*[x\u00d7]\s*$", re.I)
 
 
 def import_icu(text: str, date: dt.date, name: str | None = None) -> Workout:
     """A best-effort reader for intervals.icu's text syntax."""
-    from .oneline import OneLineError, parse_extent, parse_target
+    from .oneline import OneLineError, parse_target
 
     lines = [ln.rstrip() for ln in text.splitlines()]
     title = name
@@ -171,7 +188,7 @@ def import_icu(text: str, date: dt.date, name: str | None = None) -> Workout:
         if not raw.startswith("  ") and len(stack) > 1:
             stack = [steps]
         try:
-            step = parse_extent(m.group("extent"))
+            step = _icu_extent_from(m.group("extent"))
         except OneLineError as exc:
             raise FormatError(str(exc)) from exc
         kind = section if section in ("warmup", "cooldown") else "run"
