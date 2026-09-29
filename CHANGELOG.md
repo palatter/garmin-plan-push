@@ -5,9 +5,11 @@ the tag being released and puts it in the GitHub Release notes.
 
 ## [0.2.1] — 2026-09-29
 
-Pushing to Garmin works again, and signs in once instead of every time.
-If you use intervals.icu and pushed with 0.2.0, run
-`gpp icu plan.json --remove` once before pushing again.
+Pushing to Garmin should work again, and sign in once instead of every
+time: it was checked offline against the real garminconnect library, not
+against a live Garmin account. If you use intervals.icu and pushed with
+0.2.0, run `gpp icu plan.json --remove --athlete <your intervals.icu id>`
+(or set `ICU_ATHLETE_ID`) once before pushing again.
 
 ### Fixed
 - Pushing to Garmin failed on every call with garminconnect 0.3.16 (the
@@ -44,8 +46,8 @@ If you use intervals.icu and pushed with 0.2.0, run
 - intervals.icu: editing a session and pushing again added a second event,
   because the event id included a hash of the session's content. The id is
   now the plan, the date and the session's place on that day. Events pushed
-  by 0.2.0 carry the old ids: run `gpp icu plan.json --remove` once, then
-  push again.
+  by 0.2.0 carry the old ids: run `gpp icu plan.json --remove` once (with
+  `--athlete` or `ICU_ATHLETE_ID`), then push again.
 
 ### Security
 - `--verbose` wrote the full command line to the debug log, so
@@ -78,8 +80,10 @@ If you use intervals.icu and pushed with 0.2.0, run
 - Version 0.2.1 everywhere, including the Homebrew and winget templates
   (they still pointed at 0.1.0); a test now keeps them in step. The winget
   template is marked as not submittable until there is a real installer.
-- `scripts/check.py` runs everything CI used to (ruff, ty, the tests with a
-  75% coverage floor, pip-audit); `ty` is pinned in the dev extra.
+- `scripts/check.py` runs the checks CI ran on every push (ruff, ty, the
+  tests with a 75% coverage floor, pip-audit), on one machine. CI's three
+  operating systems, its check of the wheel's web assets and its CLI and
+  server smoke tests have no replacement. `ty` is pinned in the dev extra.
 - anthropic 1.9.0 and openai 3.20.0 in the lock; both capped below their
   next major.
 
