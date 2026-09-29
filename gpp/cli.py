@@ -1492,7 +1492,11 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         # A mistyped path, a folder instead of a file, a file open elsewhere.
         where = f"{exc.filename}: " if exc.filename else ""
-        print(f"error: {where}{exc.strerror or exc}", file=sys.stderr)
+        reason = exc.strerror or str(exc)
+        # Windows reports opening a folder as "Permission denied".
+        if exc.filename and Path(exc.filename).is_dir():
+            reason = "is a folder, not a file"
+        print(f"error: {where}{reason}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print("\nAborted.", file=sys.stderr)

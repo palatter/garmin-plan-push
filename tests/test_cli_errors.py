@@ -55,7 +55,7 @@ def test_saving_over_a_utf16_plan_keeps_it_as_a_backup(tmp_path):
     ("make", "message"),
     [
         (lambda tmp: tmp / "nope.json", "nope.json: No such file or directory"),
-        (lambda tmp: tmp, "Is a directory"),
+        (lambda tmp: tmp, "is a folder, not a file"),
         (
             lambda tmp: _write(tmp / "junk.json", b"\x80\x81 not text"),
             "not a text file gpp can read",
