@@ -461,8 +461,8 @@ class GarminClient:
         matched, stale_items = self._match(item, by_date, names_today)
         if matched is not None:
             log(f"  unchanged  {item.date}  {item.name}")
-            return PushResult(item.name, item.date, "unchanged", _id_of(matched))
-        stale = [int(i) for i in (_id_of(c) for c in stale_items) if i]
+            return PushResult(item.name, item.date, "unchanged", _workout_id(matched))
+        stale = [i for i in (_workout_id(c) for c in stale_items) if i]
 
         if stale and not replace:
             return PushResult(
@@ -519,9 +519,9 @@ class GarminClient:
             names_today = {c.name.strip() for c in compiled if c.date == item.date}
             matched, stale_items = self._match(item, by_date, names_today)
             if matched is not None:
-                results.append(PushResult(item.name, item.date, "unchanged", _id_of(matched)))
+                results.append(PushResult(item.name, item.date, "unchanged", _workout_id(matched)))
                 continue
-            ids = [i for i in (_id_of(c) for c in stale_items) if i]
+            ids = [i for i in (_workout_id(c) for c in stale_items) if i]
             if ids:
                 extra = f", delete {ids[1:]}" if len(ids) > 1 else ""
                 results.append(
@@ -563,6 +563,35 @@ class GarminClient:
             out.append({"date": date, "title": title, "source": source, "id": _id_of(item)})
         return out
 
+    def orphans(self, compiled: list[CompiledWorkout], margin_days: int = 28) -> list[dict]:
+        """This plan's own workouts on dates the plan no longer uses.
+
+        Matching is per date, so a session moved to another day is pushed
+        fresh and its old copy stays behind. These are those copies: tagged
+        with this plan's slug, on a date with no session in the plan, within
+        `margin_days` either side of it. Listed; `push(prune=True)` removes them.
+        """
+        if not compiled:
+            return []
+        dates = [dt.date.fromisoformat(c.date) for c in compiled]
+        slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
+        wanted = {c.date for c in compiled}
+        margin = dt.timedelta(days=margin_days)
+        out = []
+        for item in self.scheduled_between(min(dates) - margin, max(dates) + margin):
+            date = (item.get("date") or "")[:10]
+            tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
+            if tag is None or tag[0] not in slugs or date in wanted:
+                continue
+            out.append(
+                {
+                    "date": date,
+                    "title": (item.get("title") or "").strip(),
+                    "workout_id": _workout_id(item),
+                }
+            )
+        return out
+
     def unpush_ids(
         self, ids: list[int], log: Callable[[str], None] = lambda _: None
     ) -> list[PushResult]:
@@ -599,12 +628,17 @@ class GarminClient:
             title = (item.get("title") or "").strip()
             if (date, title) not in wanted:
                 continue
-            workout_id = item.get("workoutId") or item.get("id")
+            workout_id = _workout_id(item)
+            if workout_id is None:
+                # A calendar item's own `id` is its schedule entry, not the
+                # workout; deleting by it would hit the wrong object.
+                results.append(PushResult(title, date, "failed", detail="no workout id on it"))
+                continue
             try:
-                self.delete_workout(int(workout_id))
+                self.delete_workout(workout_id)
                 log(f"  removed    {date}  {title}")
-                results.append(PushResult(title, date, "removed", int(workout_id)))
-            except (PushError, TypeError, ValueError) as exc:
+                results.append(PushResult(title, date, "removed", workout_id))
+            except PushError as exc:
                 results.append(PushResult(title, date, "failed", detail=str(exc)))
         return results
 
@@ -665,6 +699,15 @@ class GarminClient:
                     f"step {index}: exercise {sent['exerciseName']} not recognised by Garmin's catalog"
                 )
         return "; ".join(problems)
+
+
+def _workout_id(item: dict) -> int | None:
+    """The workout behind a calendar item. Never the item's own `id`, which is
+    the schedule entry: updating or deleting by it hits the wrong object."""
+    try:
+        return int(item["workoutId"]) if item.get("workoutId") is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _id_of(item: dict) -> int | None:

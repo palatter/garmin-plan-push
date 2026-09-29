@@ -368,6 +368,11 @@ class App:
                     f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"
                 )
             results = client.push(compiled, replace=replace, verify=True, log=job.say)
+            orphans = client.orphans(compiled)
+            if orphans:
+                job.say("still on the calendar from an earlier version of this plan:")
+                for old in orphans:
+                    job.say(f"  {old['date']}  {old['title']} -- remove with: gpp push --prune")
             try:
                 job.say(f"receipt saved: {save_receipt(plan.plan, results).name}")
             except OSError as exc:  # a receipt is a convenience, never the reason a push fails

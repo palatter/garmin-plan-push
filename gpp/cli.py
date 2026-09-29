@@ -999,6 +999,11 @@ def cmd_push(args: argparse.Namespace) -> int:
             print(
                 f"  also there    {other['date']}  {other['title']}  ({other['source']}, left alone)"
             )
+        for old in client.orphans(compiled):
+            print(
+                f"  would {'remove' if args.prune else 'leave'}  {old['date']}  {old['title']}"
+                "  (this plan, on a date it no longer uses)"
+            )
         return 0
 
     if not args.yes:
@@ -1023,6 +1028,15 @@ def cmd_push(args: argparse.Namespace) -> int:
         device_id=args.device or _defaults(args).get("device"),
         log=lambda line: print(line),
     )
+    orphans = client.orphans(compiled)
+    if orphans and args.prune:
+        ids = [o["workout_id"] for o in orphans if o["workout_id"]]
+        results += client.unpush_ids(ids, log=lambda line: print(line))
+    elif orphans:
+        print("\nStill on the calendar from an earlier version of this plan (moved or dropped):")
+        for old in orphans:
+            print(f"  {old['date']}  {old['title']}")
+        print("Push again with --prune to remove them.")
     from .receipts import save_receipt
 
     try:
@@ -1296,6 +1310,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail instead of replacing",
     )
     push.add_argument("--no-verify", action="store_true", help="skip reading workouts back")
+    push.add_argument(
+        "--prune",
+        action="store_true",
+        help="remove this plan's workouts left on dates it no longer uses (moved or dropped)",
+    )
     push.add_argument("--email", help="Garmin account email")
     push.add_argument("--device", help="device id to send to immediately (see: gpp devices)")
     push.add_argument(

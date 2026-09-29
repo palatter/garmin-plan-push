@@ -279,7 +279,7 @@ picks a profile file; several athletes can share one install.
 
 | Command | |
 |---|---|
-| `gpp push plan.json` | upload and schedule (`--dry-run`, `--dry-run --live` to compare with the calendar first, `--device` to send to the watch now) |
+| `gpp push plan.json` | upload and schedule (`--dry-run`, `--dry-run --live` to compare with the calendar first, `--device` to send to the watch now, `--prune` to remove sessions left on dates the plan no longer uses) |
 | `gpp signout` | forget the saved Garmin login on this computer (the next push asks for the password again) |
 | `gpp unpush plan.json` / `gpp pushes` | remove a plan's workouts, or `--receipt` to remove exactly what a push created / list the receipts |
 | `gpp pull --from 2026-09-01 --to 2026-09-30` | read scheduled Garmin workouts back into a plan file |

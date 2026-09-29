@@ -278,6 +278,45 @@ def test_preview_classifies_without_writing_and_conflicts_lists_the_rest():
     assert [r.action for r in removed] == ["removed", "removed"] and fake.deleted == [1, 2]
 
 
+def test_orphans_are_this_plans_sessions_on_dates_it_no_longer_uses():
+    compiled = compile_plan(plan(QUALITY, EASY), PROFILE)
+    tag = compiled[0].tag
+    fake = FakeGarmin(
+        [
+            # moved from the 26th to the 24th: the old copy is an orphan
+            {
+                "id": 900,
+                "workoutId": 5,
+                "date": "2026-09-26",
+                "title": "Threshold 5 x 1k",
+                "description": tag,
+            },
+            # another plan and a hand-made one on a free date: not ours
+            {
+                "workoutId": 6,
+                "date": "2026-09-27",
+                "title": "X",
+                "description": "[gpp:other:12345678]",
+            },
+            {"workoutId": 7, "date": "2026-09-27", "title": "Club run"},
+            # ours, on a date still in the plan: handled by push, not an orphan
+            {"workoutId": 8, "date": "2026-09-24", "title": "Threshold 5 x 1k", "description": tag},
+        ]
+    )
+    client = connected(fake)
+    assert client.orphans(compiled) == [
+        {"date": "2026-09-26", "title": "Threshold 5 x 1k", "workout_id": 5}
+    ]
+
+
+def test_unpush_never_deletes_by_the_calendar_entry_id():
+    compiled = compile_plan(plan(EASY), PROFILE)
+    tag = compiled[0].tag
+    fake = FakeGarmin([{"id": 900, "date": "2026-09-22", "title": "Easy", "description": tag}])
+    results = connected(fake).unpush(compiled)
+    assert [r.action for r in results] == ["failed"] and fake.deleted == []
+
+
 # --- body status -----------------------------------------------------------------------------
 
 

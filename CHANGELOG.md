@@ -27,6 +27,12 @@ the tag being released and puts it in the GitHub Release notes.
   2.x renamed the server class. Ported to mcp 2.x (`mcp>=2.2,<3`); the error
   now tells "not installed" from "wrong version" and gives the install line.
 
+- Deleting or updating a workout could fall back to a calendar entry's own
+  id, which is the schedule entry, not the workout. Only the workout id is
+  used now; an entry without one is reported instead of touched.
+- A session moved to another day left its old copy on the calendar with no
+  word about it. Push (and the live dry run) now list this plan's sessions on
+  dates it no longer uses, and `gpp push --prune` removes them.
 
 ### Security
 - `--verbose` wrote the full command line to the debug log, so

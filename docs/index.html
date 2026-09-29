@@ -515,7 +515,7 @@ setx GEMINI_API_KEY (Read-Host "Gemini key")
     <div class="prose">
       <p>Press <strong>Send to Garmin</strong>, enter your Garmin Connect email and password, and type the two-factor code if Garmin asks for one. The app signs in, uploads each session as a structured workout, schedules it on your Connect calendar on the right day, and reads each one back to make sure Garmin stored exactly what was sent.</p>
       <p>Then sync your watch as usual, with the Connect app on your phone or Garmin Express. Each session appears on the day it is planned, with the steps, the pace or heart-rate targets and your cues, and the watch guides you through it like any Garmin workout.</p>
-      <p>Change the plan later and send again: the app updates the existing workouts in place rather than creating duplicates. To take a plan off the calendar entirely, <code>gpp unpush plan.json</code> in the terminal removes exactly what it put there and nothing else.</p>
+      <p>Change the plan later and send again: the app updates the existing workouts in place rather than creating duplicates. If you moved a session to another day, the old copy stays on its old date and the app lists it after sending; <code>gpp push plan.json --prune</code> in the terminal removes those. To take a plan off the calendar entirely, <code>gpp unpush plan.json</code> in the terminal removes exactly what it put there and nothing else.</p>
       <p>The password is used for that one sign-in and is not written to disk. What persists is Garmin's own login token, kept in a folder on your computer, so the next send does not ask again.</p>
     </div>
   </section>
