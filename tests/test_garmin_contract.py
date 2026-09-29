@@ -342,3 +342,20 @@ def test_signout_forgets_the_kept_passwords_too(tmp_path, stub, sso, monkeypatch
     assert keychain.garmin_accounts() == []
     assert keychain.garmin_password("a@example.com") is None
     assert saved_login(email="a@example.com") is None
+
+
+def test_with_no_terminal_the_password_is_not_asked_for(
+    tmp_path, stub, garmin_password, monkeypatch
+):
+    # A scheduled task has no one to type it; on Windows the prompt would
+    # wait on the console for ever, so it says what to do instead.
+    import io
+
+    from gpp.client import sign_in_at_terminal
+
+    monkeypatch.delenv("GARMIN_PASSWORD", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("right\n"))
+    monkeypatch.setattr("getpass.getpass", lambda *_: pytest.fail("asked with no terminal"))
+    with pytest.raises(NeedsPassword, match="no saved Garmin sign-in yet; there is no terminal"):
+        sign_in_at_terminal("me@example.com", str(tmp_path / "tokens"))
+    assert garmin_password["logins"] == []

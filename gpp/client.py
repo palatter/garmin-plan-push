@@ -189,18 +189,35 @@ def sign_in_at_terminal(email: str | None, token_folder: str | None = None) -> G
     saved login; the two-factor code asked for only if Garmin wants one."""
     import getpass
     import os
+    import sys
 
     email = email or os.environ.get("GARMIN_EMAIL") or input("Garmin Connect email: ").strip()
     from_env = os.environ.get("GARMIN_PASSWORD")
     kept = f"kept in {keychain.where()}" if keychain.available() else "not stored"
-    return sign_in(
-        email,
-        from_env,
-        token_folder,
-        prompt_mfa=lambda: input("Garmin MFA code: ").strip(),
-        ask_password=lambda: getpass.getpass(f"Garmin Connect password ({kept}): "),
-        remember=not from_env,
-    )
+    # With no terminal (a scheduled task, a pipe) nobody can answer: on
+    # Windows the prompt would wait on the console forever. Say so instead.
+    terminal = sys.stdin is not None and sys.stdin.isatty()
+    try:
+        return sign_in(
+            email,
+            from_env,
+            token_folder,
+            prompt_mfa=lambda: input("Garmin MFA code: ").strip(),
+            ask_password=(
+                (lambda: getpass.getpass(f"Garmin Connect password ({kept}): "))
+                if terminal
+                else None
+            ),
+            remember=not from_env,
+        )
+    except NeedsPassword as exc:
+        if terminal:
+            raise
+        what = str(exc).split(";")[0]
+        raise NeedsPassword(
+            f"{what}; there is no terminal here to ask for the password, "
+            "so run gpp in one once to sign in"
+        ) from exc
 
 
 @dataclass
