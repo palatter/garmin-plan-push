@@ -7,6 +7,7 @@ Every save goes through Profile.to_toml: `gpp profile set`, `reestimate
 """
 
 import datetime as dt
+import os
 import stat
 import tomllib
 
@@ -159,7 +160,8 @@ def test_save_keeps_the_file_mode_and_leaves_no_temp_file(tmp_path):
     path.write_text(FULL, encoding="utf-8")
     path.chmod(0o600)
     Profile.load(path).save(path)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows' chmod sets only the read-only bit
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert [p.name for p in tmp_path.iterdir()] == ["profile.toml"]
 
 

@@ -200,6 +200,10 @@ def stockholm(tmp_path, monkeypatch):
         {"name": "T", "pace": {"threshold": "4:30/km"}, "location": STOCKHOLM}
     )
     path = profile.save(tmp_path / "profile.toml")
+    if not hasattr(time, "tzset"):  # Windows: CET, as Stockholm is on 10 November
+        monkeypatch.setattr("gpp.environment.local_utc_offset_hours", lambda day, start: 1.0)
+        yield path
+        return
     monkeypatch.setenv("TZ", "Europe/Stockholm")
     time.tzset()
     yield path

@@ -49,10 +49,10 @@ def test_a_profile_an_older_gpp_saved_in_the_home_folder_is_still_found(places):
 def test_backup_carries_the_profile_in_use_and_restore_puts_it_in_the_config_folder(tmp_path):
     config = tmp_path / "config"
     config.mkdir()
-    (config / "profile.toml").write_text("name = 'not in use'\n", encoding="utf-8")
+    (config / "profile.toml").write_bytes(b"name = 'not in use'\n")
     in_use = tmp_path / "terminal" / "profile.toml"
     in_use.parent.mkdir()
-    in_use.write_text("name = 'in use'\n", encoding="utf-8")
+    in_use.write_bytes(b"name = 'in use'\n")
     archive = backup.backup(tmp_path / "b.zip", config_dir=config, profile=in_use)
     with zipfile.ZipFile(archive) as z:
         assert z.namelist() == ["config/profile.toml"]
