@@ -18,6 +18,7 @@ Requires the optional `mcp` extra (mcp 2.x):
 from __future__ import annotations
 
 import datetime as dt
+import functools
 import json
 import os
 from typing import Any
@@ -176,8 +177,30 @@ def build_server():
 
     server = MCPServer("garmin-plan-push")
     for name, fn in TOOLS.items():
-        server.tool(name=name, description=(fn.__doc__ or "").strip())(fn)
+        server.tool(name=name, description=(fn.__doc__ or "").strip())(_reported(fn))
     return server
+
+
+def _reported(fn):
+    """Let the assistant read why a call failed.
+
+    mcp 2.x passes on the message of a ToolError only; any other exception
+    reaches the assistant as "Error executing tool <name>", with the reason
+    (a plan with no duration, GARMIN_EMAIL not set) dropped.
+    """
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from .client import PushError
+    from .providers import ProviderError
+
+    @functools.wraps(fn)
+    def call(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (ValueError, PushError, ProviderError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    return call
 
 
 def serve() -> None:

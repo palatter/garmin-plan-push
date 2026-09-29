@@ -182,3 +182,37 @@ def test_the_mcp_server_builds_and_registers_every_tool():
     server = mcp_server.build_server()
     listed = asyncio.run(server.list_tools())
     assert {t.name for t in listed} == set(mcp_server.TOOLS)
+
+
+def test_mcp_tool_errors_reach_the_assistant_with_their_reason(profile_on_disk, monkeypatch):
+    # Through a real MCP client: mcp 2.x used to replace every one of these
+    # with "Error executing tool <name>".
+    pytest.importorskip("mcp.server.mcpserver")
+    import asyncio
+
+    from mcp import Client
+
+    monkeypatch.delenv("GARMIN_EMAIL", raising=False)
+    no_duration = json.loads(json.dumps(PLAN))
+    no_duration["workouts"][0]["steps"][0].pop("duration")
+    calls = [
+        ("check_plan", {"plan_json": json.dumps(no_duration)}, "duration"),
+        ("check_plan", {"plan_json": "{not json"}, "Expecting"),
+        ("oneline_workout", {"text": "banana"}, "banana"),
+        ("push_plan", {"plan_json": json.dumps(PLAN), "dry_run": False}, "GARMIN_EMAIL"),
+        ("check_plan", {"plan_json": json.dumps(PLAN)}, None),
+    ]
+
+    async def run():
+        out = []
+        async with Client(mcp_server.build_server()) as client:
+            for name, args, _ in calls:
+                result = await client.call_tool(name, args)
+                out.append((result.is_error, " ".join(c.text for c in result.content)))
+        return out
+
+    for (name, _, expected), (is_error, text) in zip(calls, asyncio.run(run()), strict=True):
+        if expected is None:
+            assert not is_error, text
+        else:
+            assert is_error and expected in text, (name, text)
