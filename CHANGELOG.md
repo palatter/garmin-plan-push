@@ -63,7 +63,12 @@ the tag being released and puts it in the GitHub Release notes.
   and the Garmin password field is cleared after a failed push too.
 
 ### Added
-- `gpp signout` deletes the saved Garmin login.
+- `gpp signout` deletes the saved Garmin login; the web send dialog has the
+  same as a link.
+- Web send dialog: **Check first** signs in and shows what Send would
+  create, update or leave alone, writing nothing (the CLI's
+  `push --dry-run --live`), and a box to remove this plan's sessions left on
+  dates it no longer uses.
 
 ### Changed
 - `scripts/check.py` runs everything CI used to (ruff, ty, the tests with a

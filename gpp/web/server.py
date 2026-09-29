@@ -33,7 +33,7 @@ from typing import Any
 
 from .. import adapt, checks, library, oneline
 from ..agenda import week_view
-from ..client import saved_login
+from ..client import forget_login, saved_login
 from ..compile import compile_plan
 from ..diff import diff_plans
 from ..education import ENTRIES as EDUCATION
@@ -346,7 +346,7 @@ class App:
         return {"job": self.jobs.start("generate", work).id}
 
     def push(self, body: dict) -> dict:
-        from ..client import sign_in
+        from ..client import PushResult, sign_in
 
         profile = self.profile()
         raw = body.get("plan")
@@ -363,6 +363,8 @@ class App:
             raise AppError(str(exc)) from exc
         compiled = compile_plan(plan, profile)
         replace = bool(body.get("replace", True))
+        prune = bool(body.get("prune", False))
+        preview = body.get("mode") == "preview"
 
         def work(job) -> dict:
             job.say(f"signing in as {email}")
@@ -372,30 +374,40 @@ class App:
                 job.say(
                     f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"
                 )
-            results = client.push(compiled, replace=replace, verify=True, log=job.say)
             orphans = client.orphans(compiled)
-            if orphans:
+            if preview:
+                # A live dry run: read the calendar, write nothing.
+                job.say("checked the calendar; nothing was sent")
+                results = client.preview(compiled) + [
+                    PushResult(
+                        o["title"],
+                        o["date"],
+                        "would-remove" if prune else "left",
+                        o["workout_id"],
+                        "this plan, on a date it no longer uses",
+                    )
+                    for o in orphans
+                ]
+                return {"results": [r.to_dict() for r in results], "preview": True}
+            results = client.push(compiled, replace=replace, verify=True, log=job.say)
+            if orphans and prune:
+                ids = [o["workout_id"] for o in orphans if o["workout_id"]]
+                results += client.unpush_ids(ids, log=job.say)
+            elif orphans:
                 job.say("still on the calendar from an earlier version of this plan:")
                 for old in orphans:
-                    job.say(f"  {old['date']}  {old['title']} -- remove with: gpp push --prune")
+                    job.say(f"  {old['date']}  {old['title']} (tick 'remove' and send to clear)")
             try:
                 job.say(f"receipt saved: {save_receipt(plan.plan, results).name}")
             except OSError as exc:  # a receipt is a convenience, never the reason a push fails
                 job.say(f"could not save the push receipt: {exc}")
-            return {
-                "results": [
-                    {
-                        "name": r.name,
-                        "date": r.date,
-                        "action": r.action,
-                        "workout_id": r.workout_id,
-                        "detail": r.detail,
-                    }
-                    for r in results
-                ]
-            }
+            return {"results": [r.to_dict() for r in results]}
 
         return {"job": self.jobs.start("push", work).id}
+
+    def garmin_signout(self, _: dict) -> dict:
+        """Forget the saved Garmin login on this computer."""
+        return {"signed_out": forget_login()}
 
     def oneline(self, body: dict) -> dict:
         """A sentence -> a workout, for the edit dialog's fast path (#87)."""
@@ -771,6 +783,7 @@ ROUTES = {
     "/api/preview": "preview",
     "/api/generate": "generate",
     "/api/push": "push",
+    "/api/garmin-signout": "garmin_signout",
     "/api/job": "job",
     "/api/job-input": "job_input",
     "/api/oneline": "oneline",

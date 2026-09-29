@@ -496,49 +496,74 @@ function initPush() {
     }
   });
 
-  $('#p-go').addEventListener('click', async () => {
-    const email = $('#p-email').value.trim();
-    if (!email) { setError('#push-error', 'Your Garmin Connect email is needed.'); return; }
-    if (!state.plan) return;
-
-    setError('#push-error', '');
-    $('#p-go').disabled = true;
-    $('#p-progress').hidden = false;
-    $('#p-log').innerHTML = '';
-
+  $('#p-go').addEventListener('click', () => runPush('push'));
+  $('#p-preview').addEventListener('click', () => runPush('preview'));
+  $('#p-signout').addEventListener('click', async () => {
     try {
-      const { job } = await api('/api/push', {
-        plan: state.plan.json,
-        email,
-        password: $('#p-password').value,
-        replace: $('#p-replace').checked,
-      });
-      const done = await pollJob(job, '#p-log', (prompt, id) => {
-        state.mfaJob = id;
-        $('#p-mfa-label').textContent = prompt;
-        $('#p-mfa').hidden = false;
-        $('#p-mfa-code').focus();
-      });
-      state.garminSaved = true;
-      // renderPushResults keeps the progress block up, because its last log
-      // line is the one telling the user to sync their watch. Hiding it here
-      // would erase the only instruction that matters.
-      renderPushResults(done.result.results);
-      // From here on, "Changes" means changes since this push.
-      state.baseline = structuredClone(state.plan.json);
-      state.baselineLabel = 'the last push';
-      renderChanges();
+      await api('/api/garmin-signout', {});
+      state.garminSaved = false;
+      $('#p-signout').hidden = true;
+      $('#p-password-hint').textContent = 'Signed out. The next send asks for your password.';
     } catch (err) {
       setError('#push-error', err.message);
-      $('#p-go').disabled = false;
-      $('#p-progress').hidden = true;
-    } finally {
-      $('#p-password').value = '';  // never left in the page, pushed or not
     }
   });
 }
 
-function renderPushResults(results) {
+// mode 'preview' reads the calendar and says what a send would do; 'push' sends.
+async function runPush(mode) {
+  const email = $('#p-email').value.trim();
+  if (!email) { setError('#push-error', 'Your Garmin Connect email is needed.'); return; }
+  if (!state.plan) return;
+
+  setError('#push-error', '');
+  $('#p-go').disabled = true;
+  $('#p-preview').disabled = true;
+  $('#p-progress').hidden = false;
+  $('.spinner', $('#p-progress')).style.display = '';
+  $('#p-log').innerHTML = '';
+  $('#p-results').hidden = true;
+
+  try {
+    const { job } = await api('/api/push', {
+      plan: state.plan.json,
+      email,
+      password: $('#p-password').value,
+      replace: $('#p-replace').checked,
+      prune: $('#p-prune').checked,
+      mode,
+    });
+    const done = await pollJob(job, '#p-log', (prompt, id) => {
+      state.mfaJob = id;
+      $('#p-mfa-label').textContent = prompt;
+      $('#p-mfa').hidden = false;
+      $('#p-mfa-code').focus();
+    });
+    state.garminSaved = true;
+    $('#p-signout').hidden = false;
+    // renderPushResults keeps the progress block up, because its last log
+    // line is the one telling the user to sync their watch. Hiding it here
+    // would erase the only instruction that matters.
+    renderPushResults(done.result.results, mode === 'preview');
+    if (mode === 'preview') {
+      $('#p-go').disabled = false;
+    } else {
+      // From here on, "Changes" means changes since this push.
+      state.baseline = structuredClone(state.plan.json);
+      state.baselineLabel = 'the last push';
+      renderChanges();
+    }
+  } catch (err) {
+    setError('#push-error', err.message);
+    $('#p-go').disabled = false;
+    $('#p-progress').hidden = true;
+  } finally {
+    $('#p-preview').disabled = false;
+    $('#p-password').value = '';  // never left in the page, pushed or not
+  }
+}
+
+function renderPushResults(results, preview = false) {
   const list = $('#p-results');
   list.innerHTML = '';
   for (const r of results) {
@@ -559,7 +584,10 @@ function renderPushResults(results) {
   }
   list.hidden = false;
   const ok = results.every(r => r.action !== 'failed');
-  appendLog('#p-log', ok ? 'Done. Sync your watch to pull them down.' : 'Finished with errors.', !ok);
+  const last = preview
+    ? 'That is what Send would do. Nothing was sent.'
+    : ok ? 'Done. Sync your watch to pull them down.' : 'Finished with errors.';
+  appendLog('#p-log', last, !ok);
   $('#p-progress').hidden = false;
   $('.spinner', $('#p-progress')).style.display = 'none';
 }

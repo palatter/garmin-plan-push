@@ -299,3 +299,86 @@ def test_profile_providers_accept_https_and_local_models(app):
             }
         }
     )
+
+
+def _finish(app, job_id):
+    import time
+
+    for _ in range(200):
+        snap = app.jobs.get(job_id).snapshot()
+        if snap["status"] in ("done", "error"):
+            return snap
+        time.sleep(0.02)
+    raise AssertionError("job did not finish")
+
+
+class _Calendar:
+    """A signed-in client over a fake calendar, recording writes."""
+
+    def __init__(self, items):
+        from gpp.client import GarminClient
+
+        self.writes = []
+        self.client = GarminClient("me@example.com")
+        self.client.transport = "fake"
+        self.client._request = self._request
+        self.items = items
+
+    def _request(self, method, path, **kw):
+        if method == "GET" and "calendar-service" in path:
+            return {"calendarItems": self.items}
+        self.writes.append((method, path))
+        return {"workoutId": 1} if method == "POST" else {}
+
+
+def test_check_first_reads_the_calendar_and_writes_nothing(app, monkeypatch):
+    from gpp import client as client_module
+
+    cal = _Calendar(
+        [
+            {
+                "workoutId": 9,
+                "date": "2026-09-30",
+                "title": "Old",
+                "description": "[gpp:testblock:0000abcd]",
+            }
+        ]
+    )
+    monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
+    job = app.push({"plan": PLAN, "email": "me@example.com", "mode": "preview", "prune": True})
+    snap = _finish(app, job["job"])
+    assert snap["status"] == "done" and snap["result"]["preview"] is True
+    actions = [r["action"] for r in snap["result"]["results"]]
+    assert actions == ["would-create", "would-create", "would-create", "would-remove"]
+    assert cal.writes == []
+
+
+def test_send_with_prune_removes_orphans(app, monkeypatch):
+    from gpp import client as client_module
+
+    cal = _Calendar(
+        [
+            {
+                "workoutId": 9,
+                "date": "2026-09-30",
+                "title": "Old",
+                "description": "[gpp:testblock:0000abcd]",
+            }
+        ]
+    )
+    monkeypatch.setattr(client_module, "sign_in", lambda *a, **kw: cal.client)
+    monkeypatch.setattr(server, "save_receipt", lambda *a: type("R", (), {"name": "r"})())
+    job = app.push({"plan": PLAN, "email": "me@example.com", "prune": True})
+    snap = _finish(app, job["job"])
+    assert snap["status"] == "done"
+    assert ("DELETE", "/workout-service/workout/9") in cal.writes
+
+
+def test_signout_forgets_the_saved_login(app, monkeypatch, tmp_path):
+    folder = tmp_path / "tokens"
+    folder.mkdir()
+    (folder / "garmin_tokens.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(folder))
+    assert app.state({})["garmin_saved_login"] is True
+    assert app.garmin_signout({}) == {"signed_out": True}
+    assert app.state({})["garmin_saved_login"] is False

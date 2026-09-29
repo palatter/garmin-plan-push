@@ -395,9 +395,14 @@
       <input type="password" id="p-password" autocomplete="current-password">
       <span class="hint" id="p-password-hint">Leave blank if you've signed in before on this computer.</span>
     </label>
+    <p class="hint"><button type="button" class="link" id="p-signout" hidden>Sign out of Garmin on this computer</button></p>
     <label class="check">
       <input type="checkbox" id="p-replace" checked>
       <span>Replace earlier versions of these workouts</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="p-prune">
+      <span>Remove this plan's sessions left on dates it no longer uses</span>
     </label>
 
     <div class="progress inline-progress" id="p-progress" hidden>
@@ -418,6 +423,7 @@
 
     <div class="dialog-foot">
       <button type="button" class="btn ghost" id="p-cancel">Close</button>
+      <button type="button" class="btn" id="p-preview">Check first</button>
       <button type="button" class="btn primary" id="p-go">Send</button>
     </div>
   </form>
