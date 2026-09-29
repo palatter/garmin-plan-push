@@ -1,10 +1,8 @@
 # Packaging
 
-Package-manager manifests for the two ecosystems the roadmap named (#99).
-Neither is published from this repo -- both need an account and a separate
-submission -- and neither has been built or tested with its tool, so both
-are drafts. What lives here is that draft source, and the honest notes on
-what publishing would cost.
+Two more ways to install gpp than `uv tool install`: a Homebrew formula,
+and a standalone Windows download for winget. Neither is published from
+this repo; both need an account and a separate submission.
 
 ## Homebrew (`Formula/garmin-plan-push.rb`)
 
@@ -27,20 +25,42 @@ Homebrew's acceptable-casks policy requires binaries to pass Gatekeeper; a
 Python formula that builds from source sidesteps that, which is why this is
 a formula rather than a cask.
 
-## winget (`winget/palatter.gpp.installer.yaml`)
+## The standalone Windows download (`windows/`)
 
-Not usable as it stands: winget cannot run an install command, and its
-`portable` installer type copies a single executable, which a wheel is not.
-The draft is the installer manifest for the route that would work: a zip
-release asset holding a small launcher (`gpp.exe`) that runs gpp through uv,
-installed as a zip with a nested portable. That zip does not exist yet.
-Publishing needs it first, then a pull request against
-`microsoft/winget-pkgs` with the version and locale manifests beside this
-one. Expect the reviewers to ask for a signed installer eventually -- see
-ROADMAP § Tech stack assessment for what that costs.
+`windows/build.py` freezes gpp with PyInstaller: a folder holding
+`gpp.exe` and its own Python, so nothing else needs installing. It then
+runs that `gpp.exe` on commands that load every library it carries (the
+Garmin sign-in included, stopping before the network), and zips the
+folder as `dist/gpp-<version>-windows.zip` with a `.sha256` beside it.
+On Windows, for each release:
 
-## What this does not solve
+    uv run --locked --with pyinstaller==6.22.3 python packaging/windows/build.py
+    gh release upload v<version> dist/gpp-<version>-windows.zip dist/gpp-<version>-windows.zip.sha256
 
-Neither route removes macOS Gatekeeper or Windows SmartScreen prompts for a
-frozen binary; both just make the *install command* familiar. The tool is
-still a `uv tool install` underneath.
+It is not code-signed, so Windows SmartScreen may warn the first time a
+downloaded `gpp.exe` runs; see ROADMAP § Tech stack assessment for what
+signing would cost.
+
+## winget (`winget/`)
+
+Three manifests for `palatter.GarminPlanPush`: the zip above, with
+`gpp.exe` as a portable command, plus the version and locale manifests.
+They carry the current version (the version test checks) and a
+placeholder for the zip's SHA-256. To submit a release:
+
+1. With the zip on the release, `python packaging/winget/fill.py --release`
+   writes the manifests with its SHA-256 into `dist/winget/<version>/`.
+2. On Windows, `winget validate dist\winget\<version>`, then try it:
+   `winget install --manifest dist\winget\<version>` (local manifests
+   are off by default; `winget settings --enable LocalManifestFiles`, as
+   administrator, turns them on).
+3. Submit the folder to microsoft/winget-pkgs:
+   `wingetcreate submit --token <a GitHub token> dist\winget\<version>`,
+   or a pull request adding it as
+   `manifests/p/palatter/GarminPlanPush/<version>/`.
+4. Later versions: `wingetcreate update palatter.GarminPlanPush --version
+   <version> --urls <zip URL> --submit --token <a GitHub token>`.
+
+Once it is accepted, `winget install palatter.GarminPlanPush` installs
+gpp and puts it on PATH, `winget upgrade` updates it, and `gpp doctor`
+tells a standalone install to reinstall with winget rather than uv.
