@@ -2,8 +2,11 @@
 
     uv run python scripts/check.py
 
-Lint, format, type check, the tests with a coverage floor, and a
-vulnerability audit of the locked dependencies. Stops at the first failure.
+Installs what the gate needs from the lock (every extra: the type check
+reads the mcp module), then lint, format, type check, the tests with a
+coverage floor, and a vulnerability audit of the locked dependencies.
+Stops at the first failure. A uv.lock that no longer matches
+pyproject.toml fails here instead of being quietly rewritten.
 """
 
 from __future__ import annotations
@@ -41,12 +44,13 @@ def audit() -> None:
 
 
 def main() -> None:
-    run("lint", "uv", "run", "ruff", "check", ".")
-    run("format", "uv", "run", "ruff", "format", "--check", ".")
-    run("types", "uv", "run", "ty", "check")
+    run("sync", "uv", "sync", "--all-extras", "--locked")
+    run("lint", "uv", "run", "--locked", "ruff", "check", ".")
+    run("format", "uv", "run", "--locked", "ruff", "format", "--check", ".")
+    run("types", "uv", "run", "--locked", "ty", "check")
     run(
         "tests",
-        "uv", "run", "pytest", "-q", "--cov=gpp", "--cov-report=term:skip-covered",
+        "uv", "run", "--locked", "pytest", "-q", "--cov=gpp", "--cov-report=term:skip-covered",
         f"--cov-fail-under={COVERAGE_FLOOR}",
     )  # fmt: skip
     if "--no-audit" not in sys.argv:

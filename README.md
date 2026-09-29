@@ -330,7 +330,7 @@ with every install; nothing extra is needed for any provider.
 ```bash
 git clone https://github.com/palatter/garmin-plan-push
 cd garmin-plan-push
-uv sync --extra dev
+uv sync --all-extras
 uv run python scripts/check.py   # before every push: ruff, ty, tests (coverage floor), pip-audit
 uv run gpp web
 ```
