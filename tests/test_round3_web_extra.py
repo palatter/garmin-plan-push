@@ -60,6 +60,17 @@ def test_ics_export_has_one_event_per_session_and_folds_long_lines():
     assert "Controlled\\, not a race" in text.replace("\r\n ", "")
 
 
+def test_ics_folds_between_characters_so_no_letter_is_lost():
+    # Folding cut every 74 bytes and dropped both halves of a letter it split.
+    # "DESCRIPTION:" is 12 bytes, so the first "ö" is bytes 74 and 75 of its line.
+    notes = "a" * 61 + "ö" * 40
+    plan = Plan.from_dict({**PLAN, "workouts": [{**PLAN["workouts"][0], "notes": notes}]})
+    text = formats.export_ics(plan, PROFILE)
+    assert all(len(line.encode("utf-8")) <= 75 for line in text.split("\r\n"))
+    unfolded = text.replace("\r\n ", "")
+    assert f"DESCRIPTION:{notes}\\n" in unfolded
+
+
 def test_recap_lines_compare_plan_and_run():
     planned = [
         {"date": "2026-09-22", "name": "Easy", "seconds": 2400, "metres": 8000},

@@ -140,7 +140,9 @@ def _data(
         value = values.get(num)
         if base == STRING:
             size = _size(global_num, num, base)
+            # Cut to fit, between characters: a cut inside one reads back as junk.
             raw = (value or "").encode("utf-8")[: size - 1]
+            raw = raw.decode("utf-8", "ignore").encode("utf-8")
             out += raw + b"\x00" * (size - len(raw))
         else:
             if value is None:

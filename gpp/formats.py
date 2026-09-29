@@ -426,18 +426,21 @@ def _ics_escape(text: str) -> str:
 
 
 def _ics_fold(line: str) -> str:
-    """RFC 5545 folds lines at 75 octets with a leading space on continuations."""
-    data = line.encode("utf-8")
-    if len(data) <= 75:
+    """RFC 5545 folds lines at 75 octets with a leading space on continuations.
+
+    Folds fall between characters, so no letter is split across two lines.
+    """
+    if len(line.encode("utf-8")) <= 75:
         return line
-    out, chunk = [], bytearray()
-    for byte in data:
-        chunk.append(byte)
-        if len(chunk) >= 74:
-            out.append(chunk.decode("utf-8", "ignore"))
-            chunk = bytearray()
-    if chunk:
-        out.append(chunk.decode("utf-8", "ignore"))
+    out, chunk, size = [], [], 0
+    for char in line:
+        width = len(char.encode("utf-8"))
+        if size + width > 74:
+            out.append("".join(chunk))
+            chunk, size = [], 0
+        chunk.append(char)
+        size += width
+    out.append("".join(chunk))
     return "\r\n ".join(out)
 
 

@@ -119,6 +119,13 @@ def test_fit_explicit_targets_survive():
     assert targets[3] == {"type": "pace", "slow": "5:00/km", "fast": "4:50/km"}
 
 
+def test_fit_names_are_cut_between_characters():
+    # 64-byte name field: 63 bytes of "Å" (2 bytes each) used to end in half a letter.
+    workout = plan({**EASY, "name": "Å" * 40}).workouts[0]
+    name = fit.decode(fit.encode_workout(workout, PROFILE))["workout"][8]
+    assert name == "Å" * 31
+
+
 # --- reverse compile ----------------------------------------------------------------
 
 
