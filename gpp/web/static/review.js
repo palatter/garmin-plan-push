@@ -1139,9 +1139,10 @@ function initReview() {
     $('#p-prune').checked = false;  // removing sessions is chosen each time, never remembered
     $('#p-password').value = '';
     $('#p-signout').hidden = !state.garminSaved;
+    // Saved logins are per account, and this only knows that one exists.
     $('#p-password-hint').textContent = state.garminSaved
-      ? 'Signed in before on this computer: leave it blank.'
-      : 'Needed the first time. After that this computer stays signed in.';
+      ? 'Leave it blank if this account has signed in on this computer before.'
+      : 'Needed the first time. After that this account stays signed in on this computer.';
     const blocks = state.plan ? state.plan.report.blocks : 0;
     const notice = $('#p-blocks');
     notice.hidden = !blocks;
