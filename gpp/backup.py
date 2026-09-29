@@ -25,16 +25,28 @@ def backup(
     with_tokens: bool = False,
     config_dir: Path | None = None,
     token_dir: Path | None = None,
+    profile: Path | None = None,
 ) -> Path:
+    """`profile` is the one gpp is using. Kept outside the config folder (gpp
+    0.2.1 saved it wherever the terminal was), it goes in as the folder's
+    profile.toml, which is where a restore puts it back."""
     config_dir = config_dir or CONFIG_DIR
     token_dir = token_dir or TOKEN_DIR
     target = target or Path(f"gpp-backup-{dt.date.today().isoformat()}.zip")
+    outside = None
+    if profile is not None and profile.is_file():
+        inside = config_dir.resolve() in profile.resolve().parents
+        outside = None if inside else profile
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         if config_dir.exists():
             for path in sorted(config_dir.rglob("*")):
                 rel = path.relative_to(config_dir)
+                if outside is not None and rel.as_posix() == "profile.toml":
+                    continue  # the profile in use takes its place
                 if path.is_file() and rel.parts[0] not in SKIPPED:
                     archive.write(path, f"config/{rel.as_posix()}")
+        if outside is not None:
+            archive.write(outside, "config/profile.toml")
         if with_tokens and token_dir.exists():
             for path in sorted(token_dir.rglob("*")):
                 if path.is_file():

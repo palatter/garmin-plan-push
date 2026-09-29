@@ -16,7 +16,8 @@
   requires 0.3.16 or newer.
 - **AI API keys**, read from environment variables, never stored by this tool.
 - **Your training profile** (`profile.toml`): name, paces, heart-rate numbers.
-  Local file, git-ignored.
+  A local file in `~/.config/gpp` (`C:\Users\<you>\.config\gpp` on Windows),
+  or `profile.toml` in the folder gpp is started from, if there is one.
 
 ## How the local server is protected
 

@@ -553,7 +553,10 @@ def cmd_completions(args: argparse.Namespace) -> int:
 def cmd_backup(args: argparse.Namespace) -> int:
     from .backup import backup
 
-    target = backup(Path(args.output) if args.output else None, with_tokens=args.with_tokens)
+    in_use = Path(args.profile) if args.profile else find_profile()
+    target = backup(
+        Path(args.output) if args.output else None, with_tokens=args.with_tokens, profile=in_use
+    )
     print(
         f"backup written to {target}"
         + (

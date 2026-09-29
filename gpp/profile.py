@@ -759,9 +759,14 @@ def _render_ai(ai: dict | None) -> str:
     return "\n".join(lines)
 
 
+CONFIG_PROFILE = Path.home() / ".config" / "gpp" / "profile.toml"
+
 DEFAULT_PROFILE_PATHS = (
     Path("profile.toml"),
-    Path.home() / ".config" / "gpp" / "profile.toml",
+    CONFIG_PROFILE,
+    # gpp 0.2.1 saved a new profile in whatever folder the terminal was in,
+    # which on Windows and macOS is usually the home folder.
+    Path.home() / "profile.toml",
 )
 
 PROFILES_DIR = Path.home() / ".config" / "gpp" / "profiles"
@@ -789,7 +794,8 @@ def list_profiles() -> list[str]:
 
 
 def default_save_path(athlete: str | None = None) -> Path:
-    """Where a new profile goes."""
+    """Where a new profile goes: the same folder wherever gpp is started, so
+    `gpp web` run from another folder finds it (and `gpp backup` saves it)."""
     if athlete:
         return PROFILES_DIR / f"{athlete}.toml"
-    return DEFAULT_PROFILE_PATHS[0]
+    return CONFIG_PROFILE
