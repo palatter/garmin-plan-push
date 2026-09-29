@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import REINSTALL, checks
+from . import FROZEN, REINSTALL, checks
 from .client import PushError
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
@@ -802,12 +802,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "keychain",
         keychain.where() if keychain.available() else "none: keys come from the environment only",
     )
-    line(bool(shutil.which("uv")), "uv", shutil.which("uv") or "not on PATH")
+    if FROZEN:
+        line(None, "uv", "not needed: this is the standalone build")
+    else:
+        line(bool(shutil.which("uv")), "uv", shutil.which("uv") or "not on PATH")
     shim = shutil.which("gpp")
     line(
         bool(shim),
         "gpp on PATH",
-        shim or "not found - on Windows, `uv tool update-shell` adds the tools folder to PATH",
+        shim
+        or (
+            "not found - open a new terminal; winget puts gpp on PATH"
+            if FROZEN
+            else "not found - on Windows, `uv tool update-shell` adds the tools folder to PATH"
+        ),
     )
 
     print("\nGarmin")
@@ -817,6 +825,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         line(True, "python-garminconnect", f"installed ({_metadata.version('garminconnect')})")
     except Exception:
         line(False, "python-garminconnect", f"missing - reinstall: {REINSTALL}")
+    # garminconnect signs in without curl_cffi too, by routes Garmin blocks
+    # more often, and says nothing about it; so this says it.
+    try:
+        import curl_cffi
+
+        line(True, "curl_cffi", f"installed ({curl_cffi.__version__}), for Garmin's sign-in")
+    except Exception:
+        line(
+            None,
+            "curl_cffi",
+            f"missing - Garmin's sign-in falls back to routes it blocks more; reinstall: {REINSTALL}",
+        )
     if args.ping:
         import socket
 

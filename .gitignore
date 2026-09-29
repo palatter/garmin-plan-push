@@ -9,6 +9,7 @@ htmlcov/
 
 .hypothesis/
 dist/
+/build/
 
 # Personal config and generated artefacts
 /profile.toml
