@@ -299,8 +299,10 @@ def cmd_eval(args: argparse.Namespace) -> int:
             f"unknown provider {chosen!r}; configured: " + ", ".join(sorted(configs))
         )
     cases = load_cases(args.cases)
+    # With --json, stdout carries only the JSON; progress goes to stderr.
+    log = (lambda line: print(line, file=sys.stderr)) if args.json else print
     results = evaluate(
-        lambda: build_provider(configs[chosen]), cases, attempts=args.attempts, log=print
+        lambda: build_provider(configs[chosen]), cases, attempts=args.attempts, log=log
     )
     if args.json:
         print(json.dumps(to_dict(results), indent=2))
@@ -1170,7 +1172,13 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--provider", help="provider name from your profile")
     ev.add_argument("--cases", help="a JSON file of cases; default: three built-in athletes")
     ev.add_argument("--attempts", type=int, default=3)
-    ev.add_argument("--json", action="store_true", help="print JSON instead of a table")
+    # SUPPRESS: left out, it must not reset the global `gpp --json eval`.
+    ev.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="print JSON instead of a table",
+    )
     ev.add_argument("-o", "--output", help="write the results JSON here")
     ev.set_defaults(func=cmd_eval)
 

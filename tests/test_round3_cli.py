@@ -5,7 +5,7 @@ import datetime as dt
 import json
 import zipfile
 
-from gpp import agenda, backup, cli, completions, formats, recent
+from gpp import agenda, backup, cli, completions, evaluate, formats, recent
 from gpp.plan import Plan
 from gpp.profile import Profile
 
@@ -261,3 +261,18 @@ def test_csv_file_starts_with_the_bom_excel_needs(tmp_path, capsys):
     capsys.readouterr()
     assert cli.main(base) == 0  # the terminal gets no BOM
     assert capsys.readouterr().out.startswith("date,day,name")
+
+
+def test_eval_takes_the_global_json_flag_and_keeps_stdout_to_json(tmp_path, monkeypatch, capsys):
+    path = PROFILE.save(tmp_path / "profile.toml")
+
+    def no_tokens_spent(factory, cases, attempts=3, today=None, log=print):
+        log("case 1 of 3...")
+        return []
+
+    monkeypatch.setattr(evaluate, "evaluate", no_tokens_spent)
+    for argv in (["--json", "eval"], ["eval", "--json"]):
+        assert cli.main(["--profile", str(path), *argv]) == 0
+        out = capsys.readouterr()
+        assert json.loads(out.out)["results"] == []
+        assert "case 1 of 3" in out.err
