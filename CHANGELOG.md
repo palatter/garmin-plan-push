@@ -37,6 +37,10 @@ the tag being released and puts it in the GitHub Release notes.
   lines too, and only gpp's own logger writes at debug level. `gpp icu` asks
   for the key when it is not set, and the key instructions paste the key at a
   prompt so it stays out of shell history.
+- `gpp restore` could write outside its folders when a zip entry had an
+  absolute or drive-qualified name. Every entry is now resolved and skipped
+  unless it lands inside its folder; restored Garmin tokens are written
+  owner-only; and backups no longer include the debug log.
 
 ### Added
 - `gpp signout` deletes the saved Garmin login.

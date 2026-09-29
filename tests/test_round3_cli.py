@@ -188,3 +188,44 @@ def test_defaults_table_feeds_the_commands(tmp_path):
     )
     args = cli.build_parser().parse_args(["--profile", str(path), "zones"])
     assert cli._defaults(args) == {"attempts": 5, "port": 9999}
+
+
+def test_restore_refuses_entries_that_land_outside_their_folder(tmp_path):
+    archive = tmp_path / "hostile.zip"
+    outside = tmp_path / "escaped.txt"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(f"config/{outside.as_posix()}", "absolute")  # config//tmp/.../escaped.txt
+        z.writestr("config/../escaped.txt", "dotdot")
+        z.writestr("config/C:/escaped.txt", "drive")
+        z.writestr("config/..\\escaped.txt", "backslash")
+        z.writestr("tokens/../../escaped.txt", "tokens dotdot")
+        z.writestr("config/ok.toml", "fine")
+    target = tmp_path / "restored"
+    written = backup.restore(archive, config_dir=target, token_dir=tmp_path / "tok")
+    assert written == [str((target / "ok.toml").resolve())]
+    assert not outside.exists()
+    assert not list(tmp_path.rglob("escaped.txt"))
+
+
+def test_restored_tokens_are_owner_only_and_logs_are_not_backed_up(tmp_path):
+    import os
+    import stat
+
+    source, tokens = tmp_path / "config", tmp_path / "tokens"
+    (source / "logs").mkdir(parents=True)
+    (source / "logs" / "gpp.log").write_text("old log", encoding="utf-8")
+    (source / "profile.toml").write_text("x", encoding="utf-8")
+    tokens.mkdir()
+    (tokens / "garmin_tokens.json").write_text("{}", encoding="utf-8")
+    archive = backup.backup(
+        tmp_path / "b.zip", with_tokens=True, config_dir=source, token_dir=tokens
+    )
+    with zipfile.ZipFile(archive) as z:
+        assert set(z.namelist()) == {"config/profile.toml", "tokens/garmin_tokens.json"}
+    restored = tmp_path / "new-tokens"
+    backup.restore(archive, config_dir=tmp_path / "new", token_dir=restored)
+    token = restored / "garmin_tokens.json"
+    assert token.read_text(encoding="utf-8") == "{}"
+    if os.name == "posix":
+        assert stat.S_IMODE(token.stat().st_mode) == 0o600
+        assert stat.S_IMODE(restored.stat().st_mode) == 0o700
