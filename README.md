@@ -117,11 +117,15 @@ a key is missing.
 **With a key**, set it once and generation is automatic. Only the one you use
 is needed:
 
-```bash
-setx ANTHROPIC_API_KEY sk-ant-...     # Claude      (Windows; use export on macOS/Linux)
-setx OPENAI_API_KEY sk-...            # ChatGPT
-setx GEMINI_API_KEY AIza...           # Gemini
+```powershell
+# Windows PowerShell: paste the key when asked, so it stays out of the history
+setx ANTHROPIC_API_KEY (Read-Host "Claude key")
+setx OPENAI_API_KEY (Read-Host "ChatGPT key")
+setx GEMINI_API_KEY (Read-Host "Gemini key")
 ```
+
+On macOS/Linux, `read -rs ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY`
+(and the same line in your shell profile to keep it).
 
 Then restart the app. `gpp doctor --ping` proves each key and model actually
 work before you rely on them. Generation streams, and each call reports its

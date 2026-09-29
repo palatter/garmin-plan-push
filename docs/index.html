@@ -430,10 +430,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh</pre><button type="button" class
       <div class="row"><dt>Claude, ChatGPT, Gemini</dt><dd>Automatic. Set the one key you have once (see below), restart the app, and it preselects that provider. The plan streams in and the app reports what the call cost.</dd></div>
       <div class="row"><dt>Local model</dt><dd>Through Ollama on your own machine. The app can measure whether a given model is good enough to follow the plan format before you rely on it.</dd></div>
     </dl>
-    <div class="cmd" style="margin-top:1rem"><pre><span class="c"># set the one you have, then restart the app</span>
-setx ANTHROPIC_API_KEY sk-ant-...   <span class="c"># Claude      (Windows; on macOS/Linux: export ANTHROPIC_API_KEY=...)</span>
-setx OPENAI_API_KEY sk-...          <span class="c"># ChatGPT</span>
-setx GEMINI_API_KEY AIza...         <span class="c"># Gemini</span></pre><button type="button" class="copy" aria-label="Copy the API key commands">Copy</button></div>
+    <div class="cmd" style="margin-top:1rem"><pre><span class="c"># in PowerShell: run only the line for the key you have, paste the key when</span>
+<span class="c"># asked (it stays out of the command history), then restart the app</span>
+setx ANTHROPIC_API_KEY (Read-Host "Claude key")
+setx OPENAI_API_KEY (Read-Host "ChatGPT key")
+setx GEMINI_API_KEY (Read-Host "Gemini key")
+<span class="c"># macOS/Linux: read -rs ANTHROPIC_API_KEY &amp;&amp; export ANTHROPIC_API_KEY</span></pre><button type="button" class="copy" aria-label="Copy the API key commands">Copy</button></div>
     <p class="note" style="margin-top:1rem">Whatever writes it, the plan is treated the same way: it must fit the plan format, and it goes through the checks. When a check finds something blocking, the app sends the finding back to the AI as a correction and asks again, up to a few times, before showing you the result.</p>
   </section>
 

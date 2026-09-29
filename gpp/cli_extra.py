@@ -141,6 +141,10 @@ def cmd_icu(args) -> int:
     plan = Plan.load(args.plan)
     athlete = args.athlete or os.environ.get(icu.ATHLETE_ENV)
     key = args.key or os.environ.get(icu.KEY_ENV)
+    if not key and not args.dry_run and sys.stdin.isatty():
+        import getpass
+
+        key = getpass.getpass("intervals.icu API key (not stored): ").strip() or None
     try:
         if args.remove:
             results = icu.remove(plan, profile, athlete, key)
@@ -471,7 +475,10 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     ic.add_argument("plan", help="plan file")
     ic.add_argument("--athlete", help="intervals.icu athlete id, like i12345 (or ICU_ATHLETE_ID)")
-    ic.add_argument("--key", help="intervals.icu API key (or ICU_API_KEY)")
+    ic.add_argument(
+        "--key",
+        help="intervals.icu API key; better: set ICU_API_KEY, or leave both out to be asked",
+    )
     ic.add_argument("--dry-run", action="store_true", help="list what would be sent")
     ic.add_argument("--remove", action="store_true", help="delete this plan's events instead")
     ic.set_defaults(func=cmd_icu)

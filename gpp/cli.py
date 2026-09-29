@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -71,6 +72,46 @@ def cmd_web(args: argparse.Namespace) -> int:
 
 
 LOG_PATH = Path.home() / ".config" / "gpp" / "logs" / "gpp.log"
+
+# Flags whose value is a credential; their values never reach the log.
+SECRET_FLAGS = ("--key", "--password", "--token", "--api-key")
+_SECRET_ARG_RE = re.compile(r"(--(?:key|password|token|api-key))(=|\s+)\S+")
+# Environment variables whose values are scrubbed from the diagnostics bundle.
+_SECRET_ENV_RE = re.compile(r"(_API_KEY|_TOKEN|_PASSWORD|_SECRET)$")
+
+
+def redact_argv(argv: list[str]) -> list[str]:
+    """The command line with every credential value replaced by ***."""
+    out: list[str] = []
+    hide_next = False
+    for arg in argv:
+        if hide_next:
+            out.append("***")
+            hide_next = False
+        elif arg in SECRET_FLAGS:
+            out.append(arg)
+            hide_next = True
+        elif arg.split("=", 1)[0] in SECRET_FLAGS and "=" in arg:
+            out.append(arg.split("=", 1)[0] + "=***")
+        else:
+            out.append(arg)
+    return out
+
+
+def scrub(line: str, secrets: list[str]) -> str:
+    """Remove credential values from a log line, including ones logged by
+    versions of gpp that did not redact the command line."""
+    line = _SECRET_ARG_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}***", line)
+    for secret in secrets:
+        line = line.replace(secret, "***")
+    return line
+
+
+def _secret_values(configs: dict) -> list[str]:
+    names = {cfg.api_key_env for cfg in configs.values() if cfg.api_key_env}
+    names |= {n for n in os.environ if _SECRET_ENV_RE.search(n)}
+    values = {os.environ.get(n, "") for n in names}
+    return sorted((v for v in values if len(v) >= 6), key=len, reverse=True)
 
 
 def _version() -> str:
@@ -838,10 +879,10 @@ def write_bundle(path: Path, profile: Profile, configs: dict) -> None:
             name: {"kind": cfg.kind, "model": cfg.model, "key_env": cfg.api_key_env}
             for name, cfg in configs.items()
         },
-        "log_tail": _log_tail(),
+        "log_tail": [scrub(line, _secret_values(configs)) for line in _log_tail()],
     }
     path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
-    print(f"diagnostics written to {path} (no credentials, no plan contents)")
+    print(f"diagnostics written to {path} (credentials removed, no plan contents)")
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -1027,7 +1068,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help=f"write a debug log to {LOG_PATH} (request metadata, never secrets)",
+        help=f"write a debug log to {LOG_PATH} (gpp's own steps; credentials are redacted)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1273,12 +1314,16 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if getattr(args, "verbose", False):
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(
-            filename=LOG_PATH,
-            level=logging.DEBUG,
-            format="%(asctime)s %(name)s %(levelname)s %(message)s",
-        )
-        logging.getLogger("gpp").debug("gpp %s: %s", _version(), " ".join(argv or sys.argv[1:]))
+        # Only gpp's own logger goes to DEBUG. The root logger is left alone,
+        # so the Garmin sign-in client, urllib3 and the AI SDKs do not write
+        # their request-level detail (which gpp cannot vouch for) to the file.
+        handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+        gpp_log = logging.getLogger("gpp")
+        gpp_log.setLevel(logging.DEBUG)
+        gpp_log.addHandler(handler)
+        command = redact_argv(list(argv if argv is not None else sys.argv[1:]))
+        gpp_log.debug("gpp %s: %s", _version(), " ".join(command))
         print(f"debug log: {LOG_PATH}", file=sys.stderr)
     try:
         return args.func(args)

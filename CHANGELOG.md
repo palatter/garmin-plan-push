@@ -27,6 +27,17 @@ the tag being released and puts it in the GitHub Release notes.
   2.x renamed the server class. Ported to mcp 2.x (`mcp>=2.2,<3`); the error
   now tells "not installed" from "wrong version" and gives the install line.
 
+
+### Security
+- `--verbose` wrote the full command line to the debug log, so
+  `gpp icu --key ...` put the intervals.icu API key there, and
+  `gpp doctor --bundle` copied that log into a file described as holding no
+  credentials. Credential flags are now redacted in the log, the bundle
+  scrubs them (and any `*_API_KEY`/`*_TOKEN`/`*_PASSWORD` value) from older
+  lines too, and only gpp's own logger writes at debug level. `gpp icu` asks
+  for the key when it is not set, and the key instructions paste the key at a
+  prompt so it stays out of shell history.
+
 ### Added
 - `gpp signout` deletes the saved Garmin login.
 

@@ -120,7 +120,7 @@ def _check(athlete: str | None, key: str | None) -> None:
             f"pass --athlete or set {ATHLETE_ENV}"
         )
     if not key:
-        raise IcuError(f"no API key: pass --key or set {KEY_ENV}")
+        raise IcuError(f"no API key: set {KEY_ENV}, or run in a terminal to be asked for it")
 
 
 def _raise_for(status: int, raw: bytes) -> None:
