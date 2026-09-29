@@ -314,7 +314,7 @@ default = "claude"
 
 [ai.providers.claude]
 kind = "anthropic"
-model = "claude-opus-5"
+model = "claude-opus-5-5"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [ai.providers.local]

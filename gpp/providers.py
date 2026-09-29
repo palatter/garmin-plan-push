@@ -211,14 +211,15 @@ def was_truncated(provider: Any) -> bool:
 class AnthropicProvider:
     """Claude via the official SDK.
 
-    Thinking is deliberately left unset: on Opus 5 adaptive thinking is the
-    default, which is what we want for plan construction.
+    Thinking and effort are deliberately left unset: Opus 5.5 always thinks,
+    at medium effort unless told otherwise, and the models before it think
+    adaptively by default, which is what plan construction wants.
     """
 
     def __init__(self, config: ProviderConfig):
         self.name = config.name
         self.config = config
-        self.model = config.model or "claude-opus-5"
+        self.model = config.model or KIND_DEFAULTS["anthropic"]["model"]
         self.last_usage: Usage | None = None
         self.last_stop: str | None = None
         self.last_mode: str | None = None  # schema | plain
@@ -580,7 +581,7 @@ GEMINI_MODELS_URL = "https://ai.google.dev/gemini-api/docs/models"
 # and why `gpp doctor --ping` exists.
 KIND_DEFAULTS: dict[str, dict[str, Any]] = {
     "anthropic": {
-        "model": "claude-opus-5",
+        "model": "claude-opus-5-5",
         "key_env": "ANTHROPIC_API_KEY",
         "docs": ANTHROPIC_MODELS_URL,
     },

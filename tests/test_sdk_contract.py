@@ -24,6 +24,7 @@ from gpp.providers import (  # noqa: E402
     AnthropicProvider,
     ProviderConfig,
     ProviderError,
+    build_provider,
 )
 
 Responder = Callable[[dict], "httpx2.Response"]
@@ -197,3 +198,12 @@ def test_a_rejected_claude_key_is_reported_once_not_retried(wire):
     with pytest.raises(ProviderError, match="rejected the API key"):
         claude().complete("s", "u", {"type": "object"})
     assert len(wire.bodies) == 1
+
+
+def test_the_default_claude_is_opus_5_5_with_no_thinking_settings(wire):
+    # Opus 5.5 rejects thinking disabled or a thinking budget; gpp sends neither.
+    wire.answers.append(lambda body: claude_stream("{}"))
+    build_provider(ProviderConfig(name="claude", kind="anthropic")).complete("s", "u", None)
+    sent = wire.bodies[-1]
+    assert sent["model"] == "claude-opus-5-5"
+    assert "thinking" not in sent and "output_config" not in sent
