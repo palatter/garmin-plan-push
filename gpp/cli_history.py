@@ -42,7 +42,7 @@ def _connect(args):
     except PushError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return None
-    print(f"connected via {client.transport}")
+    print(f"signed in as {client.account or client.email}")
     return client
 
 

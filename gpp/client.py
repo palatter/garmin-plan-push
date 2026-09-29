@@ -32,6 +32,7 @@ version that lacks one says so instead of crashing.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import inspect
 import logging
 import re
@@ -58,8 +59,12 @@ log = logging.getLogger("gpp.client")
 
 
 # Where garminconnect keeps the login it saves after a successful sign-in, so
-# the next run can skip the password and the two-factor code.
+# the next run can skip the password and the two-factor code. One folder per
+# Garmin account, under gpp's own subfolder: the library signs in with any
+# login it finds and ignores the email and password it was given, so two
+# athletes sharing a folder would both push to whoever signed in first.
 DEFAULT_TOKEN_DIR = "~/.garminconnect"  # noqa: S105 - a folder, not a secret
+ACCOUNTS_DIR = "gpp"
 TOKEN_FILE = "garmin_tokens.json"  # noqa: S105 - a file name
 
 
@@ -71,23 +76,48 @@ class NeedsPassword(PushError):
     """No usable saved login, and no password to sign in with."""
 
 
-def token_dir(folder: str | None = None) -> Path:
-    return Path(folder or DEFAULT_TOKEN_DIR).expanduser()
+def token_dir(folder: str | None = None, email: str | None = None) -> Path:
+    """The folder a login is saved in: `folder` as given, else this account's own.
+
+    Without either, the folder that holds every account's.
+    """
+    if folder:
+        return Path(folder).expanduser()
+    accounts = Path(DEFAULT_TOKEN_DIR).expanduser() / ACCOUNTS_DIR
+    if not email:
+        return accounts
+    return accounts / hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
 
 
-def saved_login(folder: str | None = None) -> Path | None:
-    """The saved Garmin login file, or None when there is none yet."""
-    path = token_dir(folder) / TOKEN_FILE
+def saved_login(folder: str | None = None, email: str | None = None) -> Path | None:
+    """The login saved for this account (or in `folder`), or None when there is none yet."""
+    if not folder and not email:
+        return None
+    path = token_dir(folder, email) / TOKEN_FILE
     return path if path.is_file() else None
 
 
+def saved_logins() -> list[Path]:
+    """Every login gpp has saved on this computer, one per Garmin account."""
+    return sorted(p for p in token_dir().glob(f"*/{TOKEN_FILE}") if p.is_file())
+
+
 def forget_login(folder: str | None = None) -> bool:
-    """Delete the saved login (sign out). True when there was one."""
-    path = saved_login(folder)
-    if path is None:
-        return False
-    path.unlink()
-    return True
+    """Sign out: delete the login in `folder`, else every login gpp saved here.
+
+    That includes the single login 0.2.1 kept straight in ~/.garminconnect,
+    which nothing reads any more. True when there was anything to delete.
+    """
+    if folder:
+        paths = [token_dir(folder) / TOKEN_FILE]
+    else:
+        paths = [*saved_logins(), Path(DEFAULT_TOKEN_DIR).expanduser() / TOKEN_FILE]
+    removed = False
+    for path in paths:
+        if path.is_file():
+            path.unlink()
+            removed = True
+    return removed
 
 
 def sign_in(
@@ -104,7 +134,7 @@ def sign_in(
     no `ask_password` (the web app) the NeedsPassword error goes back to the
     caller, which tells the user to type it.
     """
-    if not password and saved_login(token_folder) is None and ask_password is not None:
+    if not password and saved_login(token_folder, email) is None and ask_password is not None:
         password = ask_password()
     client = GarminClient(email, password or None, token_dir=token_folder)
     try:
@@ -177,6 +207,8 @@ class GarminClient:
         self._api: Any = None
         self._request: Callable[..., Any] | None = None
         self.transport: str = "unconnected"
+        # Whose calendar this is, as Garmin names the account once signed in.
+        self.account: str = ""
 
     # --- connection ---
 
@@ -211,8 +243,8 @@ class GarminClient:
         except Exception as exc:
             raise PushError(f"could not set up the Garmin client: {exc}") from exc
 
-        store = token_dir(self._token_dir)
-        had_saved = saved_login(self._token_dir) is not None
+        store = token_dir(self._token_dir, self.email)
+        had_saved = saved_login(self._token_dir, self.email) is not None
         try:
             self._api.login(str(store))
         except Exception as exc:
@@ -227,6 +259,8 @@ class GarminClient:
             self._password = None  # never kept past the sign-in
 
         self._request = self._resolve_transport()
+        name = getattr(self._api, "full_name", None) or getattr(self._api, "display_name", None)
+        self.account = name if isinstance(name, str) else ""
 
     @property
     def api(self) -> Any:

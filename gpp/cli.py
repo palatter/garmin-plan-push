@@ -684,7 +684,7 @@ def cmd_signout(args: argparse.Namespace) -> int:
 
     if forget_login(args.token_dir):
         print(
-            "Signed out: the saved Garmin login was deleted. The next push asks for your password."
+            "Signed out: the saved Garmin login was deleted. The next push asks for the password."
         )
     else:
         print("No saved Garmin login on this computer.")
@@ -783,17 +783,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             line(True, "connect.garmin.com", "reachable")
         except OSError as exc:
             line(False, "connect.garmin.com", f"unreachable: {exc}")
-    from .client import saved_login
+    from .client import saved_logins
 
-    token_file = saved_login()
+    logins = saved_logins()
     line(
-        True if token_file else None,
+        True if logins else None,
         "saved login",
-        "found - push won't ask for a password"
-        if token_file
+        (
+            "found - push won't ask for a password"
+            if len(logins) == 1
+            else f"{len(logins)} Garmin accounts - push won't ask their passwords"
+        )
+        if logins
         else "none yet - first push will ask for your Garmin password",
     )
-    age = _token_age_days(token_file)
+    age = _token_age_days(max(logins, key=lambda p: p.stat().st_mtime) if logins else None)
     if age is not None:
         stale = age > 300
         line(
@@ -992,7 +996,9 @@ def cmd_push(args: argparse.Namespace) -> int:
         except PushError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        print(f"connected via {client.transport}; reading the calendar, writing nothing\n")
+        print(
+            f"signed in as {client.account or client.email}; reading the calendar, writing nothing\n"
+        )
         for r in client.preview(compiled):
             print(f"  {r.action:<13} {r.date}  {r.name}  {r.detail}".rstrip())
         for other in client.conflicts(compiled):
@@ -1017,7 +1023,7 @@ def cmd_push(args: argparse.Namespace) -> int:
     except PushError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    print(f"connected via {client.transport}")
+    print(f"signed in as {client.account or client.email}")
     for other in client.conflicts(compiled):
         print(f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone")
 
@@ -1318,12 +1324,15 @@ def build_parser() -> argparse.ArgumentParser:
     push.add_argument("--email", help="Garmin account email")
     push.add_argument("--device", help="device id to send to immediately (see: gpp devices)")
     push.add_argument(
-        "--token-dir", help="folder for the saved Garmin login (default ~/.garminconnect)"
+        "--token-dir",
+        help="folder for the saved Garmin login (default: one per account under ~/.garminconnect/gpp)",
     )
     push.set_defaults(func=cmd_push)
 
     signout = sub.add_parser("signout", help="forget the saved Garmin login on this computer")
-    signout.add_argument("--token-dir", help="folder of the saved login (default ~/.garminconnect)")
+    signout.add_argument(
+        "--token-dir", help="folder of the saved login (default: every account's that gpp saved)"
+    )
     signout.set_defaults(func=cmd_signout)
 
     return parser

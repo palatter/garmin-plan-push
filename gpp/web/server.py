@@ -33,7 +33,7 @@ from typing import Any
 
 from .. import adapt, checks, library, oneline
 from ..agenda import week_view
-from ..client import forget_login, saved_login
+from ..client import forget_login, saved_logins
 from ..compile import compile_plan
 from ..diff import diff_plans
 from ..education import ENTRIES as EDUCATION
@@ -154,7 +154,7 @@ class App:
                 for name, config in configs.items()
             ],
             "default_provider": pick_default(configs, default),
-            "garmin_saved_login": saved_login() is not None,
+            "garmin_saved_login": bool(saved_logins()),
             "education": EDUCATION,
             "recent": [r.to_dict() for r in list_recent(self.recent_root)[:8]],
         }
@@ -369,7 +369,7 @@ class App:
         def work(job) -> dict:
             job.say(f"signing in as {email}")
             client = sign_in(email, password or None, prompt_mfa=lambda: job.ask("Garmin MFA code"))
-            job.say(f"connected via {client.transport}")
+            job.say(f"signed in to Garmin Connect as {client.account or email}")
             for other in client.conflicts(compiled):
                 job.say(
                     f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"

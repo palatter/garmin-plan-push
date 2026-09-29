@@ -374,11 +374,16 @@ def test_send_with_prune_removes_orphans(app, monkeypatch):
     assert ("DELETE", "/workout-service/workout/9") in cal.writes
 
 
-def test_signout_forgets_the_saved_login(app, monkeypatch, tmp_path):
-    folder = tmp_path / "tokens"
-    folder.mkdir()
-    (folder / "garmin_tokens.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(folder))
+def test_signout_forgets_every_saved_login(app, monkeypatch, tmp_path):
+    from gpp.client import token_dir
+
+    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(tmp_path))
+    for email in ("a@example.com", "b@example.com"):
+        folder = token_dir(email=email)
+        folder.mkdir(parents=True)
+        (folder / "garmin_tokens.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "garmin_tokens.json").write_text("{}", encoding="utf-8")  # where 0.2.1 kept it
     assert app.state({})["garmin_saved_login"] is True
     assert app.garmin_signout({}) == {"signed_out": True}
     assert app.state({})["garmin_saved_login"] is False
+    assert not list(tmp_path.rglob("garmin_tokens.json"))

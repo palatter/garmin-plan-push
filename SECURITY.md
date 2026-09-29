@@ -4,11 +4,13 @@
 
 - **Your Garmin Connect password**, once per login, in memory only. It is
   sent from the local page to the local server to Garmin, and never written to
-  disk. Garmin's own login token (`~/.garminconnect/garmin_tokens.json`) is
-  the only thing that persists, so later pushes skip the password and the
-  two-factor code — treat that file as you would a saved login. It is written
-  owner-only (0600 in a 0700 folder) and symlinked paths are refused; delete
-  it, or run `gpp signout`, to sign out.
+  disk. Garmin's own login token is the only thing that persists, one per
+  Garmin account (`~/.garminconnect/gpp/<account>/garmin_tokens.json`), so
+  later pushes skip the password and the two-factor code, and two athletes
+  sharing a computer each reach their own calendar. Treat those files as you
+  would a saved login. They are written owner-only (0600 in a 0700 folder)
+  and symlinked paths are refused; run `gpp signout` (or Sign out in the send
+  dialog) to delete them.
   `python-garminconnect` versions up to 0.3.4 created that directory with
   insecure permissions (a published advisory, fixed in 0.3.5); this project
   requires 0.3.16 or newer.

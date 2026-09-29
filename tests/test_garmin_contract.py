@@ -130,6 +130,26 @@ def test_no_saved_login_asks_for_the_password_up_front(tmp_path, stub, sso):
     assert asked == [1]
 
 
+def test_each_account_signs_in_with_its_own_saved_login(tmp_path, stub, sso, monkeypatch):
+    # garminconnect signs in with any login it finds and ignores the email it
+    # was given, so one athlete's saved login must never be offered for another.
+    monkeypatch.setattr("gpp.client.DEFAULT_TOKEN_DIR", str(tmp_path))
+    sign_in("alice@example.com", "alice-pw")
+    with pytest.raises(NeedsPassword, match="no saved Garmin sign-in"):
+        sign_in("bob@example.com", None)
+    sign_in("bob@example.com", "bob-pw")
+    assert sso == ["alice@example.com", "bob@example.com"]
+    alice, bob = saved_login(email="alice@example.com"), saved_login(email="bob@example.com")
+    assert alice is not None and bob is not None and alice != bob
+    sign_in(" Alice@Example.com", None)  # her own login, however the address is typed
+    assert len(sso) == 2
+
+
+def test_the_account_name_comes_from_garmin(connected):
+    client, _ = connected
+    assert client.account == "A Runner"
+
+
 def test_every_verb_reaches_the_wire_with_its_own_method(connected):
     client, stub = connected
     assert client.create_workout({"workoutName": "Q"}) == 777
