@@ -32,10 +32,10 @@ a formula rather than a cask.
 runs that `gpp.exe` on commands that load every library it carries (the
 Garmin sign-in included, stopping before the network), and zips the
 folder as `dist/gpp-<version>-windows.zip` with a `.sha256` beside it.
-On Windows, for each release:
+The release workflow's `windows` job runs it for each tag and attaches
+both to the release. To build it yourself:
 
     uv run --locked --with pyinstaller==6.22.3 python packaging/windows/build.py
-    gh release upload v<version> dist/gpp-<version>-windows.zip dist/gpp-<version>-windows.zip.sha256
 
 It is not code-signed, so Windows SmartScreen may warn the first time a
 downloaded `gpp.exe` runs; see ROADMAP § Tech stack assessment for what

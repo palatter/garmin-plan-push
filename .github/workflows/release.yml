@@ -7,6 +7,9 @@ name: Release
 #   git tag v0.2.0 && git push origin v0.2.0
 #   uv tool install "garmin-plan-push @ https://github.com/palatter/garmin-plan-push/releases/download/v0.2.0/garmin_plan_push-0.2.0-py3-none-any.whl"
 #
+# The windows job then adds gpp-<version>-windows.zip and its .sha256: the
+# standalone download (packaging/README.md).
+#
 # Publishing to PyPI uses trusted publishing (no stored token): register the
 # project on PyPI with this repository, this workflow file and the `pypi`
 # environment as the trusted publisher, then set the repository variable
@@ -56,6 +59,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --notes-file release-notes.md --title "$GITHUB_REF_NAME"
+
+  windows:
+    # The standalone Windows download the winget manifests point at: gpp
+    # with its own Python, built and smoke-tested on Windows
+    # (packaging/windows/build.py), then attached to the release above.
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+
+      - name: Build and smoke-test
+        run: uv run --locked --with pyinstaller==6.22.3 python packaging/windows/build.py
+
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="dist/gpp-${GITHUB_REF_NAME#v}-windows.zip"
+          gh release upload "$GITHUB_REF_NAME" "$zip" "$zip.sha256"
 
   publish:
     # Separate job so the OIDC token exists only here, never beside the

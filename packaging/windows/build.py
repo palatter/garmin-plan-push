@@ -2,8 +2,8 @@
 
     uv run --locked --with pyinstaller==6.22.3 python packaging/windows/build.py
 
-Run on Windows for each release, it leaves dist/gpp-<version>-windows.zip
-and its .sha256 to attach to the GitHub Release (`gh release upload`); the
+The release workflow runs it on Windows for each tag and attaches
+dist/gpp-<version>-windows.zip and its .sha256 to the GitHub Release; the
 winget manifests in packaging/winget point at that zip. It builds on macOS
 and Linux too, which is how it is tested, but only the Windows zip is
 published.

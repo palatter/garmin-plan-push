@@ -18,9 +18,10 @@ the tag being released and puts it in the GitHub Release notes.
 - Web app: **Send to intervals.icu**, with a preview of what it would
   create, update and remove. The key and athlete id are kept after the
   first send.
-- A standalone Windows download, gpp with its own Python
-  (`packaging/windows/build.py`), and winget manifests for it as
-  `palatter.GarminPlanPush` (`packaging/winget/`).
+- A standalone Windows download, gpp with its own Python: each release
+  now carries `gpp-<version>-windows.zip`, built and smoke-tested on
+  Windows by the release workflow (`packaging/windows/build.py`), and
+  winget manifests for it as `palatter.GarminPlanPush` (`packaging/winget/`).
 - `gpp doctor` checks curl_cffi, which Garmin's sign-in silently does
   without, by routes Garmin blocks more often.
 
