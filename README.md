@@ -284,7 +284,7 @@ picks a profile file; several athletes can share one install.
 | `gpp unpush plan.json` / `gpp pushes` | remove a plan's workouts, or `--receipt` to remove exactly what a push created / list the receipts |
 | `gpp pull --from 2026-09-01 --to 2026-09-30` | read scheduled Garmin workouts back into a plan file |
 | `gpp compile plan.json` | emit the raw Garmin workout JSON |
-| `gpp devices` / `gpp exercises` | your devices / search the strength exercise catalog |
+| `gpp devices` / `gpp exercises goblet` | your devices / search Garmin's strength exercise names (works offline) |
 | `gpp sync` | pull runs and daily metrics into local history |
 | `gpp history` / `gpp compliance` / `gpp reestimate` / `gpp shape` / `gpp today` / `gpp advice` | see *After the plan* |
 | `gpp garmin-predict` / `gpp suggestion` | Garmin's race predictor and HR zones vs your profile / its Daily Suggested Workout |

@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 from itertools import pairwise
 
+from . import exercises
 from .load import MONOTONY_LIMIT, WeekStats, roles_for, week_start, weekly_stats
 from .plan import Plan, Workout
 from .profile import Profile
@@ -171,6 +172,7 @@ def check_plan(plan: Plan, profile: Profile, today: dt.date | None = None) -> Re
     _check_races(report, plan)
     _check_around_races(report, plan, workouts, roles, summaries)
     _check_targets(report, workouts, profile)
+    _check_exercises(report, workouts)
     _check_long_run_spike(report, workouts, summaries, profile)
     _check_weekly_ramp(report, training_weeks, profile)
     _check_deload(report, training_weeks)
@@ -262,6 +264,25 @@ def _check_targets(report: Report, workouts: list[Workout], profile: Profile) ->
             "warn",
             "Explicit paces faster than the athlete's fastest zone -- probably a typo or a units mix-up",
             pace_hits,
+        )
+
+
+def _check_exercises(report: Report, workouts: list[Workout]) -> None:
+    hits = []
+    for w in workouts:
+        named = {s.exercise: s.category for s in _all_steps(w.steps) if s.exercise}
+        for name, category in named.items():
+            if exercises.lookup(name, category):
+                continue
+            close = " / ".join(e["name"] for e in exercises.search(name)[:3])
+            hits.append(f"{w.date.isoformat()} {name}" + (f" (try: {close})" if close else ""))
+    if hits:
+        report.add(
+            "exercise-name",
+            "warn",
+            "Exercises Garmin's catalog does not list; the watch may show them wrong or Garmin "
+            "may refuse the workout. Use Garmin's names (`gpp exercises <word>` searches them)",
+            hits,
         )
 
 

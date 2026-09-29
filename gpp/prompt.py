@@ -59,6 +59,9 @@ ATHLETE
 10. Add a top-level "summary": three to five sentences on the block's logic --
    the phases, how weekly volume moves, which sessions are the key ones and
    why. The athlete reads it; write it for them.
+11. Name strength exercises the way Garmin Connect lists them: "Goblet Squat",
+   "Romanian Deadlift", "Walking Lunge", "Step-up", "Hip Raise", "Calf Raise",
+   "Plank", "Side Plank", "Dead Bug", "Push-up". "weight" is in kilograms.
 
 COACHING RULES (the plan is checked against these; violations come back to you)
 A. Progress gently. No single run longer than about 110% of the athlete's

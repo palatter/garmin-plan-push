@@ -173,14 +173,6 @@ class FakeAPI:
     def get_devices(self):
         return [{"deviceId": 123, "displayName": "fenix 7S"}]
 
-    def get_exercise_catalog(self):
-        return {
-            "exercises": [
-                {"name": "GOBLET_SQUAT", "category": "SQUAT"},
-                {"name": "PLANK", "category": "PLANK"},
-            ]
-        }
-
 
 def test_sync_activities_stops_at_the_cutoff(store):
     api = FakeAPI()
@@ -301,10 +293,9 @@ def test_unpush_removes_only_this_plans_workouts():
     assert deleted == ["/workout-service/workout/1"]
 
 
-def test_devices_and_exercise_search_go_through_the_library():
+def test_devices_go_through_the_library():
     client = client_with([])
     assert client.devices()[0].name == "fenix 7S"
-    assert client.search_exercises("goblet")[0]["name"] == "GOBLET_SQUAT"
 
 
 def test_parse_tag():

@@ -11,7 +11,7 @@ import argparse
 import datetime as dt
 import sys
 
-from . import analysis, sync
+from . import analysis, exercises, sync
 from .compile import compile_plan
 from .history import History
 from .plan import Plan
@@ -346,15 +346,14 @@ def cmd_devices(args) -> int:
 
 
 def cmd_exercises(args) -> int:
-    client = _connect(args)
-    if client is None:
-        return 2
-    hits = client.search_exercises(args.query)
+    hits = exercises.search(args.query)
     if not hits:
         print("no matches in Garmin's catalog -- try a shorter word")
         return 1
     for h in hits[:30]:
-        print(f"  {h['name']:<36} {h.get('category') or ''}")
+        print(f"  {h['name']:<44} {h['category']}")
+    if len(hits) > 30:
+        print(f"  ... and {len(hits) - 30} more; add a word to narrow it down")
     return 0
 
 
@@ -499,9 +498,10 @@ def register(sub: argparse._SubParsersAction) -> None:
     garmin_args(de)
     de.set_defaults(func=cmd_devices)
 
-    ex = sub.add_parser("exercises", help="search Garmin's strength exercise catalog")
+    ex = sub.add_parser(
+        "exercises", help="search Garmin's strength exercise names (no sign-in needed)"
+    )
     ex.add_argument("query")
-    garmin_args(ex)
     ex.set_defaults(func=cmd_exercises)
 
     gp = sub.add_parser(

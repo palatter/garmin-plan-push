@@ -545,7 +545,7 @@ SEED_WORKOUTS: dict[str, dict] = {
                     },
                     {
                         "kind": "exercise",
-                        "exercise": "single leg deadlift",
+                        "exercise": "single-leg romanian deadlift with dumbbell",
                         "category": "deadlift",
                         "count": 8,
                     },

@@ -406,28 +406,6 @@ class GarminClient:
                 )
         return out
 
-    def search_exercises(self, query: str) -> list[dict]:
-        """Garmin's strength exercise catalog, for validating exercise names (#80)."""
-        if hasattr(self.api, "search_exercises"):
-            raw = self._library("search_exercises", query)
-        else:
-            raw = self._library("get_exercise_catalog")
-        if isinstance(raw, list):
-            entries = raw
-        elif isinstance(raw, dict):
-            entries = raw.get("exercises", [])
-        else:
-            entries = []
-        q = query.replace(" ", "_").upper()
-        out = []
-        for e in entries:
-            if not isinstance(e, dict):
-                continue
-            name = str(e.get("name") or e.get("exerciseName") or "")
-            if q in name.upper():
-                out.append({"name": name, "category": e.get("category") or e.get("categoryKey")})
-        return out
-
     def daily_suggestion(self, day: dt.date) -> dict | None:
         """Garmin's Daily Suggested Workout for a day, if the library exposes it (#83)."""
         fn = getattr(self.api, "get_daily_suggested_workout", None) or getattr(

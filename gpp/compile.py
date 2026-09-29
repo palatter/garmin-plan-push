@@ -16,9 +16,9 @@ Garmin quirks handled here:
   * RPE has no Garmin target type, so it compiles to "no target" plus a step
     note ("RPE 7/10") -- honest, and still useful without a strap.
   * strength exercises are ExecutableStepDTOs with `category` / `exerciseName`
-    from Garmin's catalog and a `reps` end condition. Names are normalised to
-    Garmin's UPPER_SNAKE form; ones the catalog does not know will be
-    rejected at upload, which `gpp push --verify` reports.
+    from Garmin's catalog and a `reps` end condition. The catalog ships with
+    garminconnect, so names are looked up offline (exercises.py). A name it
+    does not list gets a guess from its words, which `gpp check` flags.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import models
+from . import exercises, models
 from .constants import (
     END_CONDITIONS,
     SPORT_TYPES,
@@ -269,8 +269,13 @@ def _compile_step(
     if step.kind == "exercise":
         if not step.exercise:
             raise CompileError(f"{where}: exercise step has no exercise name")
-        compiled["exerciseName"] = garmin_exercise_name(step.exercise)
-        compiled["category"] = garmin_exercise_name(step.category or step.exercise.split()[-1])
+        found = exercises.lookup(step.exercise, step.category)
+        if found:
+            compiled["category"] = found["category"]
+            compiled["exerciseName"] = found["exercise"]
+        else:
+            compiled["exerciseName"] = garmin_exercise_name(step.exercise)
+            compiled["category"] = garmin_exercise_name(step.category or step.exercise.split()[-1])
         if step.weight:
             compiled["weightValue"] = float(step.weight)
             compiled["weightUnit"] = WEIGHT_UNIT_KG
