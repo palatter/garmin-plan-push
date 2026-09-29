@@ -21,7 +21,7 @@ dependencies = [
 # Kept, empty, so older instructions (`--extra anthropic`) still work.
 anthropic = []
 openai = []
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=2.2,<3"]
 dev = ["pytest>=8.0", "pytest-cov>=6.0", "hypothesis>=6.100", "ruff>=0.14", "ty>=0.0.1"]
 
 [project.scripts]

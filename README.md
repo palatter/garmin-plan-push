@@ -132,7 +132,11 @@ Ollama) are good enough to hold the schema and which are not.
 Claude, ChatGPT, Gemini or a local model can check, preview, adapt and push
 plans conversationally. Push is a dry run unless you have set
 `GARMIN_EMAIL` and `GARMIN_PASSWORD` (or signed in before); the assistant
-never sees either.
+never sees either. It needs the MCP library, installed with:
+
+```bash
+uv tool install --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
+```
 
 ## Sharing it with someone
 

@@ -162,3 +162,12 @@ def test_watch_once_skips_a_missing_file(tmp_path):
 
 def test_today_helper_exists():
     assert dt.date.today()
+
+
+def test_the_mcp_server_builds_and_registers_every_tool():
+    pytest.importorskip("mcp.server.mcpserver")
+    import asyncio
+
+    server = mcp_server.build_server()
+    listed = asyncio.run(server.list_tools())
+    assert {t.name for t in listed} == set(mcp_server.TOOLS)

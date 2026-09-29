@@ -518,7 +518,7 @@ requires-dist = [
     { name = "garminconnect", specifier = ">=0.3.16,<0.4" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
     { name = "jsonschema", specifier = ">=4.21" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.2,<3" },
     { name = "openai", specifier = ">=3.16,<4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },

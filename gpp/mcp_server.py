@@ -10,7 +10,9 @@ Nothing here can read the Garmin password: pushing requires the same
 environment variables the CLI uses (GARMIN_EMAIL / GARMIN_PASSWORD), or a
 token already cached by a previous login. An assistant never sees either.
 
-Requires the optional `mcp` extra:  uv sync --extra mcp
+Requires the optional `mcp` extra (mcp 2.x):
+
+    uv tool install --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"
 """
 
 from __future__ import annotations
@@ -146,14 +148,33 @@ TOOLS = {
 # --- the server -------------------------------------------------------------
 
 
-def build_server():
-    """Construct the FastMCP server; imported lazily so the extra is optional."""
-    try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError as exc:  # pragma: no cover - env dependent
-        raise ProfileError("the MCP server needs the `mcp` package: uv sync --extra mcp") from exc
+MCP_INSTALL = (
+    'uv tool install --reinstall "garmin-plan-push[mcp] @ '
+    'git+https://github.com/palatter/garmin-plan-push"'
+)
 
-    server = FastMCP("garmin-plan-push")
+
+def build_server():
+    """Construct the MCP server; imported lazily so the extra is optional.
+
+    mcp 2.x renamed FastMCP to MCPServer; the registration API used here
+    (`tool(name=, description=)` and `run()`) is the same in both.
+    """
+    try:
+        from mcp.server.mcpserver import MCPServer
+    except ImportError as exc:
+        from importlib.util import find_spec
+
+        if find_spec("mcp") is None:
+            raise ProfileError(f"the MCP server needs the `mcp` library: {MCP_INSTALL}") from exc
+        from importlib.metadata import version
+
+        raise ProfileError(
+            f"the MCP server needs mcp 2.x; this install has mcp {version('mcp')}. "
+            f"Reinstall: {MCP_INSTALL}"
+        ) from exc
+
+    server = MCPServer("garmin-plan-push")
     for name, fn in TOOLS.items():
         server.tool(name=name, description=(fn.__doc__ or "").strip())(fn)
     return server

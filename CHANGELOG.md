@@ -23,6 +23,10 @@ the tag being released and puts it in the GitHub Release notes.
   does not apply to an installed tool. Both now come with every install, and
   a missing library names the reinstall command. `gpp doctor` flags it.
 
+- `gpp mcp` said the `mcp` package was missing when mcp 2.x was installed:
+  2.x renamed the server class. Ported to mcp 2.x (`mcp>=2.2,<3`); the error
+  now tells "not installed" from "wrong version" and gives the install line.
+
 ### Added
 - `gpp signout` deletes the saved Garmin login.
 
