@@ -37,6 +37,11 @@ the tag being released and puts it in the GitHub Release notes.
   real: a missing pace or HR bound failed with a bare TypeError instead of
   saying which target is incomplete, and a profile update could try to save
   to no path at all).
+- intervals.icu: editing a session and pushing again added a second event,
+  because the event id included a hash of the session's content. The id is
+  now the plan, the date and the session's place on that day. Events pushed
+  by 0.2.0 carry the old ids: run `gpp icu plan.json --remove` once, then
+  push again.
 
 ### Security
 - `--verbose` wrote the full command line to the debug log, so

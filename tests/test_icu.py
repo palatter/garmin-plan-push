@@ -130,3 +130,33 @@ def test_command_is_registered_with_a_dry_run(tmp_path, capsys, monkeypatch):
     assert args.func(args) == 0
     out = capsys.readouterr().out
     assert "would-send" in out and "nothing was" in out
+
+
+def test_an_edited_session_keeps_its_external_id_so_a_repush_updates_it():
+    edited = Plan.from_dict(
+        {
+            **PLAN.to_dict(),
+            "workouts": [
+                {**PLAN.workouts[0].to_dict(), "steps": [{"kind": "run", "duration": "55m"}]},
+                *[w.to_dict() for w in PLAN.workouts[1:]],
+            ],
+        }
+    )
+    before = [e["external_id"] for e in icu.events(PLAN, PROFILE)]
+    after = [e["external_id"] for e in icu.events(edited, PROFILE)]
+    assert before == after
+    assert len(set(after)) == len(after)
+
+
+def test_two_sessions_on_one_day_get_two_events():
+    double = Plan.from_dict(
+        {
+            "plan": "Icu block",
+            "workouts": [
+                {"name": "AM", "date": "2026-10-05", "steps": [{"kind": "run", "duration": "30m"}]},
+                {"name": "PM", "date": "2026-10-05", "steps": [{"kind": "run", "duration": "30m"}]},
+            ],
+        }
+    )
+    ids = [e["external_id"] for e in icu.events(double, PROFILE)]
+    assert len(set(ids)) == 2

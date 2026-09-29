@@ -4,8 +4,9 @@ intervals.icu is a Garmin partner, so a workout on its calendar syncs to
 Garmin Connect as a structured workout. For anyone who would rather not use
 the unofficial Connect API this is the approved route, and it comes with
 intervals.icu's own planning tools. Each event carries the text that
-``gpp export --format icu`` produces, plus a tag as ``external_id`` so a
-re-push updates in place instead of duplicating.
+``gpp export --format icu`` produces, and an ``external_id`` made of the
+plan's tag prefix, the date and the session's place on that day, so a
+re-push -- edited or not -- updates the same event instead of adding one.
 
 API reference: https://intervals.icu/api-docs.html -- HTTP Basic with the
 user name ``API_KEY`` and the athlete's key as the password. Athlete ids look
@@ -93,7 +94,12 @@ def tag_prefix(plan: Plan) -> str:
 def events(plan: Plan, profile: Profile) -> list[dict]:
     """The plan as intervals.icu calendar events, one per session."""
     out = []
-    for workout, item in zip(plan.workouts, compile_plan(plan, profile), strict=True):
+    prefix = tag_prefix(plan)
+    seen_on: dict[str, int] = {}
+    compile_plan(plan, profile)  # the same validation a Garmin push gets
+    for workout in plan.workouts:
+        day = workout.date.isoformat()
+        seen_on[day] = seen_on.get(day, 0) + 1
         try:
             description = export_icu(workout, profile)
         except FormatError:
@@ -105,9 +111,11 @@ def events(plan: Plan, profile: Profile) -> list[dict]:
                 "type": SPORT_TYPES.get(workout.sport, "Workout"),
                 "name": workout.name,
                 "description": description,
-                # The content tag plus the date: two identical sessions on
-                # different days must stay two events.
-                "external_id": f"{item.tag} {workout.date.isoformat()}",
+                # No content hash in it: the bulk endpoint upserts by this
+                # id, so an edited session must keep the id it was pushed
+                # with. The date and the session's place on that day keep
+                # identical sessions on different days, or twice a day, apart.
+                "external_id": f"{prefix}{day}:{seen_on[day]}",
             }
         )
     return out
