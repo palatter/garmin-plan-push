@@ -561,3 +561,47 @@ def test_signout_forgets_the_kept_passwords(app, monkeypatch, tmp_path):
     keychain.save_garmin_password("me@example.com", "pw")
     assert app.garmin_signout({}) == {"signed_out": True}
     assert keychain.garmin_password("me@example.com") is None
+
+
+def test_a_key_saved_from_the_page_goes_to_the_keychain_and_never_comes_back(
+    app, monkeypatch, keychain_backend
+):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ICU_API_KEY", raising=False)
+    before = {k["name"]: k for k in app.state({})["keys"]}
+    assert set(before) >= {"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ICU_API_KEY"}
+    assert before["ICU_API_KEY"]["for"] == ["intervals.icu"]
+    assert before["ANTHROPIC_API_KEY"]["source"] is None
+    saved = app.save_key({"name": "ANTHROPIC_API_KEY", "value": "  sk-ant-pasted \n"})
+    assert keychain_backend.entries[("garmin-plan-push", "ANTHROPIC_API_KEY")] == "sk-ant-pasted"
+    assert "sk-ant-pasted" not in json.dumps(saved) + json.dumps(app.state({}))
+    claude = next(p for p in app.state({})["providers"] if p["key_env"] == "ANTHROPIC_API_KEY")
+    assert claude["key_present"] is True
+    assert {k["name"]: k["source"] for k in saved["keys"]}["ANTHROPIC_API_KEY"] == "keychain"
+    removed = app.save_key({"name": "ANTHROPIC_API_KEY", "remove": True})
+    assert removed["removed"] is True and keychain_backend.entries == {}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": "PATH", "value": "x"},
+        {"name": "garmin:me@example.com", "value": "x"},
+        {"name": "ANTHROPIC_API_KEY", "value": ""},
+        {"name": "ANTHROPIC_API_KEY", "value": "two words"},
+        {"name": "ANTHROPIC_API_KEY", "value": "x" * 5000},
+    ],
+)
+def test_the_page_can_only_save_a_key_the_app_reads(app, body, keychain_backend):
+    with pytest.raises(AppError):
+        app.save_key(body)
+    assert keychain_backend.entries == {}
+
+
+def test_saving_a_key_with_no_keychain_says_so(app):
+    import keyring
+    from keyring.backends import fail
+
+    keyring.set_keyring(fail.Keyring())
+    with pytest.raises(AppError, match="no keychain"):
+        app.save_key({"name": "ANTHROPIC_API_KEY", "value": "sk"})

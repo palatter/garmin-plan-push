@@ -444,6 +444,12 @@ dialog[open] { animation: pop .22s var(--ease) both; }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.985); } }
 
 .dialog-body { padding: 1.35rem 1.4rem 1.2rem; display: grid; gap: .25rem; }
+
+/* API keys in the settings dialog: one row per key, the field and its buttons side by side. */
+.api-keys { display: grid; gap: .7rem; margin-top: .4rem; }
+.key-row { display: flex; gap: .5rem; align-items: end; flex-wrap: wrap; }
+.key-row .field { flex: 1 1 14rem; margin: 0; }
+.key-row .key-where { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .dialog-body h2 { margin-bottom: .3rem; }
 .dialog-body > .hint:first-of-type { margin-bottom: .9rem; }
 .dialog-foot { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.1rem; }

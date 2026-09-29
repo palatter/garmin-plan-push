@@ -349,15 +349,32 @@ function initCompose() {
 /* Warn BEFORE a doomed generate: a provider that needs a key it can't find
    would otherwise fail after the spinner. Paste is always offered as the way
    out because it needs nothing. */
+function renderProviders(fallback) {
+  const select = $('#c-provider');
+  const chosen = select.value || fallback;
+  select.innerHTML = '';
+  for (const p of state.providers) {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    const suffix = p.key_present === false ? ' (no key set)' : '';
+    opt.textContent = (p.model ? `${p.name} — ${p.model}` : p.name) + suffix;
+    if (p.name === chosen) opt.selected = true;
+    select.append(opt);
+  }
+  updateProviderHint();
+}
+
 function updateProviderHint() {
   const name = $('#c-provider').value;
   const p = state.providers.find(x => x.name === name);
   const hint = $('#c-provider-hint');
   if (!p) { hint.hidden = true; return; }
   if (p.key_present === false) {
-    hint.textContent =
-      `${p.key_env} isn't set for this app, so ${name} can't be called. After setting it, ` +
-      `close the terminal window, open a new one and run gpp web again. Or choose "paste": no key needed.`;
+    hint.textContent = state.keychain
+      ? `${name} needs its key (${p.key_env}). Add it under Keys in your profile ` +
+        `(the button at the top right), or choose "paste": no key needed.`
+      : `${p.key_env} isn't set for this app, so ${name} can't be called. After setting it, ` +
+        `close the terminal window, open a new one and run gpp web again. Or choose "paste": no key needed.`;
     hint.hidden = false;
   } else if (p.kind === 'manual' || p.kind === 'paste') {
     hint.textContent = 'You’ll copy the prompt into any assistant you already use and paste its reply back.';
@@ -621,6 +638,8 @@ function initSettings() {
     const s = await api('/api/state');
     renderZones('#settings-zones', s.zones);
     $('#settings-path').textContent = `Saved at ${s.profile.path}`;
+    setError('#settings-error', '');
+    renderKeys(s.keys || []);
     $('#settings-dialog').showModal();
   });
   $('#st-close').addEventListener('click', () => $('#settings-dialog').close());
@@ -628,6 +647,77 @@ function initSettings() {
     $('#settings-dialog').close();
     show('setup');
   });
+}
+
+/* One row per key the app reads. The page never holds a saved key: it is
+   told only where each one comes from, and a key typed here goes straight
+   to the keychain and out of the field. */
+function renderKeys(keys) {
+  const box = $('#settings-keys');
+  box.innerHTML = '';
+  $('#settings-keys-hint').textContent = state.keychain
+    ? `Keys you add here are kept in ${state.keychain} and work at once.`
+    : 'This computer has no keychain the app can use, so keys come from environment ' +
+      'variables only (see the guide).';
+  if (!state.keychain) return;
+  for (const key of keys) {
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    const field = document.createElement('label');
+    field.className = 'field';
+    const label = document.createElement('span');
+    label.className = 'field-label';
+    const where = document.createElement('span');
+    where.className = 'key-where';
+    where.textContent = {
+      environment: ' · set in the environment, which comes first',
+      keychain: ` · kept in ${state.keychain}`,
+    }[key.source] || ' · not set';
+    label.append(`${key.for.join(', ')} key (${key.name})`, where);
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.placeholder = key.source === 'keychain' ? 'paste a new key' : 'paste the key';
+    input.disabled = key.source === 'environment';
+    field.append(label, input);
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn';
+    save.textContent = 'Save';
+    save.disabled = key.source === 'environment';
+    save.addEventListener('click', () => saveKey({ name: key.name, value: input.value }, input));
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') save.click(); });
+    row.append(field, save);
+    if (key.source === 'keychain') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn ghost';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => saveKey({ name: key.name, remove: true }, input));
+      row.append(remove);
+    }
+    box.append(row);
+  }
+}
+
+async function saveKey(body, input) {
+  setError('#settings-error', '');
+  if (!body.remove && !input.value.trim()) {
+    setError('#settings-error', 'Paste the key into its field first.');
+    return;
+  }
+  try {
+    const res = await api('/api/keys', body);
+    input.value = '';  // saved; never left in the page
+    renderKeys(res.keys);
+    // The provider list shows which ones have a key; bring it up to date.
+    const s = await api('/api/state');
+    state.providers = s.providers;
+    renderProviders(s.default_provider);
+  } catch (err) {
+    setError('#settings-error', err.message);
+  }
 }
 
 /* ---------------------------------------------------------------- boot --- */
@@ -646,17 +736,7 @@ async function boot() {
   chip.hidden = false;
   chip.textContent = `${s.profile.name} · ${s.profile.threshold}`;
 
-  const select = $('#c-provider');
-  select.innerHTML = '';
-  for (const p of s.providers) {
-    const opt = document.createElement('option');
-    opt.value = p.name;
-    const suffix = p.key_present === false ? ' (no key set)' : '';
-    opt.textContent = (p.model ? `${p.name} — ${p.model}` : p.name) + suffix;
-    if (p.name === s.default_provider) opt.selected = true;
-    select.append(opt);
-  }
-  updateProviderHint();
+  renderProviders(s.default_provider);
   state.education = s.education || {};
   renderRecent(s.recent || []);
   renderChecklist(s);

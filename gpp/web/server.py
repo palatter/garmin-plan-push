@@ -33,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .. import adapt, checks, keychain, library, oneline
+from .. import adapt, checks, icu, keychain, library, oneline
 from ..agenda import week_view
 from ..client import forget_login, saved_logins
 from ..compile import compile_plan
@@ -76,6 +76,7 @@ log = logging.getLogger("gpp.web")
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 MAX_BODY_BYTES = 1_000_000
+MAX_KEY_LENGTH = 4096
 # Only the app's own files run or load: markup that reaches the page by
 # mistake (an error quoting the profile, say) cannot run script or reach
 # another host, and no other site may frame the app.
@@ -176,6 +177,7 @@ class App:
                 for name, config in configs.items()
             ],
             "default_provider": pick_default(configs, default),
+            "keys": _keys_of(configs),
             "garmin_saved_login": bool(saved_logins()),
             "garmin_saved_password": bool(keychain.garmin_accounts()),
             # What the page calls the keychain; None when there is none.
@@ -183,6 +185,28 @@ class App:
             "education": EDUCATION,
             "recent": [r.to_dict() for r in list_recent(self.recent_root)[:8]],
         }
+
+    def save_key(self, body: dict) -> dict:
+        """Save one API key in the OS keychain, or remove it.
+
+        Only the keys this app reads can be written, and none is ever sent
+        back to the page: it learns where each key comes from, not what it is.
+        """
+        profile = self.try_profile()
+        configs, _ = load_providers(profile.raw if profile else {})
+        name = str(body.get("name") or "")
+        if name not in {k["name"] for k in _keys_of(configs)}:
+            raise AppError("that is not a key this app uses")
+        try:
+            if body.get("remove"):
+                return {"removed": keychain.forget(name), "keys": _keys_of(configs)}
+            value = str(body.get("value") or "").strip()
+            if not value or len(value) > MAX_KEY_LENGTH or any(c.isspace() for c in value):
+                raise AppError("paste the key on its own, with nothing around it")
+            keychain.put(name, value)
+        except keychain.KeychainError as exc:
+            raise AppError(str(exc)) from exc
+        return {"saved": name, "keys": _keys_of(configs)}
 
     def zones_preview(self, body: dict) -> dict:
         """Resolve zones for a threshold the user has not saved yet.
@@ -730,6 +754,20 @@ class App:
         return {"ok": True}
 
 
+def _keys_of(configs: dict) -> list[dict]:
+    """Each key the app reads: its name, what uses it, and where it is set
+    ("environment", "keychain" or None). Never the key itself."""
+    uses: dict[str, list[str]] = {}
+    for name, config in configs.items():
+        env = resolve(config).api_key_env
+        if env:
+            uses.setdefault(env, []).append(name)
+    uses.setdefault(icu.KEY_ENV, []).append("intervals.icu")
+    return [
+        {"name": env, "for": names, "source": keychain.source(env)} for env, names in uses.items()
+    ]
+
+
 def _athlete_of(profile: Profile) -> dict:
     """The onboarding answers, for pre-filling the setup screen (#95)."""
     a = profile.availability
@@ -852,6 +890,7 @@ ROUTES = {
     "/api/generate": "generate",
     "/api/push": "push",
     "/api/garmin-signout": "garmin_signout",
+    "/api/keys": "save_key",
     "/api/job": "job",
     "/api/job-input": "job_input",
     "/api/oneline": "oneline",
