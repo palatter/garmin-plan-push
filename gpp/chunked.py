@@ -22,7 +22,7 @@ from .load import weekly_stats
 from .plan import PHASES, PLAN_SCHEMA, Plan, PlanError, Week
 from .profile import Profile, ProfileError
 from .prompt import build_prompt
-from .providers import Provider, ProviderError, extract_json, was_truncated
+from .providers import Provider, ProviderError, Usage, extract_json, was_truncated
 
 OUTLINE_SCHEMA: dict = {
     "type": "object",
@@ -121,6 +121,21 @@ def _previous_summary(workouts: list, profile: Profile) -> str:
     )
 
 
+class _Spend:
+    """Tokens and cost over every call, logged as single-shot generation logs them."""
+
+    def __init__(self) -> None:
+        self.total: Usage | None = None
+        self.calls = 0
+
+    def add(self, provider: Provider, log: Callable[[str], None]) -> None:
+        self.calls += 1
+        usage = getattr(provider, "last_usage", None)
+        if usage:
+            log(f"  {usage.describe()}")
+            self.total = usage if self.total is None else self.total + usage
+
+
 def _ask[T](
     provider: Provider,
     system: str,
@@ -129,12 +144,14 @@ def _ask[T](
     accept: Callable[[dict], T],
     attempts: int,
     log: Callable[[str], None],
+    spend: _Spend,
 ) -> tuple[T, str, list[str]]:
     """Ask, validate with `accept`, feed errors back; the generic inner loop."""
     history: list[dict[str, str]] = []
     corrections: list[str] = []
     for attempt in range(1, attempts + 1):
         raw = provider.complete(system, user, schema, history=history or None)
+        spend.add(provider, log)
         try:
             if was_truncated(provider):
                 raise ProviderError("the answer was cut off; this phase is too long for one call")
@@ -162,6 +179,7 @@ def generate_plan_chunked(
     today = today or dt.date.today()
     system = build_prompt(profile, today=today, previous=previous)
     corrections: list[str] = []
+    spend = _Spend()
 
     log(f"asking {provider.name} for an outline...")
     outline, _, fixes = _ask(
@@ -172,6 +190,7 @@ def generate_plan_chunked(
         lambda data: (_validate_outline(data, today), data)[1],
         attempts,
         log,
+        spend,
     )
     corrections += fixes
     phases = outline["phases"]
@@ -215,7 +234,7 @@ def generate_plan_chunked(
             return chunk
 
         log(f"asking {provider.name} for phase {index}/{len(phases)}: {phase['name']}...")
-        chunk, _, fixes = _ask(provider, system, user, PLAN_SCHEMA, accept, attempts, log)
+        chunk, _, fixes = _ask(provider, system, user, PLAN_SCHEMA, accept, attempts, log, spend)
         corrections += fixes
         workouts += chunk.workouts
 
@@ -239,18 +258,20 @@ def generate_plan_chunked(
     if report.blocks:
         log("  blocked by sanity checks: " + "; ".join(f.code for f in report.blocks))
         plan, report, fixes = _repair(
-            provider, profile, system, plan, phases, report, attempts, log, today
+            provider, profile, system, plan, phases, report, attempts, log, today, spend
         )
         corrections += fixes
     else:
         log(f"  accepted: {len(plan.workouts)} workout(s) across {len(phases)} phase(s)")
-    return GenerationResult(plan.to_dict(), plan, len(phases) + 1, corrections, report)
+    if spend.total is not None:
+        log(f"  total over {spend.calls} calls: {spend.total.describe()}")
+    return GenerationResult(plan.to_dict(), plan, len(phases) + 1, corrections, report, spend.total)
 
 
 _DATE_IN_TEXT = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 
-def _repair(provider, profile, system, plan, phases, report, attempts, log, today):
+def _repair(provider, profile, system, plan, phases, report, attempts, log, today, spend):
     """Regenerate only the phases that a blocking finding points at, once."""
     dates = {
         dt.date.fromisoformat(m)
@@ -296,7 +317,7 @@ def _repair(provider, profile, system, plan, phases, report, attempts, log, toda
 
         log(f"re-asking for phase {phase['name']} to clear blocking findings...")
         try:
-            chunk, _, more = _ask(provider, system, user, PLAN_SCHEMA, accept, attempts, log)
+            chunk, _, more = _ask(provider, system, user, PLAN_SCHEMA, accept, attempts, log, spend)
         except (ProviderError, PlanError, CompileError, ProfileError) as exc:
             fixes.append(str(exc))
             continue

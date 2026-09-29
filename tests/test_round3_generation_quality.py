@@ -296,6 +296,9 @@ def test_chunked_generation_asks_for_an_outline_then_each_phase():
     assert [w.phase for w in result.plan.weeks] == ["base", "build"]
     assert "PREVIOUS PHASE" in provider.calls[2]["user"]
     assert provider.calls[0]["schema"] is chunked.OUTLINE_SCHEMA
+    # Three calls of 100 in / 200 out at $0.01 each, reported like a single-shot plan.
+    usage = result.usage
+    assert (usage.input_tokens, usage.output_tokens, round(usage.cost_usd, 2)) == (300, 600, 0.03)
 
 
 def test_chunked_generation_rejects_sessions_outside_the_phase():
