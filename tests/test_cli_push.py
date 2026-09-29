@@ -98,3 +98,32 @@ def test_a_pushed_plan_joins_the_recent_plans(setup, capsys):
     assert cli.main([*argv, "--yes"]) == 0
     (recent,) = list_recent()
     assert (recent.name, recent.label) == ("Autumn 10k", "pushed")
+
+
+def test_watch_push_sends_to_the_default_device_and_saves_a_receipt(tmp_path, monkeypatch):
+    from gpp.client import PushResult
+
+    path = Profile.from_dict({"name": "T", "pace": {"threshold": "4:30/km"}}).save(
+        tmp_path / "profile.toml"
+    )
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\n[defaults]\ndevice = 3456789012\n", encoding="utf-8"
+    )
+    PLAN.save(tmp_path / "plan.json")
+    monkeypatch.setattr("gpp.receipts.RECEIPTS_DIR", tmp_path / "pushes")
+    sent = {}
+
+    class Client:
+        def push(self, compiled, device_id=None, log=print):
+            sent["device"] = device_id
+            return [PushResult(c.name, c.date, "created", 100 + n) for n, c in enumerate(compiled)]
+
+    monkeypatch.setattr("gpp.client.sign_in_at_terminal", lambda *a, **kw: Client())
+    monkeypatch.setattr("gpp.watch.watch", lambda plan, on_change: on_change(plan))
+    monkeypatch.setenv("GARMIN_EMAIL", "me@example.com")
+    assert cli.main(["--profile", str(path), "watch", str(tmp_path / "plan.json"), "--push"]) == 0
+    assert sent["device"] == 3456789012
+    (receipt,) = (tmp_path / "pushes").iterdir()
+    rows = json.loads(receipt.read_text(encoding="utf-8"))["results"]
+    assert [r["workout_id"] for r in rows] == [100, 101]
+    assert list_recent()[0].label == "pushed"

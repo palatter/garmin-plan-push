@@ -241,16 +241,25 @@ def cmd_watch(args: argparse.Namespace) -> int:
             print(checks.check(plan, profile).text())
             if args.push:
                 from .client import sign_in_at_terminal
+                from .receipts import save_receipt
 
                 email = args.email or os.environ.get("GARMIN_EMAIL")
                 if not email:
                     print("set GARMIN_EMAIL (or pass --email) to push from watch")
                     return
+                device = args.device or (profile.raw.get("defaults") or {}).get("device")
                 try:
                     client = sign_in_at_terminal(email)
-                    client.push(compiled, device_id=args.device, log=print)
+                    results = client.push(compiled, device_id=device, log=print)
                 except PushError as exc:
                     print(f"push failed: {exc}")
+                    return
+                # As `gpp push` does: the receipt is what `gpp unpush` removes by.
+                try:
+                    print(f"receipt: {save_receipt(plan.plan, results)}")
+                except OSError as exc:
+                    print(f"warning: could not save the push receipt: {exc}")
+                remember(plan.to_dict(), "pushed")
         except (PlanError, ProfileError, CompileError, UnitError) as exc:
             print(f"error: {exc}")
 
