@@ -21,10 +21,12 @@ openai = pytest.importorskip("openai")
 httpx2 = pytest.importorskip("httpx2")
 
 from gpp.providers import (  # noqa: E402
+    PING_MAX_TOKENS,
     AnthropicProvider,
     ProviderConfig,
     ProviderError,
     build_provider,
+    probe,
 )
 
 Responder = Callable[[dict], "httpx2.Response"]
@@ -122,8 +124,15 @@ def wire(monkeypatch):
     def build_anthropic(**kw):
         return real_anthropic(**kw, http_client=httpx2.Client(transport=transport), max_retries=0)
 
+    real_openai = openai.OpenAI
+
+    def build_openai(**kw):
+        return real_openai(**kw, http_client=httpx2.Client(transport=transport), max_retries=0)
+
     monkeypatch.setattr(anthropic, "Anthropic", build_anthropic)
+    monkeypatch.setattr(openai, "OpenAI", build_openai)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     return wire
 
 
@@ -207,3 +216,86 @@ def test_the_default_claude_is_opus_5_5_with_no_thinking_settings(wire):
     sent = wire.bodies[-1]
     assert sent["model"] == "claude-opus-5-5"
     assert "thinking" not in sent and "output_config" not in sent
+
+
+# --- OpenAI and servers speaking its dialect ----------------------------------
+
+
+def chat_completion(text: str) -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        json={
+            "id": "c1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-5.2",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+        },
+    )
+
+
+def unsupported(param: str, instead: str) -> httpx2.Response:
+    message = f"Unsupported parameter: '{param}' is not supported with this model. Use '{instead}' instead."
+    return httpx2.Response(
+        400,
+        json={
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+                "param": param,
+                "code": "unsupported_parameter",
+            }
+        },
+    )
+
+
+def test_openai_itself_is_sent_max_completion_tokens(wire):
+    # GPT-5-family models refuse max_tokens with a 400.
+    wire.answers.append(lambda body: chat_completion('{"ok": true}'))
+    provider = build_provider(ProviderConfig(name="chatgpt", kind="openai"))
+    assert provider.complete("s", "u", {"type": "object"}) == '{"ok": true}'
+    sent = wire.bodies[-1]
+    assert sent["model"] == "gpt-5.2" and "max_tokens" not in sent
+    assert sent["max_completion_tokens"] == 32000
+    assert sent["response_format"]["type"] == "json_schema"
+
+
+def test_a_compatible_server_gets_max_tokens_and_a_rejection_of_it_swaps_once(wire):
+    wire.answers += [
+        lambda body: unsupported("max_tokens", "max_completion_tokens"),
+        lambda body: chat_completion('{"ok": true}'),
+    ]
+    provider = build_provider(
+        ProviderConfig(
+            name="work", kind="openai-compatible", model="o9", base_url="https://llm.example/v1"
+        )
+    )
+    assert provider.complete("s", "u", {"type": "object"}) == '{"ok": true}'
+    first, second = wire.bodies
+    assert first["max_tokens"] == 32000 and "max_completion_tokens" not in first
+    assert second["max_completion_tokens"] == 32000 and "max_tokens" not in second
+    assert first["response_format"] == second["response_format"]
+
+
+@pytest.mark.parametrize(
+    ("config", "answer", "field"),
+    [
+        (ProviderConfig(name="claude", kind="anthropic"), claude_stream("OK"), "max_tokens"),
+        (
+            ProviderConfig(name="chatgpt", kind="openai"),
+            chat_completion("OK"),
+            "max_completion_tokens",
+        ),
+    ],
+)
+def test_the_ping_leaves_room_for_a_model_that_thinks_first(wire, config, answer, field):
+    wire.answers.append(lambda body: answer)
+    assert probe(config) == "OK"
+    assert wire.bodies[-1][field] == PING_MAX_TOKENS >= 1024

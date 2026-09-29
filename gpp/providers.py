@@ -361,9 +361,14 @@ class OpenAICompatibleProvider:
             )
 
         client = OpenAI(api_key=key, base_url=self.config.base_url or None)
+        # OpenAI's own API wants max_completion_tokens (its reasoning models,
+        # the GPT-5 family included, refuse max_tokens); servers that only
+        # speak the dialect mostly know max_tokens. A 400 naming the one
+        # sent swaps it for the other, once.
+        limit = "max_tokens" if self.config.base_url else "max_completion_tokens"
         request: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": self.config.max_tokens,
+            limit: self.config.max_tokens,
             "messages": [{"role": "system", "content": system}, *_messages(history, user)],
         }
         # Schema-constrained decoding where the server supports it (OpenAI,
@@ -412,7 +417,10 @@ class OpenAICompatibleProvider:
             ladder.append((False, fmt))
         last_exc: Exception | None = None
         content = usage = finish = None
-        for stream_now, fmt in ladder:
+        swapped = False
+        rung = 0
+        while rung < len(ladder):
+            stream_now, fmt = ladder[rung]
             req = dict(request)
             req.pop("response_format", None)
             if fmt is not None:
@@ -426,6 +434,17 @@ class OpenAICompatibleProvider:
                 last_exc = exc
                 if not _is_bad_request(exc):
                     break
+                if not swapped and limit in str(exc):
+                    swapped = True
+                    other = (
+                        "max_tokens"
+                        if limit == "max_completion_tokens"
+                        else "max_completion_tokens"
+                    )
+                    request[other] = request.pop(limit)
+                    limit = other
+                    continue  # the same rung, with the other parameter
+                rung += 1
         if last_exc is not None:
             raise ProviderError(
                 describe_failure(self.name, self.model, last_exc, self.docs_url)
@@ -708,6 +727,9 @@ def describe_failure(name: str, model: str | None, exc: Exception, docs_url: str
     return f"{name} call failed: {text}"
 
 
+PING_MAX_TOKENS = 1024
+
+
 def probe(config: ProviderConfig) -> str:
     """A one-line completion, to prove the key and model work.
 
@@ -719,7 +741,11 @@ def probe(config: ProviderConfig) -> str:
         model=config.model,
         base_url=config.base_url,
         api_key_env=config.api_key_env,
-        max_tokens=16,
+        # A cap, not a charge: the answer is one word, but models that think
+        # first (Claude Opus 5 and later by default, OpenAI's reasoning
+        # models) spend from the same budget, and at 16 a working key read
+        # as a failed ping.
+        max_tokens=PING_MAX_TOKENS,
         strict_schema=False,
         options=dict(config.options),
     )
