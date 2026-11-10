@@ -3,7 +3,7 @@
 All notable changes, newest first. The release workflow takes the section for
 the tag being released and puts it in the GitHub Release notes.
 
-## [Unreleased]
+## [0.2.3] — 2026-11-10
 
 ### Added
 - Keys in the OS keychain (Windows Credential Manager, the macOS Keychain,

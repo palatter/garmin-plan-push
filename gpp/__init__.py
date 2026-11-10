@@ -2,7 +2,7 @@
 
 import sys
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 # The Windows download (and so winget) is gpp frozen with its own Python:
 # no uv, and a different way to reinstall.

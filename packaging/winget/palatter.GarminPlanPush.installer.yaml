@@ -3,7 +3,7 @@
 # uv. packaging/winget/fill.py puts the zip's SHA-256 in; see
 # packaging/README.md for the submission.
 PackageIdentifier: palatter.GarminPlanPush
-PackageVersion: 0.2.2
+PackageVersion: 0.2.3
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
@@ -13,7 +13,7 @@ Commands:
   - gpp
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.2/gpp-0.2.2-windows.zip
+    InstallerUrl: https://github.com/palatter/garmin-plan-push/releases/download/v0.2.3/gpp-0.2.3-windows.zip
     InstallerSha256: ZIP_SHA256
 ManifestType: installer
 ManifestVersion: 1.10.0

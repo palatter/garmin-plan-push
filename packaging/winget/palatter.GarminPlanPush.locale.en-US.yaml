@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
 PackageIdentifier: palatter.GarminPlanPush
-PackageVersion: 0.2.2
+PackageVersion: 0.2.3
 PackageLocale: en-US
 Publisher: Patrick Latter
 PublisherUrl: https://github.com/palatter
@@ -20,6 +20,6 @@ Tags:
   - running
   - training
   - workouts
-ReleaseNotesUrl: https://github.com/palatter/garmin-plan-push/releases/tag/v0.2.2
+ReleaseNotesUrl: https://github.com/palatter/garmin-plan-push/releases/tag/v0.2.3
 ManifestType: defaultLocale
 ManifestVersion: 1.10.0
