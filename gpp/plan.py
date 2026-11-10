@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -118,8 +119,15 @@ _STEP_SCHEMA: dict[str, Any] = {
         {
             "properties": {
                 "kind": {"enum": list(EXECUTABLE_KINDS)},
-                "duration": {"type": ["string", "number"]},
-                "distance": {"type": ["string", "number"]},
+                "duration": {
+                    "type": "string",
+                    "description": 'With its unit: "45m", "90s", "1h15m", or "12:30" '
+                    '(mm:ss). "m" here is minutes, never metres.',
+                },
+                "distance": {
+                    "type": "string",
+                    "description": 'With its unit: "5km", "400m", "3mi".',
+                },
                 "until": {"const": "lap"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 500},
                 "target": TARGET_SCHEMA,
@@ -479,6 +487,13 @@ def validate(data: dict) -> None:
     # and is safe to import everywhere (the LLM prompt embeds it).
     import jsonschema
 
+    # Before the schema, whose "is not valid under any of the given schemas"
+    # says nothing useful about the commonest slip: a number with no unit.
+    workouts = data.get("workouts") if isinstance(data, dict) else None
+    for workout in workouts if isinstance(workouts, list) else []:
+        if isinstance(workout, dict):
+            _check_units(workout.get("steps"), str(workout.get("name") or "a workout"))
+
     validator = jsonschema.Draft202012Validator(PLAN_SCHEMA)
     errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
     if errors:
@@ -515,6 +530,56 @@ def _check_iso_date(value: str | None, what: str) -> None:
         dt.date.fromisoformat(value)
     except ValueError as exc:
         raise PlanError(f"{what}: bad date: {exc}") from exc
+
+
+# What to write instead, by field.
+_UNIT_EXAMPLES = {
+    "duration": '"45s", "45m" (minutes), "1h15m" or "12:30" (mm:ss)',
+    "distance": '"400m", "5km" or "3mi"',
+}
+_BARE_MINUTES = re.compile(r"\s*(\d+(?:\.\d+)?)\s*m\s*", re.I)
+# "duration": "<n>m" from here up is taken for metres put in the wrong field:
+# 200 minutes anywhere, 100 inside a repeat. "min" or "h" says minutes.
+METRES_LOOKALIKE = 200
+METRES_LOOKALIKE_IN_REPEAT = 100
+
+
+def _check_units(steps: Any, where: str, depth: int = 0) -> None:
+    """Every duration and distance says its unit, and says it in the right field.
+
+    A bare number used to be read as seconds or metres, so `"distance": 5`
+    for a 5 km run became a five-metre step, and `"duration": "400m"` for
+    400 metres became six hours forty.
+    """
+    if not isinstance(steps, list):
+        return
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            continue
+        here = f"{where} step {index}" if depth == 0 else f"{where}.{index}"
+        if step.get("kind") == "repeat":
+            _check_units(step.get("steps"), here, depth + 1)
+            continue
+        for key, examples in _UNIT_EXAMPLES.items():
+            value = step.get(key)
+            if value is None or isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)) or (
+                isinstance(value, str) and not re.search(r"[a-zA-Z:]", value)
+            ):
+                raise PlanError(
+                    f"{here}: {key} {value!r} has no unit; write it as a string with "
+                    f"one, like {examples}"
+                )
+        duration = step.get("duration")
+        bare = _BARE_MINUTES.fullmatch(duration) if isinstance(duration, str) else None
+        limit = METRES_LOOKALIKE_IN_REPEAT if depth else METRES_LOOKALIKE
+        if bare and float(bare.group(1)) >= limit:
+            n = f"{float(bare.group(1)):g}"
+            raise PlanError(
+                f'{here}: duration "{duration}" means {n} minutes; for {n} metres write '
+                f'"distance": "{n}m", and if minutes is right write "{n}min"'
+            )
 
 
 def _check_step(step: dict, where: str, depth: int, sport: str) -> None:

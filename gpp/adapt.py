@@ -26,6 +26,7 @@ from .profile import Profile
 from .timeline import workout_summary
 from .units import (
     UnitError,
+    duration_text,
     format_duration,
     parse_duration,
 )
@@ -105,6 +106,15 @@ def _scale_extent(value: str | float | None, factor: float) -> str | float | Non
     return f"{text}{unit}"
 
 
+def _clear_minutes(value: str | float | None) -> str | float | None:
+    """A scaled duration of 100 minutes or more, written so it cannot be read
+    as metres ("210m" -> "3h30m"); the plan validator refuses the bare form."""
+    m = _NUM.match(value) if isinstance(value, str) else None
+    if m and m.group(2).lower() == "m" and float(m.group(1)) >= 100:
+        return duration_text(float(m.group(1)) * 60)
+    return value
+
+
 def scale_workout(workout: Workout, factor: float) -> Workout:
     """Shorten the work in a session; recoveries and reps stay as they are."""
     out = deepcopy(workout)
@@ -114,7 +124,7 @@ def scale_workout(workout: Workout, factor: float) -> Workout:
             if s.is_repeat:
                 walk(s.steps)
             elif s.kind in ("run", "warmup", "cooldown", "stride") and s.until is None:
-                s.duration = _scale_extent(s.duration, factor)
+                s.duration = _clear_minutes(_scale_extent(s.duration, factor))
                 s.distance = _scale_extent(s.distance, factor)
 
     walk(out.steps)

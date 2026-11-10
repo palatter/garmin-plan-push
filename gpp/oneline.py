@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from .plan import Plan, PlanError, Workout
+from .units import duration_text
 
 _KIND_WORDS = {
     "warmup": "warmup",
@@ -112,13 +113,13 @@ def parse_extent(text: str) -> dict:
     num = float(m.group("num"))
     unit = (m.group("unit") or "").lower()
     if unit in ("", "min", "mins", "minutes"):
-        return {"duration": f"{num:g}m"}
+        return {"duration": duration_text(num * 60)}
     if unit == "m":
         return {"distance": f"{num:g}m"} if num >= 100 else {"duration": f"{num:g}m"}
     if unit in ("s", "sec", "secs", "seconds"):
         return {"duration": f"{num:g}s"}
     if unit in ("h", "hr", "hour", "hours"):
-        return {"duration": f"{num * 60:g}m"}
+        return {"duration": duration_text(num * 3600)}
     if unit in ("km", "k"):
         return {"distance": f"{num:g}km"}
     return {"distance": f"{num:g}mi"}

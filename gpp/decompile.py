@@ -17,7 +17,7 @@ from .client import _workout_id, parse_tag
 from .compile import GRAMS_PER_KG
 from .plan import Plan, Workout
 from .profile import Profile
-from .units import format_pace, mps_to_pace
+from .units import duration_text, format_pace, mps_to_pace
 
 STEP_KINDS = {
     "warmup": "warmup",
@@ -39,7 +39,7 @@ def _extent(step: dict) -> dict:
     value = step.get("endConditionValue")
     if key == "time" and value:
         seconds = float(value)
-        return {"duration": f"{seconds / 60:g}m" if seconds % 60 == 0 else f"{seconds:g}s"}
+        return {"duration": duration_text(seconds)}
     if key == "distance" and value:
         metres = float(value)
         return {

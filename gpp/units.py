@@ -76,6 +76,21 @@ def parse_duration(text: str | int | float) -> float:
         raise UnitError(f"cannot parse duration {text!r}") from exc
 
 
+def duration_text(seconds: float) -> str:
+    """Seconds as a plan writes a duration: "90s", "45m", "2h", "3h20m".
+
+    Never a bare "<n>m" of 100 or more: that reads like metres, and the plan
+    validator refuses it.
+    """
+    if seconds % 60:
+        return f"{seconds:g}s"
+    minutes = int(seconds // 60)
+    if minutes < 100:
+        return f"{minutes}m"
+    hours, rest = divmod(minutes, 60)
+    return f"{hours}h{rest}m" if rest else f"{hours}h"
+
+
 def format_duration(seconds: float) -> str:
     """Render seconds as h:mm:ss or m:ss."""
     seconds = round(seconds)

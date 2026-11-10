@@ -35,6 +35,11 @@ ATHLETE
 {continuation}FORMAT RULES
 1. Every step needs exactly one of: "duration", "distance", or "until": "lap".
    Never two, never zero. (A strength "exercise" step uses "count" instead.)
+   Both are strings and ALWAYS carry their unit. "duration": "45m" (minutes),
+   "90s", "1h15m", or "12:30" (minutes:seconds). "distance": "5km", "400m",
+   "3mi". In "duration" an "m" means MINUTES: 400 metres is
+   "distance": "400m", never "duration": "400m". A number with no unit
+   (5, "8") is rejected.
 2. Prefer zone names over explicit paces. Known pace zones: {zones}.
    Daniels letters also work: E, M, T, I, R. Use an explicit
    {{"type": "pace", "slow": "...", "fast": "..."}} only for race-specific work

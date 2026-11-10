@@ -205,6 +205,13 @@ evidence behind them:
 - a B or C race inside the 14 days before the A race;
 - anything that violates your availability or standing rules.
 
+One more is about typing, not coaching. Every duration and distance has to
+say its unit (`"45m"`, `"90s"`, `"5km"`, `"400m"`): a number on its own is
+refused, and so is `"duration": "400m"`, which would mean 400 minutes. A
+step of a few metres or seconds, one of more than twelve hours or 200 km,
+and a session that adds up to under three minutes or over six hours are
+flagged, because a unit is usually wrong.
+
 Two things every comparable tool ships are **deliberately absent**: the
 acute:chronic workload ratio (no evidence it predicts injury) and the 10%
 rule (never validated in a trial). [ROADMAP.md](ROADMAP.md) has the sources.

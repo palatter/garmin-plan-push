@@ -42,6 +42,16 @@ the tag being released and puts it in the GitHub Release notes.
   a duplicate was not ruled out. The README has a three-command check to
   run once against a real account.
 
+- A duration or distance with no unit is refused instead of being read as
+  seconds or metres: `"distance": 5` was a five-metre step. So is
+  `"duration": "400m"` (400 minutes; inside a repeat from `"100m"`), with
+  the message saying how to write metres and how to write minutes
+  (`"400min"`). The prompt and the schema given to the model now state
+  the rule. New findings: `step-size` (blocking) for a step of under 10
+  seconds or 20 metres, or over 12 hours or 200 km (500 km riding, 30 km
+  swimming), and `session-size` (a warning) for a session that adds up to
+  under three minutes or over six hours (ten riding, four swimming).
+
 ### Changed
 - The marker `[gpp:<plan>:<hash>]` now comes first in a workout's
   description, before the notes, so a description Garmin shortens keeps

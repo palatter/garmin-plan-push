@@ -38,6 +38,7 @@ from .load import MONOTONY_LIMIT, WeekStats, roles_for, week_start, weekly_stats
 from .plan import Plan, Workout
 from .profile import Profile
 from .timeline import workout_summary
+from .units import UnitError, format_duration, parse_distance, parse_duration
 
 LONG_RUN_SPIKE = 1.10
 WEEKLY_RAMP = 1.25
@@ -60,6 +61,19 @@ REST_STREAK_DAYS = 10
 CADENCE_RANGE = (150, 200)
 MARATHON_LONG_RUN_METRES = 30_000
 PLAN_SPAN_LIMIT_DAYS = 366
+# Step and session sizes no plan means: a unit is missing, wrong, or in the
+# wrong field. Not coaching limits -- an ultra or an all-day ride fits.
+STEP_MIN_SECONDS = 10
+STEP_MIN_METRES = 20
+STEP_MAX_SECONDS = 12 * 3600
+STEP_MAX_METRES = {"running": 200_000, "swimming": 30_000, "cycling": 500_000}
+STEP_MAX_METRES_OTHER = 200_000
+SESSION_LONG_SECONDS = {"cycling": 10 * 3600, "swimming": 4 * 3600}
+SESSION_LONG_SECONDS_OTHER = 6 * 3600
+SESSION_SHORT_SECONDS = 3 * 60
+# Kinds that are travelled, so a few seconds or metres of one is a slip.
+# Strides and rests are short on purpose.
+MOVING_KINDS = ("run", "recover", "warmup", "cooldown")
 
 DAY_NAMES = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 # Words that name the activity rather than a thing to avoid: "no running
@@ -165,6 +179,7 @@ def check_plan(plan: Plan, profile: Profile, today: dt.date | None = None) -> Re
     training_weeks = weekly_stats_for(training, profile) if training else weeks
 
     _check_dates(report, plan, workouts, today)
+    _check_sizes(report, workouts, summaries, roles)
     _check_availability(report, workouts, summaries, profile)
     _check_availability_envelope(report, weeks, profile)
     _check_constraints(report, workouts, profile)
@@ -220,6 +235,79 @@ def _check_dates(
             "warn",
             f"The A race ({a.name}) is dated before the first session",
             [a.date.isoformat()],
+        )
+
+
+def _check_sizes(report: Report, workouts: list[Workout], summaries: dict, roles: dict) -> None:
+    """Steps and sessions of a size nobody means.
+
+    The validator already refuses a number with no unit; this catches the
+    unit that is there but wrong: "5m" for five kilometres, "999999km",
+    "1:30" (a minute and a half) for an hour and a half.
+    """
+    tiny, huge, short, long = [], [], [], []
+    for w in workouts:
+        label = f"{w.date.isoformat()} {w.name}"
+        limit = STEP_MAX_METRES.get(w.sport, STEP_MAX_METRES_OTHER)
+        sized = False
+        for step in _all_steps(w.steps):
+            if step.is_repeat:
+                continue
+            try:
+                seconds = parse_duration(step.duration) if step.duration is not None else None
+                metres = parse_distance(step.distance) if step.distance is not None else None
+            except UnitError:
+                continue  # the compiler reports it
+            sized = sized or seconds is not None or metres is not None
+            if step.kind in MOVING_KINDS and (
+                (seconds is not None and seconds < STEP_MIN_SECONDS)
+                or (metres is not None and metres < STEP_MIN_METRES)
+            ):
+                tiny.append(f"{label}: {step.kind} {step.duration or step.distance}")
+            if (seconds is not None and seconds > STEP_MAX_SECONDS) or (
+                metres is not None and metres > limit
+            ):
+                huge.append(f"{label}: {step.kind} {step.duration or step.distance}")
+        if not sized or roles.get(id(w)) in ("race", "rest") or summaries[id(w)]["open_ended"]:
+            continue
+        total = summaries[id(w)]["seconds"]
+        if total > SESSION_LONG_SECONDS.get(w.sport, SESSION_LONG_SECONDS_OTHER):
+            long.append(f"{label} ({format_duration(total)})")
+        elif total < SESSION_SHORT_SECONDS and w.sport != "strength":
+            short.append(f"{label} ({format_duration(total)})")
+    if tiny:
+        report.add(
+            "step-size",
+            "block",
+            f"Steps shorter than {STEP_MIN_SECONDS} seconds or {STEP_MIN_METRES} metres: "
+            'a unit is probably wrong ("5m" is five metres or five minutes; '
+            'five kilometres is "5km")',
+            tiny,
+        )
+    if huge:
+        report.add(
+            "step-size",
+            "block",
+            f"Steps longer than {STEP_MAX_SECONDS // 3600} hours or "
+            f"{STEP_MAX_METRES_OTHER // 1000} km "
+            "(more for a ride, less for a swim): a unit is probably wrong",
+            huge,
+        )
+    if long:
+        report.add(
+            "session-size",
+            "warn",
+            "Sessions that add up to an unusually long time; check the units "
+            '("m" in a duration is minutes)',
+            long,
+        )
+    if short:
+        report.add(
+            "session-size",
+            "warn",
+            f"Sessions that add up to under {SESSION_SHORT_SECONDS // 60} minutes; check the "
+            'units ("1:30" is a minute and a half, "1h30m" an hour and a half)',
+            short,
         )
 
 
