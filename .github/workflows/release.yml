@@ -2,13 +2,19 @@ name: Release
 
 # Tag a version and a GitHub Release appears with the wheel and sdist
 # attached and the CHANGELOG section as its notes, so `uv tool install` can
-# target a version instead of main:
+# target a version instead of main. Pull first, so the tag lands on the
+# release commit (X.Y.Z is the version in pyproject.toml):
 #
-#   git tag v0.2.0 && git push origin v0.2.0
-#   uv tool install "garmin-plan-push @ https://github.com/palatter/garmin-plan-push/releases/download/v0.2.0/garmin_plan_push-0.2.0-py3-none-any.whl"
+#   git pull && git tag vX.Y.Z && git push origin vX.Y.Z
+#   uv tool install "garmin-plan-push @ https://github.com/palatter/garmin-plan-push/releases/download/vX.Y.Z/garmin_plan_push-X.Y.Z-py3-none-any.whl"
 #
-# The windows job then adds gpp-<version>-windows.zip and its .sha256: the
-# standalone download (packaging/README.md).
+# Nothing is public until every build has succeeded. The release job
+# checks, tests and builds from the committed lock (a uv.lock that does not
+# match pyproject.toml stops it at the first step) and makes a DRAFT
+# release; the windows job adds gpp-<version>-windows.zip and its .sha256,
+# the standalone download (packaging/README.md); only then does the
+# go-public job publish the draft. A run that fails part-way leaves a draft
+# nobody else can see, and the next run for the same tag replaces it.
 #
 # Publishing to PyPI uses trusted publishing (no stored token): register the
 # project on PyPI with this repository, this workflow file and the `pypi`
@@ -26,26 +32,30 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # only this job may create releases
+      contents: write  # creates the draft release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+        with:
+          persist-credentials: false  # the gh steps use GH_TOKEN
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7 (the commit, not the tag object)
 
+      # --locked on every uv call: without it the first `uv run` quietly
+      # rewrites a stale uv.lock on the runner and the later checks pass.
       - name: Check the tag matches pyproject's version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          version=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          version=$(uv run --locked python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "$tag" = "$version" || { echo "tag v$tag does not match pyproject version $version"; exit 1; }
 
       - name: Test
-        run: uv sync --extra dev && uv run pytest -q
+        run: uv sync --locked --extra dev && uv run --locked pytest -q
 
       - name: Build
         run: uv build
 
       - name: Release notes from CHANGELOG.md
         run: |
-          uv run python - "${GITHUB_REF_NAME#v}" <<'PY'
+          uv run --locked python - "${GITHUB_REF_NAME#v}" <<'PY'
           import re, sys
           version = sys.argv[1]
           text = open("CHANGELOG.md", encoding="utf-8").read()
@@ -55,27 +65,35 @@ jobs:
           print(notes)
           PY
 
-      - name: Release
+      - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --notes-file release-notes.md --title "$GITHUB_REF_NAME"
+        run: |
+          # A draft left by an earlier run that failed is replaced; a
+          # published release is never touched (the create below fails).
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME"
 
   windows:
     # The standalone Windows download the winget manifests point at: gpp
     # with its own Python, built and smoke-tested on Windows
-    # (packaging/windows/build.py), then attached to the release above.
+    # (packaging/windows/build.py), then attached to the draft above.
     needs: release
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+        with:
+          persist-credentials: false  # the gh steps use GH_TOKEN
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7 (the commit, not the tag object)
 
       - name: Build and smoke-test
         run: uv run --locked --with pyinstaller==6.22.3 python packaging/windows/build.py
 
-      - name: Attach to the release
+      - name: Attach to the draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,10 +101,36 @@ jobs:
           zip="dist/gpp-${GITHUB_REF_NAME#v}-windows.zip"
           gh release upload "$GITHUB_REF_NAME" "$zip" "$zip.sha256"
 
+  go-public:
+    # The only step that makes anything visible: it runs when the wheel,
+    # the sdist and the Windows zip are all on the draft, and not before.
+    needs: [release, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          names=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          for want in \
+            "garmin_plan_push-$version-py3-none-any.whl" \
+            "garmin_plan_push-$version.tar.gz" \
+            "gpp-$version-windows.zip" \
+            "gpp-$version-windows.zip.sha256"
+          do
+            echo "$names" | grep -qxF "$want" || { echo "the draft release has no $want"; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
   publish:
     # Separate job so the OIDC token exists only here, never beside the
     # test and release steps (astral-sh/trusted-publishing-examples).
-    needs: release
+    # PyPI cannot be taken back, so it waits for every build too.
+    needs: [release, windows]
     if: ${{ vars.PYPI_PUBLISH == 'true' }}
     runs-on: ubuntu-latest
     environment: pypi
@@ -94,6 +138,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9  # v7
+        with:
+          persist-credentials: false  # the gh steps use GH_TOKEN
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7 (the commit, not the tag object)
       - run: uv build
       - run: uv publish --trusted-publishing always

@@ -29,6 +29,12 @@ the tag being released and puts it in the GitHub Release notes.
 - With no terminal (a scheduled task), gpp no longer asks for the Garmin
   password; on Windows that prompt waited for ever. It says to sign in
   once in a terminal instead.
+- The release workflow makes nothing public until every build has
+  succeeded: it installs only from the committed lock, makes a draft
+  release, adds the Windows download, and publishes the draft last. A
+  version bump without `uv lock` now fails the version test and the first
+  step of the workflow instead of publishing a release without its
+  Windows download.
 
 ### Removed
 - The OpenSSF Scorecard workflow. CodeQL stays.
