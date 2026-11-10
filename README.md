@@ -269,6 +269,38 @@ Every workout carries a marker in its description: `[gpp:<plan>:<hash>]`.
   Connect is safe
 - `gpp unpush plan.json` removes exactly the workouts a plan created
 
+A push leaves a receipt (`gpp pushes` lists them) of every session: sent,
+unchanged, failed, or never reached because the push was stopped. If Garmin
+created a workout but could not put it on the calendar, the receipt keeps
+its id and the next push schedules that workout instead of making another.
+
+gpp finds the marker in the calendar listing when Garmin includes workout
+descriptions there, and otherwise reads each workout on the plan's dates
+by its id. If one of those cannot be read, a session whose earlier copy it
+might be is held back when a receipt says the workout is this plan's, and
+otherwise sent with a warning, recorded in the receipt, that a duplicate
+was not ruled out.
+
+### Checking this once against your own account
+
+None of the above has been run against the live service, so check it once
+before relying on it. With a plan of one session, dated a few days ahead:
+
+```bash
+gpp --verbose push one-session.json --yes   # says: created
+gpp --verbose push one-session.json --yes   # must say: unchanged, 0 pushed
+gpp unpush one-session.json                 # removes it again
+```
+
+If the second push says `created`, stop: gpp is not recognising its own
+workouts on your account, and every re-push would add the plan again.
+Remove both copies with `gpp unpush --receipt <file>` for each receipt
+(`gpp pushes` lists them) and please open an issue with the output of
+`gpp doctor --bundle`. The debug log (`--verbose` prints where it is) holds
+the line `no workout in the calendar listing has a description` when gpp
+had to read the workouts one by one; that is slower but correct, and
+worth mentioning in the issue too.
+
 ## Command line
 
 The browser app is the front door; everything is also a command. `--profile`
@@ -484,7 +516,8 @@ which requires partner approval.
 
 **The Garmin network layer has not been run against a live account.** It is
 written against the documented endpoints, and the transport probe exists
-because that surface has shifted before. Everything upstream of the network —
+because that surface has shifted before. *Re-running is safe*, above, has
+the one check worth doing first. Everything upstream of the network —
 parsing, zones, estimation, compiling, validating, the checks, adaptation,
 rendering, the retry loop, the web endpoints, the job handshake — is covered
 by tests and verified end to end. Sync, compliance, re-estimation and the

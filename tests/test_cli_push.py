@@ -114,9 +114,12 @@ def test_watch_push_sends_to_the_default_device_and_saves_a_receipt(tmp_path, mo
     sent = {}
 
     class Client:
-        def push(self, compiled, device_id=None, log=print):
+        def push(self, compiled, device_id=None, log=print, results=None):
             sent["device"] = device_id
-            return [PushResult(c.name, c.date, "created", 100 + n) for n, c in enumerate(compiled)]
+            results.extend(
+                PushResult(c.name, c.date, "created", 100 + n) for n, c in enumerate(compiled)
+            )
+            return results
 
     monkeypatch.setattr("gpp.client.sign_in_at_terminal", lambda *a, **kw: Client())
     monkeypatch.setattr("gpp.watch.watch", lambda plan, on_change: on_change(plan))

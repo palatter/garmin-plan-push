@@ -24,6 +24,24 @@ The endpoints themselves have been stable for years:
 
 Gotcha encoded below: the calendar endpoint's month is ZERO-indexed.
 
+How a push recognises its own earlier work
+------------------------------------------
+Every workout gpp makes carries a tag, `[gpp:<plan>:<content hash>]`, at the
+start of its description. A push lists the calendar and looks for that tag
+on the plan's dates: same tag and title, nothing to do; same plan, other
+hash, update in place; no tag, not ours, never touched.
+
+Whether the calendar listing includes a workout's description has not been
+confirmed against the live service, so nothing depends on it. When no
+workout in the listing has one, each workout on the dates in question is
+read by its id (`GET /workout-service/workout/{id}`, the same call the
+read-back uses) and the tag taken from there. The push receipts are a
+second witness: a calendar entry that cannot be read, but whose id an
+earlier push of this plan recorded, is known to be ours, and its session is
+held back instead of being sent twice. One that cannot be read and is in no
+receipt cannot be ruled out as a copy: the session is sent, and its result
+(and so the receipt) says duplicates were not ruled out.
+
 Anything beyond those -- push to a device, the exercise catalog, HR zones --
 goes through the library's own methods by name, looked up with getattr so a
 version that lacks one says so instead of crashing.
@@ -45,6 +63,7 @@ from typing import Any
 from . import keychain
 from .compile import CompiledWorkout
 from .constants import TAG_PREFIX
+from .receipts import Earlier
 
 WORKOUT_CREATE = "/workout-service/workout"
 WORKOUT_ITEM = "/workout-service/workout/{workout_id}"
@@ -57,6 +76,7 @@ TAG_RE = re.compile(rf"\[{TAG_PREFIX}:([a-z0-9]+):([0-9a-f]{{8}})\]")
 TRANSIENT = ("429", "502", "503", "504", "timed out", "timeout")
 RETRY_DELAYS = (1.0, 2.0, 4.0)
 log = logging.getLogger("gpp.client")
+_log = log  # push() and friends take a `log` callback that hides the name above
 
 
 # Where garminconnect keeps the login it saves after a successful sign-in, so
@@ -79,6 +99,17 @@ class NeedsPassword(PushError):
 
 class LoginRejected(PushError):
     """Garmin turned the password sign-in down."""
+
+
+class Unscheduled(PushError):
+    """The workout exists at Garmin but could not be put on the calendar."""
+
+    def __init__(self, workout_id: int, reason: str):
+        super().__init__(
+            f"workout {workout_id} was created but could not be put on the calendar "
+            f"({reason}); push again to schedule it"
+        )
+        self.workout_id = workout_id
 
 
 def token_dir(folder: str | None = None, email: str | None = None) -> Path:
@@ -236,18 +267,29 @@ def sign_in_at_terminal(email: str | None, token_folder: str | None = None) -> G
 class PushResult:
     name: str
     date: str
-    action: str  # created | replaced | updated | unchanged | removed | failed
+    action: str  # created | replaced | updated | unchanged | removed | failed | not-sent
     workout_id: int | None = None
     detail: str = ""
+    # Failed, but the workout exists at Garmin, off the calendar: the next
+    # push schedules it instead of creating another.
+    unscheduled: bool = False
+    # Sent, though something else on that date could not be read: it may be
+    # an earlier copy of this session.
+    duplicates_unchecked: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        row = {
             "name": self.name,
             "date": self.date,
             "action": self.action,
             "workout_id": self.workout_id,
             "detail": self.detail,
         }
+        if self.unscheduled:
+            row["unscheduled"] = True
+        if self.duplicates_unchecked:
+            row["duplicates_unchecked"] = True
+        return row
 
 
 @dataclass
@@ -317,6 +359,13 @@ class GarminClient:
         # Whether sign_in() saved a typed password in the keychain (None: no
         # password was typed, or it was not asked to).
         self.remembered: bool | None = None
+        # What this plan's push receipts recorded (receipts.earlier_pushes);
+        # the caller sets it before a push. Empty is always safe.
+        self.earlier = Earlier()
+        # Tags read from workouts one by one, when the calendar did not say.
+        self._tags: dict[int, tuple[str, str] | None] = {}
+        self._unreadable: set[int] = set()
+        self._read_each = False
 
     # --- connection ---
 
@@ -463,6 +512,85 @@ class GarminClient:
     def get_workout(self, workout_id: int) -> dict:
         return self._call("GET", WORKOUT_ITEM.format(workout_id=workout_id))
 
+    def _calendar(self, start: dt.date, end: dt.date) -> list[dict]:
+        """The calendar items, and whether their tags have to be read one by one.
+
+        If any workout in the listing carries a description, the listing
+        carries descriptions, and a workout without one has none. If none
+        does, that proves nothing either way, so `_tag_of` asks Garmin for
+        each workout it needs to know about.
+        """
+        items = self.scheduled_between(start, end)
+        workouts = [i for i in items if _workout_id(i) is not None]
+        self._read_each = bool(workouts) and not any(_described(i) for i in workouts)
+        if self._read_each:
+            log.debug(
+                "no workout in the calendar listing has a description: "
+                "reading each one to find gpp's tag (%d on the calendar)",
+                len(workouts),
+            )
+        return items
+
+    def _tag_of(self, item: dict) -> tuple[str, str] | None:
+        """(plan slug, content hash) of a calendar item that is one of ours.
+
+        From the listing when it is there; otherwise from the workout itself,
+        when the listing has no descriptions at all, or when a receipt says
+        this id is ours (a long note may have pushed the tag out of a
+        shortened description).
+        """
+        tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
+        if tag is not None:
+            return tag
+        workout_id = _workout_id(item)
+        if workout_id is None:
+            return None
+        if workout_id in self.earlier.ids or (self._read_each and not _described(item)):
+            return self._stored_tag(workout_id)
+        return None
+
+    def _stored_tag(self, workout_id: int) -> tuple[str, str] | None:
+        if workout_id not in self._tags:
+            tag = None
+            try:
+                stored = self.get_workout(workout_id)
+                if not isinstance(stored, dict):
+                    raise PushError("empty reply")
+                tag = parse_tag(stored.get("description"))
+            except PushError as exc:
+                log.debug("could not read workout %s for its tag: %s", workout_id, exc)
+                self._unreadable.add(workout_id)
+            self._tags[workout_id] = tag
+        return self._tags[workout_id]
+
+    def _unknown_on(
+        self, by_date: dict[str, list[dict]], item: CompiledWorkout
+    ) -> tuple[list[int], bool]:
+        """What is left unclaimed on the item's date that might be a copy of it.
+
+        First, workouts that could not be read but that a receipt of this
+        plan names: ours, for all we can tell. Second, whether anything else
+        there leaves the question open: a workout that could not be read and
+        is in no receipt, or an entry with this session's title and no
+        workout id to read it by.
+        """
+        ours: set[int] = set()
+        open_question = False
+        for candidate in by_date.get(item.date, []):
+            workout_id = _workout_id(candidate)
+            if workout_id is None:
+                open_question = open_question or (
+                    candidate.get("itemType") in (None, "workout")
+                    and (candidate.get("title") or "").strip() == item.name.strip()
+                    and self._tag_of(candidate) is None
+                )
+            elif workout_id in self._unreadable:
+                if workout_id in self.earlier.ids:
+                    ours.add(workout_id)
+                else:
+                    open_question = True
+        return sorted(ours), open_question
+
     def devices(self) -> list[Device]:
         raw = self._library("get_devices") or []
         out = []
@@ -511,6 +639,7 @@ class GarminClient:
         update_in_place: bool = True,
         device_id: str | None = None,
         log: Callable[[str], None] = lambda _: None,
+        results: list[PushResult] | None = None,
     ) -> list[PushResult]:
         """Upload and schedule, skipping anything already on the calendar unchanged.
 
@@ -518,15 +647,20 @@ class GarminClient:
         library allows it, else replaced. Only workouts carrying our tag are
         ever touched. Anything you built by hand in Garmin Connect is left
         strictly alone.
+
+        One result per session, always: an error in one session, expected or
+        not, is that session's result and the rest still go. Pass `results`
+        to keep what was done when the push itself is cut short (Ctrl+C):
+        the list is filled as it goes, and the sessions never reached are
+        added as `not-sent` before the interruption is passed on.
         """
-        results: list[PushResult] = []
+        results = [] if results is None else results
         if not compiled:
             return results
         dates = [dt.date.fromisoformat(c.date) for c in compiled]
-        existing = self.scheduled_between(min(dates), max(dates))
-        by_date = _index_by_date(existing)
+        by_date = _index_by_date(self._calendar(min(dates), max(dates)))
 
-        for item in compiled:
+        for index, item in enumerate(compiled):
             names_today = {c.name.strip() for c in compiled if c.date == item.date}
             try:
                 results.append(
@@ -534,8 +668,41 @@ class GarminClient:
                         item, by_date, names_today, replace, verify, update_in_place, device_id, log
                     )
                 )
+            except Unscheduled as exc:
+                results.append(
+                    PushResult(
+                        item.name, item.date, "failed", exc.workout_id, str(exc), unscheduled=True
+                    )
+                )
             except PushError as exc:
                 results.append(PushResult(item.name, item.date, "failed", detail=str(exc)))
+            except Exception as exc:
+                # A reply in a shape nobody expected, a bug: this session
+                # failed, the others are still sent, and all of it is recorded.
+                _log.exception("unexpected error pushing %s %s", item.date, item.name)
+                results.append(
+                    PushResult(
+                        item.name,
+                        item.date,
+                        "failed",
+                        detail=f"unexpected error ({type(exc).__name__}: {exc}); "
+                        "check this date on the calendar before pushing again",
+                    )
+                )
+            except BaseException:
+                results.append(
+                    PushResult(
+                        item.name,
+                        item.date,
+                        "failed",
+                        detail="interrupted part-way; check this date on the calendar",
+                    )
+                )
+                results.extend(
+                    PushResult(c.name, c.date, "not-sent", detail="the push stopped before it")
+                    for c in compiled[index + 1 :]
+                )
+                raise
         return results
 
     def _match(self, item, by_date, names_today) -> tuple[dict | None, list[dict]]:
@@ -553,7 +720,7 @@ class GarminClient:
         legacy: list[dict] = []
         for candidate in candidates:
             title = (candidate.get("title") or "").strip()
-            tag = parse_tag(candidate.get("description")) or parse_tag(title)
+            tag = self._tag_of(candidate)
             if tag is None:
                 continue
             if tag[0] == want_slug:
@@ -589,6 +756,7 @@ class GarminClient:
             return PushResult(item.name, item.date, "failed", detail=_kept(len(stale), item.date))
 
         detail = ""
+        unsure = False
         if stale and update_in_place:
             workout_id = stale[0]
             try:
@@ -597,16 +765,27 @@ class GarminClient:
                 stale = stale[1:]
             except PushError as exc:
                 log(f"  in-place update failed ({exc}); replacing instead")
-                workout_id = self.create_workout(item.payload)
-                self.schedule_workout(workout_id, item.date)
+                workout_id = self._create_scheduled(item, log)
                 action = "replaced"
         else:
-            workout_id = self.create_workout(item.payload)
-            self.schedule_workout(workout_id, item.date)
+            if not stale:
+                ours, unsure = self._unknown_on(by_date, item)
+                if ours:
+                    raise PushError(
+                        f"could not read workout {ours[0]} on {item.date}, which an earlier "
+                        "push of this plan put there, so this session was not sent "
+                        "(it may be on the calendar already); push again"
+                    )
+            workout_id = self._create_scheduled(item, log)
             action = "replaced" if stale else "created"
 
         if verify:
-            detail = self._verify(workout_id, item)
+            try:
+                detail = self._verify(workout_id, item)
+            except Exception as exc:  # the workout is sent; only the check failed
+                detail = f"could not verify: {type(exc).__name__}: {exc}"
+        if unsure:
+            detail = "; ".join(filter(None, [detail, _not_ruled_out(item.date)]))
 
         for old_id in stale:
             try:
@@ -622,7 +801,55 @@ class GarminClient:
                 detail = (detail + f" (device push failed: {exc})").strip()
 
         log(f"  {action:<10} {item.date}  {item.name}  (id {workout_id})")
-        return PushResult(item.name, item.date, action, workout_id, detail)
+        return PushResult(
+            item.name, item.date, action, workout_id, detail, duplicates_unchecked=unsure
+        )
+
+    def _create_scheduled(self, item: CompiledWorkout, log: Callable[[str], None]) -> int:
+        """A workout for `item`, on the calendar; its id.
+
+        The two calls are separate at Garmin. When the second fails the
+        workout stays in the library, off the calendar, where no later push
+        can see it: the error carries its id into the result and the
+        receipt, and the next push picks it up here instead of creating
+        another.
+        """
+        workout_id = self._waiting(item, log)
+        if workout_id is None:
+            workout_id = self.create_workout(item.payload)
+        try:
+            self.schedule_workout(workout_id, item.date)
+        except PushError as exc:
+            raise Unscheduled(workout_id, str(exc).split(" failed: ", 1)[-1]) from exc
+        return workout_id
+
+    def _waiting(self, item: CompiledWorkout, log: Callable[[str], None]) -> int | None:
+        """The workout an earlier push created for this session and could not
+        schedule, brought up to date, or None when there is none to use.
+
+        The receipt only says where to look. The workout is read back and
+        used only if Garmin still has it and it carries this plan's tag.
+        """
+        workout_id = self.earlier.unscheduled.get((item.date, item.name.strip()))
+        if workout_id is None:
+            return None
+        try:
+            stored = self.get_workout(workout_id)
+        except PushError as exc:
+            if _gone(exc):
+                return None  # deleted by hand since: start again
+            raise PushError(
+                f"could not read workout {workout_id}, which an earlier push created for "
+                f"this session and could not schedule ({exc}); not sent this time, push again"
+            ) from exc
+        tag = parse_tag(stored.get("description")) if isinstance(stored, dict) else None
+        _, want_slug, want_hash = item.tag.strip("[]").split(":")
+        if tag is None or tag[0] != want_slug:
+            return None
+        if tag[1] != want_hash:
+            self.update_workout(workout_id, item.payload)
+        log(f"  scheduling the workout an earlier push created (id {workout_id})")
+        return workout_id
 
     def preview(self, compiled: list[CompiledWorkout], replace: bool = True) -> list[PushResult]:
         """A live dry run (#154): what a push would do, from the calendar, writing nothing."""
@@ -630,7 +857,7 @@ class GarminClient:
         if not compiled:
             return results
         dates = [dt.date.fromisoformat(c.date) for c in compiled]
-        by_date = _index_by_date(self.scheduled_between(min(dates), max(dates)))
+        by_date = _index_by_date(self._calendar(min(dates), max(dates)))
         for item in compiled:
             names_today = {c.name.strip() for c in compiled if c.date == item.date}
             matched, stale_items = self._match(item, by_date, names_today)
@@ -655,8 +882,28 @@ class GarminClient:
                         f"update {ids[0]} in place{extra}",
                     )
                 )
+            elif (item.date, item.name.strip()) in self.earlier.unscheduled:
+                waiting = self.earlier.unscheduled[(item.date, item.name.strip())]
+                results.append(
+                    PushResult(
+                        item.name,
+                        item.date,
+                        "would-create",
+                        waiting,
+                        f"schedule workout {waiting}, which an earlier push created",
+                    )
+                )
             else:
-                results.append(PushResult(item.name, item.date, "would-create"))
+                _, unread = self._unknown_on(by_date, item)
+                results.append(
+                    PushResult(
+                        item.name,
+                        item.date,
+                        "would-create",
+                        detail=_not_ruled_out(item.date) if unread else "",
+                        duplicates_unchecked=unread,
+                    )
+                )
         return results
 
     def conflicts(self, compiled: list[CompiledWorkout]) -> list[dict]:
@@ -670,12 +917,12 @@ class GarminClient:
         sessions = {(c.date, c.name.strip()) for c in compiled}
         wanted = {c.date for c in compiled}
         out = []
-        for item in self.scheduled_between(min(dates), max(dates)):
+        for item in self._calendar(min(dates), max(dates)):
             date = (item.get("date") or "")[:10]
             if date not in wanted:
                 continue
             title = (item.get("title") or "").strip() or "(untitled)"
-            tag = parse_tag(item.get("description")) or parse_tag(title)
+            tag = self._tag_of(item)
             if tag is not None and (
                 tag[0] in slugs or (tag[0] in legacy and (date, title) in sessions)
             ):
@@ -684,6 +931,8 @@ class GarminClient:
                 source = f"another gpp plan ({tag[0]})"
             elif item.get("trainingPlanId") or item.get("trainingPlanPk"):
                 source = "a Garmin training plan"
+            elif _workout_id(item) in self._unreadable:
+                source = "could not be read"
             else:
                 source = "hand-made or synced"
             out.append({"date": date, "title": title, "source": source, "id": _id_of(item)})
@@ -715,10 +964,12 @@ class GarminClient:
         if start > end:
             return []
         out = []
-        for item in self.scheduled_between(start, end):
+        for item in self._calendar(start, end):
             date = (item.get("date") or "")[:10]
-            tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
-            if tag is None or tag[0] not in slugs or date in wanted or date < start.isoformat():
+            if date in wanted or date < start.isoformat():
+                continue
+            tag = self._tag_of(item)
+            if tag is None or tag[0] not in slugs:
                 continue
             out.append(
                 {
@@ -777,13 +1028,23 @@ class GarminClient:
         slugs = {c.tag.strip("[]").split(":")[1] for c in compiled}
         slugs |= {c.legacy_slug for c in compiled}
         wanted = {(c.date, c.name.strip()) for c in compiled}
-        for item in self.scheduled_between(min(dates), max(dates)):
-            tag = parse_tag(item.get("description")) or parse_tag(item.get("title") or "")
-            if tag is None or tag[0] not in slugs:
-                continue
+        for item in self._calendar(min(dates), max(dates)):
             date = (item.get("date") or "")[:10]
             title = (item.get("title") or "").strip()
             if (date, title) not in wanted:
+                continue
+            tag = self._tag_of(item)
+            if tag is None or tag[0] not in slugs:
+                if _workout_id(item) in self._unreadable:
+                    results.append(
+                        PushResult(
+                            title,
+                            date,
+                            "failed",
+                            detail="could not be read, so it was left: gpp only removes "
+                            "workouts it can see are its own",
+                        )
+                    )
                 continue
             workout_id = _workout_id(item)
             if workout_id is None:
@@ -810,6 +1071,8 @@ class GarminClient:
             stored = self.get_workout(workout_id)
         except PushError as exc:
             return f"could not verify: {exc}"
+        if not isinstance(stored, dict):
+            return "could not verify: Garmin sent back nothing to compare"
 
         problems: list[str] = []
         sent_sport = (item.payload.get("sportType") or {}).get("sportTypeKey")
@@ -862,6 +1125,35 @@ def _kept(count: int, date: str) -> str:
     """Why a session was not sent: the command line turns replacing off with
     --no-replace, the page with its Replace box."""
     return f"{count} earlier version(s) already on {date}, and replacing is turned off"
+
+
+def _described(item: dict) -> bool:
+    description = item.get("description")
+    return isinstance(description, str) and bool(description.strip())
+
+
+def _gone(exc: BaseException) -> bool:
+    """Whether a failed read says the thing no longer exists (HTTP 404).
+
+    Read from the library's own error, never from our message: that one
+    holds the path, and a workout id can contain "404".
+    """
+    cause = exc.__cause__
+    if cause is None:
+        return False
+    status = getattr(getattr(cause, "response", None), "status_code", None)
+    return (
+        status == 404
+        or "NotFound" in type(cause).__name__
+        or re.search(r"\bAPI Error 404\b", str(cause)) is not None
+    )
+
+
+def _not_ruled_out(date: str) -> str:
+    return (
+        f"something else on {date} could not be identified, so an earlier copy of this "
+        "session was not ruled out: check that date for a duplicate"
+    )
 
 
 def _workout_id(item: dict) -> int | None:

@@ -410,8 +410,10 @@ def compile_workout(workout: Workout, profile: Profile, plan_name: str = "plan")
         ],
     }
 
+    # The tag first: it is what a later push recognises the workout by, and
+    # if Garmin shortens a long description it is the end that goes.
     tag = content_tag(plan_name, payload)
-    description = f"{workout.notes.strip()}\n\n{tag}" if workout.notes else tag
+    description = f"{tag}\n\n{workout.notes.strip()}" if workout.notes else tag
     payload["description"] = description
 
     return CompiledWorkout(

@@ -25,7 +25,27 @@ the tag being released and puts it in the GitHub Release notes.
 - `gpp doctor` checks curl_cffi, which Garmin's sign-in silently does
   without, by routes Garmin blocks more often.
 
+### Fixed
+- A workout Garmin created but could not put on the calendar is no longer
+  lost track of: the result and the receipt keep its id, the next push
+  schedules that workout instead of creating a second, and
+  `gpp unpush --receipt` removes it.
+- An unexpected error in one session no longer stops the push and loses
+  the receipt. That session is reported as failed and the rest are sent;
+  the receipt is written however the push ends, Ctrl+C included, and
+  lists the sessions that were never reached as `not-sent`.
+- Recognising a plan's own workouts no longer depends on Garmin's calendar
+  listing including their descriptions, which was never confirmed. When it
+  does not, each workout on the plan's dates is read by its id. A workout
+  that cannot be read holds its session back if a receipt names it as this
+  plan's; otherwise the session is sent and the result and the receipt say
+  a duplicate was not ruled out. The README has a three-command check to
+  run once against a real account.
+
 ### Changed
+- The marker `[gpp:<plan>:<hash>]` now comes first in a workout's
+  description, before the notes, so a description Garmin shortens keeps
+  it. Workouts already pushed are still recognised.
 - With no terminal (a scheduled task), gpp no longer asks for the Garmin
   password; on Windows that prompt waited for ever. It says to sign in
   once in a terminal instead.

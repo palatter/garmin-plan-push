@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import FROZEN, REINSTALL, checks
-from .client import PushError
+from .client import PushError, PushResult
 from .compile import CompileError, compile_plan
 from .generate import dump_plan, generate_plan
 from .keychain import KeychainError
@@ -246,25 +246,29 @@ def cmd_watch(args: argparse.Namespace) -> int:
             print(checks.check(plan, profile).text())
             if args.push:
                 from .client import sign_in_at_terminal
-                from .receipts import save_receipt
+                from .receipts import earlier_pushes, save_receipt
 
                 email = args.email or os.environ.get("GARMIN_EMAIL")
                 if not email:
                     print("set GARMIN_EMAIL (or pass --email) to push from watch")
                     return
                 device = args.device or (profile.raw.get("defaults") or {}).get("device")
+                # As `gpp push` does: the receipt is what `gpp unpush` removes
+                # by, and it is saved however the push ends.
+                results: list[PushResult] = []
                 try:
                     client = sign_in_at_terminal(email)
-                    results = client.push(compiled, device_id=device, log=print)
+                    client.earlier = earlier_pushes(plan.plan)
+                    client.push(compiled, device_id=device, log=print, results=results)
                 except PushError as exc:
                     print(f"push failed: {exc}")
-                    return
-                # As `gpp push` does: the receipt is what `gpp unpush` removes by.
-                try:
-                    print(f"receipt: {save_receipt(plan.plan, results)}")
-                except OSError as exc:
-                    print(f"warning: could not save the push receipt: {exc}")
-                remember(plan.to_dict(), "pushed")
+                finally:
+                    if results:
+                        try:
+                            print(f"receipt: {save_receipt(plan.plan, results)}")
+                        except OSError as exc:
+                            print(f"warning: could not save the push receipt: {exc}")
+                        remember(plan.to_dict(), "pushed")
         except (PlanError, ProfileError, CompileError, UnitError) as exc:
             print(f"error: {exc}")
 
@@ -1094,43 +1098,50 @@ def cmd_push(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"signed in as {client.account or client.email}")
+    from .receipts import earlier_pushes, save_receipt
+
+    client.earlier = earlier_pushes(plan.plan)
     for other in client.conflicts(compiled):
         print(f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone")
 
-    results = client.push(
-        compiled,
-        replace=args.replace,
-        verify=not args.no_verify,
-        device_id=args.device or _defaults(args).get("device"),
-        log=lambda line: print(line),
-    )
-    from .receipts import save_receipt
-
-    # The workouts are on the calendar now: whatever happens next, the
-    # receipt that lets `gpp unpush` find them is saved.
+    # From the first workout sent, whatever happens next (an error, Ctrl+C),
+    # the receipt that lets `gpp unpush` find them is saved, and it says
+    # which sessions went, which failed and which were never reached.
+    results: list[PushResult] = []
     try:
-        orphans = client.orphans(compiled)
-        if orphans:
-            print(
-                "\nStill on the calendar from an earlier version of this plan (moved or dropped):"
-            )
-            for old in orphans:
-                print(f"  {old['date']}  {old['title']}")
-            if not args.prune:
-                print("Push again with --prune to remove them.")
-            elif args.yes or _confirm(f"Remove these {len(orphans)} session(s)? [y/N] "):
-                results += client.remove_orphans(orphans, log=print)
-    except PushError as exc:
-        print(f"warning: could not look for sessions this plan no longer uses: {exc}")
-    finally:
+        client.push(
+            compiled,
+            replace=args.replace,
+            verify=not args.no_verify,
+            device_id=args.device or _defaults(args).get("device"),
+            log=lambda line: print(line),
+            results=results,
+        )
         try:
-            print(f"receipt: {save_receipt(plan.plan, results)}")
-        except OSError as exc:
-            print(f"warning: could not save the push receipt: {exc}")
-        remember(plan.to_dict(), "pushed")
+            orphans = client.orphans(compiled)
+            if orphans:
+                print(
+                    "\nStill on the calendar from an earlier version of this plan "
+                    "(moved or dropped):"
+                )
+                for old in orphans:
+                    print(f"  {old['date']}  {old['title']}")
+                if not args.prune:
+                    print("Push again with --prune to remove them.")
+                elif args.yes or _confirm(f"Remove these {len(orphans)} session(s)? [y/N] "):
+                    results += client.remove_orphans(orphans, log=print)
+        except PushError as exc:
+            print(f"warning: could not look for sessions this plan no longer uses: {exc}")
+    finally:
+        if results:
+            try:
+                print(f"receipt: {save_receipt(plan.plan, results)}")
+            except OSError as exc:
+                print(f"warning: could not save the push receipt: {exc}")
+            remember(plan.to_dict(), "pushed")
 
-    failures = [r for r in results if r.action == "failed"]
-    warnings = [r for r in results if r.detail and r.action != "failed"]
+    failures = [r for r in results if r.action in ("failed", "not-sent")]
+    warnings = [r for r in results if r.detail and r not in failures]
     print()
     for result in warnings:
         print(f"warning: {result.date} {result.name}: {result.detail}")

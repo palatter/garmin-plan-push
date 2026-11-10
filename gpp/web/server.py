@@ -64,7 +64,7 @@ from ..providers import (
     pick_default,
     resolve,
 )
-from ..receipts import save_receipt
+from ..receipts import earlier_pushes, save_receipt
 from ..recent import list_recent, load_recent, save_recent
 from ..render import render_plan
 from ..timeline import ZONE_INTENSITY, workout_summary, workout_timeline
@@ -443,6 +443,7 @@ class App:
                 job.say(f"your password is kept in {keychain.where()}")
             elif client.remembered is False:
                 job.say(f"your password could not be kept in {keychain.where()}")
+            client.earlier = earlier_pushes(plan.plan)
             for other in client.conflicts(compiled):
                 job.say(
                     f"  also on {other['date']}: {other['title']} ({other['source']}) -- left alone"
@@ -462,17 +463,24 @@ class App:
                     for o in orphans
                 ]
                 return {"results": [r.to_dict() for r in results], "preview": True}
-            results = client.push(compiled, replace=replace, verify=True, log=job.say)
-            if orphans and prune:
-                results += client.remove_orphans(orphans, log=job.say)
-            elif orphans:
-                job.say("still on the calendar from an earlier version of this plan:")
-                for old in orphans:
-                    job.say(f"  {old['date']}  {old['title']} (tick 'remove' and send to clear)")
+            # Whatever stops the push, what it did so far is on record.
+            results: list[PushResult] = []
             try:
-                job.say(f"receipt saved: {save_receipt(plan.plan, results).name}")
-            except OSError as exc:  # a receipt is a convenience, never the reason a push fails
-                job.say(f"could not save the push receipt: {exc}")
+                client.push(compiled, replace=replace, verify=True, log=job.say, results=results)
+                if orphans and prune:
+                    results += client.remove_orphans(orphans, log=job.say)
+                elif orphans:
+                    job.say("still on the calendar from an earlier version of this plan:")
+                    for old in orphans:
+                        job.say(
+                            f"  {old['date']}  {old['title']} (tick 'remove' and send to clear)"
+                        )
+            finally:
+                if results:
+                    try:
+                        job.say(f"receipt saved: {save_receipt(plan.plan, results).name}")
+                    except OSError as exc:  # a convenience, never the reason a push fails
+                        job.say(f"could not save the push receipt: {exc}")
             return {"results": [r.to_dict() for r in results]}
 
         # One Garmin job at a time: a second Send (the dialog reopened
