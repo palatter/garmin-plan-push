@@ -5,6 +5,14 @@ the tag being released and puts it in the GitHub Release notes.
 
 ## [0.2.3] — 2026-11-10
 
+Two things work differently after upgrading. A plan whose durations or
+distances are bare numbers (`"duration": 45`) is now refused with a message
+saying how to write them. And an assistant driving gpp over MCP can no
+longer push by itself: you confirm each push with `gpp mcp --confirm`.
+None of this has been run against a live Garmin or intervals.icu account;
+the README's *Re-running is safe* has a three-command check to run once
+against your own before relying on re-pushes.
+
 ### Added
 - Keys in the OS keychain (Windows Credential Manager, the macOS Keychain,
   a system keyring on Linux): `gpp keys set ANTHROPIC_API_KEY` saves one,
