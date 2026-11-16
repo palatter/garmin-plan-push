@@ -765,13 +765,17 @@ class App:
             )
         plan = _plan_of(body.get("plan"))
         date = str(body.get("date") or "")
+        # Which session, on a day with two; older pages send the date only.
+        name = str(body["name"]) if body.get("name") else None
         instruction = (body.get("instruction") or "").strip()
         if not instruction:
             raise AppError("say what should change about this session")
 
         def work(job) -> dict:
             provider = build_provider(config)
-            result = regenerate_workout(provider, profile, plan, date, instruction, log=job.say)
+            result = regenerate_workout(
+                provider, profile, plan, date, instruction, log=job.say, name=name
+            )
             return self._describe(result, profile)
 
         return {"job": self.jobs.start("regenerate", work).id}

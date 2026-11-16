@@ -3,7 +3,7 @@
 import json
 
 from gpp.generate import generate_plan, regenerate_workout
-from gpp.plan import Plan
+from gpp.plan import Plan, PlanError
 from gpp.profile import Profile
 from gpp.providers import ProviderError
 
@@ -91,3 +91,32 @@ def test_regenerate_one_workout_keeps_the_rest():
     new = regenerate_workout(provider, PROFILE, plan, "2026-09-24", "make it steady")
     assert [w.name for w in new.workouts] == ["A", "B rewritten"]
     assert "make it steady" in provider.prompts[0]
+
+
+def test_regenerate_on_a_double_day_rewrites_the_session_named_and_keeps_the_summary():
+    plan = Plan.from_dict(
+        {
+            "plan": "p",
+            "summary": "Why this plan looks the way it does.",
+            "workouts": [wk("2026-09-24", "AM easy"), wk("2026-09-24", "PM tempo", "threshold")],
+        }
+    )
+    provider = Scripted([json.dumps(wk("2026-09-24", "REWRITTEN", "steady"))])
+    new = regenerate_workout(provider, PROFILE, plan, "2026-09-24", "steadier", name="PM tempo")
+    assert [w.name for w in new.workouts] == ["AM easy", "REWRITTEN"]
+    assert new.summary == "Why this plan looks the way it does."
+    try:
+        regenerate_workout(Scripted([]), PROFILE, plan, "2026-09-24", "x", name="Evening")
+    except PlanError as exc:
+        assert "Evening" in str(exc)
+    else:
+        raise AssertionError("rewrote a session that was not the one asked for")
+
+
+def test_the_page_says_which_session_to_rewrite():
+    from pathlib import Path
+
+    import gpp.web
+
+    page = (Path(gpp.web.__file__).parent / "static" / "review.js").read_text(encoding="utf-8")
+    assert "date: w.date, name: w.name, instruction" in page

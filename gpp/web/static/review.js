@@ -876,7 +876,7 @@ function initRewrite() {
     setError('#rewrite-error', '');
     try {
       const { job } = await api('/api/regenerate', {
-        plan: before, date: w.date, instruction, provider: $('#c-provider').value,
+        plan: before, date: w.date, name: w.name, instruction, provider: $('#c-provider').value,
       });
       const done = await pollJob(job, '#rw-log');
       state.history.push(before);

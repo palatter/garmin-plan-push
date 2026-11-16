@@ -21,7 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from . import checks
 from .compile import CompileError, compile_plan
@@ -167,11 +167,20 @@ def regenerate_workout(
     instruction: str,
     attempts: int = 2,
     log: Callable[[str], None] = lambda _: None,
+    name: str | None = None,
 ) -> Plan:
-    """Rewrite one workout in place ("rewrite just Thursday")."""
+    """Rewrite one workout in place ("rewrite just Thursday").
+
+    On a day with two sessions, `name` says which; without it the first is
+    taken. Everything else about the plan, its summary included, is kept.
+    """
     current = [w for w in plan.workouts if w.date.isoformat() == date]
     if not current:
         raise PlanError(f"no workout on {date}")
+    if name is not None:
+        current = [w for w in current if w.name.strip() == name.strip()]
+        if not current:
+            raise PlanError(f"no workout called {name!r} on {date}")
     target = current[0]
     others = [w.to_dict() for w in plan.workouts if w is not target]
     system = build_prompt(profile)
@@ -198,13 +207,7 @@ def regenerate_workout(
         new_workout: Workout = candidate.workouts[0]
         new_workout.date = target.date
         replaced = [new_workout if w is target else w for w in plan.workouts]
-        return Plan(
-            plan=plan.plan,
-            workouts=replaced,
-            race_date=plan.race_date,
-            races=plan.races,
-            weeks=plan.weeks,
-        )
+        return replace(plan, workouts=replaced)
     raise ProviderError("could not rewrite the workout")
 
 
