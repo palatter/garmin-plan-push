@@ -585,7 +585,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
     print(
         f"backup written to {target}"
         + (
-            ""
+            " (it holds your saved Garmin logins: keep it as you would a password)"
             if args.with_tokens
             else " (Garmin login tokens left out; --with-tokens includes them)"
         )

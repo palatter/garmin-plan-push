@@ -222,6 +222,12 @@ def test_restored_tokens_are_owner_only_and_logs_are_not_backed_up(tmp_path):
     )
     with zipfile.ZipFile(archive) as z:
         assert set(z.namelist()) == {"config/profile.toml", "tokens/garmin_tokens.json"}
+    if os.name == "posix":  # a zip of saved logins is not for other accounts to read
+        assert stat.S_IMODE(archive.stat().st_mode) == 0o600
+        # Also over a file that was already there with wider permissions.
+        archive.chmod(0o644)
+        backup.backup(archive, with_tokens=True, config_dir=source, token_dir=tokens)
+        assert stat.S_IMODE(archive.stat().st_mode) == 0o600
     restored = tmp_path / "new-tokens"
     backup.restore(archive, config_dir=tmp_path / "new", token_dir=restored)
     token = restored / "garmin_tokens.json"

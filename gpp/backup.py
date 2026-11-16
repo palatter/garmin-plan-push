@@ -17,7 +17,9 @@ CONFIG_DIR = Path.home() / ".config" / "gpp"
 TOKEN_DIR = Path.home() / ".garminconnect"
 
 
-SKIPPED = ("logs",)
+# Not worth keeping: the debug log, and a push an assistant has waiting for
+# its confirmation code (ten minutes' life, and nobody else's business).
+SKIPPED = ("logs", "mcp-pending.json")
 
 
 def backup(
@@ -37,6 +39,12 @@ def backup(
     if profile is not None and profile.is_file():
         inside = config_dir.resolve() in profile.resolve().parents
         outside = None if inside else profile
+    if with_tokens:
+        # The zip will hold saved logins: owner-only from its first byte, as
+        # the token files themselves are, not readable by the computer's
+        # other accounts until someone remembers to chmod it.
+        target.unlink(missing_ok=True)
+        os.close(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         if config_dir.exists():
             for path in sorted(config_dir.rglob("*")):

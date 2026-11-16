@@ -50,6 +50,11 @@ the tag being released and puts it in the GitHub Release notes.
   session an earlier version sent keeps the id it has, so it is updated
   and not doubled, and an old-style event counts as this plan's only when
   its date and name match one of its sessions.
+- Web app: **Rewrite** on a day with two sessions rewrote the first one,
+  whichever was asked for, and a rewrite dropped the plan's summary. It
+  now rewrites the session named and keeps the rest of the plan as it is.
+- `gpp backup --with-tokens` writes its zip readable by you only (it holds
+  saved Garmin logins) and says so.
 - A duration or distance with no unit is refused instead of being read as
   seconds or metres: `"distance": 5` was a five-metre step. So is
   `"duration": "400m"` (400 minutes; inside a repeat from `"100m"`), with
