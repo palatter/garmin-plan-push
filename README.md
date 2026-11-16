@@ -160,7 +160,16 @@ Claude, ChatGPT, Gemini or a local model can check, preview, adapt and push
 plans conversationally. Push is a dry run unless you ask for a real one, and
 a real push needs `GARMIN_EMAIL` set in the MCP server's environment, even
 after a sign-in has been saved, plus `GARMIN_PASSWORD` the first time; the
-assistant never sees either. It needs the MCP library, installed with:
+assistant never sees either.
+
+An assistant cannot send a plan by itself: what it does is steered by text
+it reads, and not all of that text is yours. After its dry run, run
+`gpp mcp --confirm` in a terminal. It shows the plan the assistant is asking
+to send and a six-digit code; tell the assistant the code and it can send
+that plan, once, within ten minutes. If you did not ask for a push, do
+nothing and nothing is sent.
+
+It needs the MCP library, installed with:
 
 ```bash
 uv tool install --python 3.12 --reinstall "garmin-plan-push[mcp] @ git+https://github.com/palatter/garmin-plan-push"

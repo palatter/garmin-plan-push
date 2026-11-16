@@ -57,6 +57,19 @@ computer you share with other accounts, stop it when you are done.
 There is no TLS because there is no network hop — traffic never leaves the
 loopback interface.
 
+## When an assistant drives it (`gpp mcp`)
+
+An assistant acts on text it reads, and some of that text is written by
+other people (a web page, a shared document). So the MCP server lets an
+assistant check, preview and adapt plans freely, but not write to Garmin
+alone: a real push needs a six-digit code that only `gpp mcp --confirm`,
+run by you in a terminal, shows, next to the plan it would send. The code
+releases that exact plan, once, within ten minutes; three wrong codes
+cancel the request. It is never part of anything the assistant is sent.
+This keeps out instructions hidden in what the assistant reads. It does
+not keep out an assistant that can run commands on your computer: that one
+could run `gpp push` itself, and should be trusted accordingly.
+
 ## What it does not do
 
 - It sends your plan, profile and credentials only where you point it:

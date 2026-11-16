@@ -53,6 +53,13 @@ the tag being released and puts it in the GitHub Release notes.
   under three minutes or over six hours (ten riding, four swimming).
 
 ### Changed
+- MCP server: `push_plan` no longer writes to Garmin on the assistant's
+  say-so. A real push needs a code that only `gpp mcp --confirm`, run by
+  you in a terminal, shows; it releases the one plan the assistant's dry
+  run held, once, within ten minutes. The tool now signs in the way the
+  app does (saved sign-in, then `GARMIN_PASSWORD` or the keychain) and
+  writes its receipt however the push ends. **If you drive gpp from an
+  assistant, pushes now take this extra step.**
 - The marker `[gpp:<plan>:<hash>]` now comes first in a workout's
   description, before the notes, so a description Garmin shortens keeps
   it. Workouts already pushed are still recognised.

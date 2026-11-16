@@ -223,11 +223,14 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    from .mcp_server import describe_tools, serve
+    from .mcp_server import describe_pending, describe_tools, serve
 
     if args.list:
         for tool in describe_tools():
             print(f"  {tool['name']:<20} {tool['description']}")
+        return 0
+    if args.confirm:
+        print(describe_pending())
         return 0
     serve()
     return 0
@@ -1216,6 +1219,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     mcp = sub.add_parser("mcp", help="run as an MCP server so any assistant can drive the tool")
     mcp.add_argument("--list", action="store_true", help="print the tools and exit")
+    mcp.add_argument(
+        "--confirm",
+        action="store_true",
+        help="show the push an assistant is asking for, and the code that lets it through",
+    )
     mcp.set_defaults(func=cmd_mcp)
 
     wa = sub.add_parser("watch", help="re-check (or re-push) a plan file whenever it changes")

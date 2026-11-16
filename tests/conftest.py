@@ -34,6 +34,7 @@ def _own_config_folder(tmp_path_factory, monkeypatch):
     monkeypatch.setattr("gpp.library.LIBRARY_DIR", config / "library")
     monkeypatch.setattr("gpp.receipts.RECEIPTS_DIR", config / "pushes")
     monkeypatch.setattr("gpp.cli.LOG_PATH", config / "logs" / "gpp.log")
+    monkeypatch.setattr("gpp.mcp_server.PENDING_PATH", config / "mcp-pending.json")
 
 
 @pytest.fixture(autouse=True)
