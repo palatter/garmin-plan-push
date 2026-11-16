@@ -517,7 +517,7 @@ class App:
         preview = body.get("mode") == "preview"
         try:
             icu.check_credentials(athlete, key)
-            wanted = icu.events(plan, profile)
+            icu.events(plan, profile)  # a plan that does not compile stops here
         except icu.IcuError as exc:
             raise AppError(str(exc)) from exc
         except CompileError as exc:
@@ -541,6 +541,8 @@ class App:
             self._keep_icu(job, profile, athlete, typed_athlete, typed_key, remember)
             known = {e.get("external_id") for e in found}
             stale = icu.stale(plan, profile, found)
+            # With the ids sessions already have there, so they are updated.
+            wanted = icu.events(plan, profile, found)
             gone = "this plan, on a date it no longer uses"
             if preview:
                 job.say("checked the calendar; nothing was sent")
@@ -552,7 +554,7 @@ class App:
                     row(e, "would-remove" if prune else "left", e.get("id"), gone) for e in stale
                 ]
                 return {"results": rows, "preview": True}
-            sent = icu.push(plan, profile, athlete, key)
+            sent = icu.push(plan, profile, athlete, key, found=found)
             rows = [
                 row(e, "updated" if e["external_id"] in known else "created", r.event_id)
                 for e, r in zip(wanted, sent, strict=True)

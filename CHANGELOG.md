@@ -42,6 +42,14 @@ the tag being released and puts it in the GitHub Release notes.
   a duplicate was not ruled out. The README has a three-command check to
   run once against a real account.
 
+- intervals.icu: two plans whose names start with the same 16 letters
+  ("Marathon Build Block 1" and "... Block 2") shared event ids, so sending
+  one overwrote the other's events on shared dates, and `--prune`,
+  `--remove` and the web app's send listed the other's events for
+  deletion. Events now carry the plan's own id, as the Garmin tags do. A
+  session an earlier version sent keeps the id it has, so it is updated
+  and not doubled, and an old-style event counts as this plan's only when
+  its date and name match one of its sessions.
 - A duration or distance with no unit is refused instead of being read as
   seconds or metres: `"distance": 5` was a five-metre step. So is
   `"duration": "400m"` (400 minutes; inside a repeat from `"100m"`), with

@@ -178,7 +178,9 @@ def cmd_icu(args) -> int:
                 return 1
             results = icu.delete(found, athlete, key)
         else:
-            results = icu.push(plan, profile, athlete, key, dry_run=args.dry_run)
+            # Read first: a session an older gpp sent keeps the id it has there.
+            found = None if args.dry_run else icu.find(plan, athlete, key)
+            results = icu.push(plan, profile, athlete, key, dry_run=args.dry_run, found=found)
     except icu.IcuError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

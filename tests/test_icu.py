@@ -296,3 +296,105 @@ def test_two_sessions_on_one_day_get_two_events():
     )
     ids = [e["external_id"] for e in icu.events(double, PROFILE)]
     assert len(set(ids)) == 2
+
+
+# --- plans whose names start alike (0.2.2 gave them the same ids) ------------
+
+BLOCK_1 = Plan.from_dict({**PLAN.to_dict(), "plan": "Marathon Build Block 1"})
+BLOCK_2 = Plan.from_dict({**PLAN.to_dict(), "plan": "Marathon Build Block 2"})
+
+
+def _on_calendar(event_id, event):
+    return {"id": event_id, **event}
+
+
+def _old_events(plan):
+    """What gpp 0.2.2 put on the calendar for `plan`."""
+    old = icu.legacy_prefix(plan)
+    count: dict[str, int] = {}
+    out = []
+    for n, w in enumerate(plan.workouts):
+        day = w.date.isoformat()
+        count[day] = count.get(day, 0) + 1
+        out.append(
+            {
+                "id": 100 + n,
+                "external_id": f"{old}{day}:{count[day]}",
+                "name": w.name,
+                "start_date_local": f"{day}T00:00:00",
+            }
+        )
+    return out
+
+
+def test_similarly_named_plans_get_ids_of_their_own():
+    assert icu.legacy_prefix(BLOCK_1) == icu.legacy_prefix(BLOCK_2), "the 0.2.2 collision"
+    one = {e["external_id"] for e in icu.events(BLOCK_1, PROFILE)}
+    two = {e["external_id"] for e in icu.events(BLOCK_2, PROFILE)}
+    assert len(one) == len(two) == 3 and not one & two
+
+
+def test_one_plans_events_are_not_found_as_the_others():
+    listed = [_on_calendar(n, e) for n, e in enumerate(icu.events(BLOCK_1, PROFILE), start=1)]
+    t = FakeTransport([(200, json.dumps(listed).encode())] * 2)
+    today = dt.date(2026, 10, 1)
+    assert icu.find(BLOCK_2, "i12345", "k", transport=t, today=today) == []
+    assert len(icu.find(BLOCK_1, "i12345", "k", transport=t, today=today)) == 3
+
+
+def test_a_session_sent_by_0_2_2_keeps_its_id_and_is_not_doubled():
+    listed = _old_events(PLAN)
+    t = FakeTransport([(200, json.dumps(listed).encode()), (200, b"[]")])
+    found = icu.find(PLAN, "i12345", "k", transport=t, today=dt.date(2026, 10, 1))
+    assert [e["id"] for e in found] == [100, 101, 102]
+    icu.push(PLAN, PROFILE, "i12345", "k", transport=t, found=found)
+    sent = t.calls[1][2]
+    assert [e["external_id"] for e in sent] == [e["external_id"] for e in listed]
+    assert icu.stale(PLAN, PROFILE, found) == []
+
+
+def test_an_old_style_event_of_another_plan_is_never_this_plans_to_prune():
+    # Block 1 was sent by 0.2.2; Block 2 has a session of another name on a
+    # shared date, and none on Block 1's other dates.
+    theirs = _old_events(BLOCK_1)
+    mine = Plan.from_dict(
+        {
+            "plan": "Marathon Build Block 2",
+            "workouts": [
+                {
+                    "name": "Tempo",
+                    "date": "2026-10-05",
+                    "steps": [{"kind": "run", "duration": "30m"}],
+                }
+            ],
+        }
+    )
+    t = FakeTransport([(200, json.dumps(theirs).encode())])
+    found = icu.find(mine, "i12345", "k", transport=t, today=dt.date(2026, 10, 1))
+    assert found == [], "0.2.2 listed all three for removal as an earlier version of this plan"
+    (event,) = icu.events(mine, PROFILE, found)
+    assert event["external_id"] not in {e["external_id"] for e in theirs}
+
+
+def _named(name: str, moved: bool = False) -> Plan:
+    return Plan.from_dict({**_week(moved).to_dict(), "plan": name})
+
+
+def test_sending_and_pruning_one_plan_leaves_its_namesake_alone(calendar, capsys):
+    fake, run = calendar
+    assert run(_named("Marathon Build Block 1")) == 0
+    assert run(_named("Marathon Build Block 2", moved=True), "--prune", "--yes") == 0
+    assert len(fake.events) == 8, "one plan's events overwrote the other's"
+    assert run(_named("Marathon Build Block 2", moved=True), "--remove", "--yes") == 0
+    left = {e["external_id"] for e in fake.events.values()}
+    assert left == {e["external_id"] for e in icu.events(_named("Marathon Build Block 1"), PROFILE)}
+
+
+def test_gpp_icu_updates_what_0_2_2_sent_instead_of_adding_to_it(calendar, capsys):
+    fake, run = calendar
+    plan = _named("Marathon Build Block 1")
+    for event in _old_events(plan):
+        fake.events[event["id"]] = event
+    assert run(plan) == 0
+    assert sorted(fake.events) == [100, 101, 102, 103]
+    assert all("description" in e for e in fake.events.values()), "updated in place"

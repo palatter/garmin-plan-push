@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import keychain
-from .compile import compile_plan, legacy_slug
+from .compile import compile_plan, legacy_slug, plan_slug
 from .constants import TAG_PREFIX
 from .formats import FormatError, export_icu
 from .plan import Plan
@@ -114,18 +114,46 @@ def _headers(key: str) -> dict[str, str]:
 
 
 def tag_prefix(plan: Plan) -> str:
-    """The start of this plan's event ids on intervals.icu.
+    """The start of this plan's event ids on intervals.icu: the slug the
+    Garmin tags use, different for every plan name."""
+    return f"[{TAG_PREFIX}:{plan_slug(plan.plan)}:"
 
-    Still the slug gpp 0.2.1 used: the bulk endpoint upserts by id, so a new
-    slug would put a second copy of every session already sent.
-    """
+
+def legacy_prefix(plan: Plan) -> str:
+    """The start of the ids gpp 0.2.2 and earlier gave this plan's events: the
+    first 16 letters of its name, which "Marathon Build Block 1" and "...
+    Block 2" share. Sending one overwrote the other's events on shared
+    dates, and pruning or removing one deleted the other's."""
     return f"[{TAG_PREFIX}:{legacy_slug(plan.plan)}:"
 
 
-def events(plan: Plan, profile: Profile) -> list[dict]:
-    """The plan as intervals.icu calendar events, one per session."""
+def _where(event: dict) -> tuple[str, str]:
+    return str(event.get("start_date_local") or "")[:10], str(event.get("name") or "").strip()
+
+
+def _adopted(plan: Plan, found: list[dict] | None) -> dict[tuple[str, str], str]:
+    """(date, name) -> the old-style id of that session's event, when it is on
+    the calendar. The bulk endpoint upserts by id, so sending the session
+    under a new id would leave the old event beside it; it keeps the old one."""
+    old = legacy_prefix(plan)
+    sessions = {(w.date.isoformat(), w.name.strip()) for w in plan.workouts}
+    kept: dict[tuple[str, str], str] = {}
+    for event in found or []:
+        external = str(event.get("external_id") or "")
+        if external.startswith(old) and _where(event) in sessions:
+            kept.setdefault(_where(event), external)
+    return kept
+
+
+def events(plan: Plan, profile: Profile, found: list[dict] | None = None) -> list[dict]:
+    """The plan as intervals.icu calendar events, one per session.
+
+    `found` is what `find` returned: a session sent by an older gpp keeps the
+    id it has there, so it is updated and not doubled.
+    """
     out = []
     prefix = tag_prefix(plan)
+    kept = _adopted(plan, found)
     seen_on: dict[str, int] = {}
     compile_plan(plan, profile)  # the same validation a Garmin push gets
     for workout in plan.workouts:
@@ -146,7 +174,9 @@ def events(plan: Plan, profile: Profile) -> list[dict]:
                 # id, so an edited session must keep the id it was pushed
                 # with. The date and the session's place on that day keep
                 # identical sessions on different days, or twice a day, apart.
-                "external_id": f"{prefix}{day}:{seen_on[day]}",
+                "external_id": kept.get(
+                    (day, workout.name.strip()), f"{prefix}{day}:{seen_on[day]}"
+                ),
             }
         )
     return out
@@ -193,10 +223,12 @@ def push(
     transport: Transport = http,
     base_url: str = BASE_URL,
     dry_run: bool = False,
+    found: list[dict] | None = None,
 ) -> list[IcuResult]:
     """Send every session as a calendar event; existing events with the same
-    external id are updated (the bulk endpoint's upsert)."""
-    body = events(plan, profile)
+    external id are updated (the bulk endpoint's upsert). Pass what `find`
+    returned as `found`, so sessions an older gpp sent are updated too."""
+    body = events(plan, profile, found)
     if dry_run:
         return [IcuResult(e["start_date_local"][:10], e["name"], None, "would-send") for e in body]
     check_credentials(athlete, key)
@@ -229,8 +261,14 @@ def find(
     base_url: str = BASE_URL,
     today: dt.date | None = None,
 ) -> list[dict]:
-    """This plan's events on the calendar, matched by its tag prefix: over the
-    plan's dates and, from today on, four weeks either side of them."""
+    """This plan's events on the calendar: over the plan's dates and, from
+    today on, four weeks either side of them.
+
+    Matched by the plan's own id prefix. An event with the prefix gpp 0.2.2
+    and earlier used, which other plans can share, counts only when it is one
+    of this plan's sessions by date and name; any other is left alone, never
+    listed for pruning or removal.
+    """
     check_credentials(athlete, key)
     dates = sorted(w.date for w in plan.workouts)
     if not dates:
@@ -243,12 +281,16 @@ def find(
     status, raw = transport("GET", url, None, _headers(key or ""))
     _raise_for(status, raw)
     listed = _json(raw)
-    prefix = tag_prefix(plan)
+    prefix, old = tag_prefix(plan), legacy_prefix(plan)
+    sessions = {(w.date.isoformat(), w.name.strip()) for w in plan.workouts}
     found = []
     for event in listed if isinstance(listed, list) else []:
         if not isinstance(event, dict) or event.get("id") is None:
             continue
-        if not str(event.get("external_id") or "").startswith(prefix):
+        external = str(event.get("external_id") or "")
+        if not external.startswith(prefix) and not (
+            external.startswith(old) and _where(event) in sessions
+        ):
             continue
         day = str(event.get("start_date_local") or "")[:10]
         if dates[0].isoformat() <= day <= dates[-1].isoformat() or day >= today.isoformat():
@@ -259,7 +301,7 @@ def find(
 def stale(plan: Plan, profile: Profile, found: list[dict]) -> list[dict]:
     """Found events the plan no longer has: sessions moved to another day or
     dropped since they were sent. Upserting the plan never removes them."""
-    wanted = {e["external_id"] for e in events(plan, profile)}
+    wanted = {e["external_id"] for e in events(plan, profile, found)}
     return [e for e in found if e.get("external_id") not in wanted]
 
 
